@@ -31,11 +31,20 @@ commit it with the change it describes.
   the README there). The modded copy was taken with the AI program's mod package deployed, so
   recapture after deploying a headless-host package before using it as the builder oracle.
 - **Runs in flight:** none.
+- **Also done:**
+  - `work/headless/gamespec.py` (a93d5faa8): spec → resolved spec (IDs, seeds) and front-end pregame
+    Lua; examples in `work/headless/specs/`.
+  - `vpbench newgame --spec` (7fbcbb988).
+  - `work/headless/dbdiff.py` (87e91a8b3).
+  - The game's `Civ5ModsDatabase.db` lists every mod's actions (`ModActions`), files and VFS imports
+    (`ModFiles.Import`) and entry points; useful for M4 and the VFS.
 - **Next steps:**
-  1. `work/headless/gamespec.py`: one spec format for vpbench reference runs and the host.
+  1. When the digest agent reports: add seed pinning, digest logging and the pregame snapshot to
+     `vpbench newgame --spec`.
   2. Merge agent branches into `headless-host` as they finish (only `VoxPopuli.vcxproj` is expected to
      conflict).
   3. Deploy the merged trace build, record S1, S3 and S4, then restore the AI build and mods.
+  4. After the host skeleton merges: start M4 (database builder) as a host subcommand.
 - **Uncommitted files:** none besides this ledger and `work/headless/db_capture.py`.
 
 ## Milestones
