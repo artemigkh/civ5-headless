@@ -156,7 +156,10 @@ One JSON format drives both the host and the reference run:
 ```
 
 - A premade map uses `"map": {"civ5map": "Assets\\Maps\\Earth_Standard.Civ5Map"}`.
-- Omitted fields take the setup screen's defaults. Unset map options take the script's `DefaultValue`.
+- Omitted fields behave like a setup screen the player didn't touch. The screen only calls
+  `PreGame.SetMapOption`/`SetGameOption` when a value changes, so an untouched option stays unset (-1 or
+  nil), and the map script, not the database `DefaultValue`, decides what unset means. The tool leaves
+  them unset too. The DLL's pregame snapshot at game start (D3) checks that both sides agree.
 - `"random"` is allowed wherever the setup screen allows it. `--resolve` writes the resolved spec.
 - Validation follows the DLL's rules. Autoplay needs a free major slot for the observer
   (`CvGame::setAIAutoPlay`), and the human slot's handicap is the game difficulty. Slot 0's civ plays as
