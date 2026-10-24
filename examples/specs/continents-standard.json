@@ -1,0 +1,3 @@
+{"map": {"script": "Assets/Maps/Continents.lua", "size": "WORLDSIZE_STANDARD"},
+ "speed": "GAMESPEED_STANDARD", "era": "ERA_ANCIENT", "difficulty": "HANDICAP_EMPEROR",
+ "seeds": {"map": 1001, "sync": 2002}}

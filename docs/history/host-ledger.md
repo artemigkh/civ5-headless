@@ -25,10 +25,14 @@ commit it with the change it describes.
   - host: M1 host skeleton, worktree `work/wt/hh-host`, branch `hh-host`.
   On resume after a pause: read each worktree's `RESUME.md` and relaunch each agent with its original
   work order (the briefs are summarised in plan section 4) plus the checkpoint.
-- **Runs in flight:** `work/headless/db_capture.py --run hh-dbcapture-20261025a` (DLC snapshot and
-  in-memory database check; installed DLL unchanged).
+- **M0 steps 5–6 done** (run `hh-dbcapture-20261025b`): the cached `Civ5DebugDatabase.db` equals the
+  in-memory database table by table, both at the mod-free main menu (367 tables) and after mod
+  activation (839 tables). DLC snapshot kept as `work/headless/db/dlc-snapshot-CBF411E4.db` (local; see
+  the README there). The modded copy was taken with the AI program's mod package deployed, so
+  recapture after deploying a headless-host package before using it as the builder oracle.
+- **Runs in flight:** none.
 - **Next steps:**
-  1. Review the capture; keep `dlc-debug.db` as the DLC snapshot.
+  1. `work/headless/gamespec.py`: one spec format for vpbench reference runs and the host.
   2. Merge agent branches into `headless-host` as they finish (only `VoxPopuli.vcxproj` is expected to
      conflict).
   3. Deploy the merged trace build, record S1, S3 and S4, then restore the AI build and mods.

@@ -1,0 +1,7 @@
+{"map": {"script": "Communitu_79a.lua", "size": "WORLDSIZE_SMALL",
+         "options": {"TXT_KEY_MAP_OPTION_SEA_LEVEL": 3, "TXT_KEY_MAP_OPTION_WORLD_AGE": 4}},
+ "majors": 6, "cityStates": 10,
+ "gameOptions": {"GAMEOPTION_RAGING_BARBARIANS": true},
+ "victories": ["VICTORY_DOMINATION", "VICTORY_TIME"], "maxTurns": 200,
+ "slots": [{"slot": 1, "civ": "CIVILIZATION_GREECE", "team": 1}],
+ "seeds": {"map": 7, "sync": 8}}
