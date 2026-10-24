@@ -1,0 +1,28 @@
+; Exports of civ5headless.exe resolved by the FireWorks code in the game DLL through
+; GetModuleHandle(NULL) + GetProcAddress. The same 22 names as CivilizationV.exe and the
+; SDK's CivilizationV_Server.exe export. Implementations: engine/HHExports.cpp.
+; The 22nd is std::_Init_locks::operator=, defined under its decorated name in
+; engine/HHInitLocks.asm (an alias "name=internal" would be cut at the first '@').
+EXPORTS
+	FJobSetAddJobImpl
+	FJobSetInitImpl
+	FJobSetUninitImpl
+	FJobSetWaitImpl
+	FSBAAllocate
+	FSBADeallocate
+	FSBADisable
+	FSBAGetMaxAllocatorSize
+	FSBAHasAllocatorForSize
+	FSBAIsDisabled
+	FSBAIsSmallBlock
+	FSBAPreventCreation
+	FStringA_GetStringInitData
+	FStringW_GetStringInitData
+	GetFileSystemMgr
+	GetLogFileMgr
+	GetMemTrackerForDLL
+	GetSmallObjectAllocator
+	GetSmallObjectAllocatorInitParams
+	GetTempHeap
+	PeekLogFileMgr
+	??4_Init_locks@std@@QAEAAV01@ABV01@@Z
