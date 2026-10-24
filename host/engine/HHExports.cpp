@@ -1,0 +1,282 @@
+// The 22 exe exports that the FireWorks code linked into the game DLL resolves with
+// GetModuleHandle(NULL) + GetProcAddress (names in civ5headless.def).
+//
+// Findings from FirePlace/lib/FireWorksWin32.lib (disassembly) and the SDK's
+// CivilizationV_Server.exe:
+// - FMemHooks (operator new/delete, FireMalloc/FireFree) binds all FSBA* procs plus
+//   GetSmallObjectAllocator once; it then calls GetSmallObjectAllocator(false) and uses the
+//   small-block allocator only if that returns non-NULL. Every allocation then calls
+//   FSBAAllocate (NULL means "use malloc") and every free calls FSBADeallocate (false means
+//   "use free"). The host's allocator is "disabled": a non-NULL dummy instance so the
+//   binding completes once, FSBAAllocate always NULL, FSBADeallocate always false, so all DLL
+//   memory comes from the shared MSVCR90 heap.
+// - GetTempHeap returns a TempHeap whose members the DLL's own (inlined/linked) TempHeap
+//   code reads directly: lock at +0x00 (16-byte aligned), m_pMemHead +0x10,
+//   m_uiCurrentOffset +0x14, m_uiCapacity +0x18, m_dwFlags +0x1c. Allocate bumps the offset
+//   and returns NULL when full (callers then fall back to the heap); the last DeAllocate
+//   resets the offset. The host provides a real 8 MB block.
+// - FStringA/W_GetStringInitData return the shared empty-string header (all zero, then the
+//   terminator); the server's are zero-initialised statics too.
+// - GetLogFileMgr / PeekLogFileMgr return the FILogFileMgr; GetFileSystemMgr the
+//   FIFileSystem. GetMemTrackerForDLL may return NULL (FireWorks then has no tracker).
+// - The DLL contains no reference to FJobSet*, GetMemTrackerForDLL or
+//   GetSmallObjectAllocatorInitParams, and exports std::_Init_locks::operator= itself; those
+//   five are logging stubs here, with the server's FJobSetInitImpl behaviour (*p = 0).
+#include "HHCommon.h"
+#include "engine/HHRuntime.h"
+#include "engine/HHLogFiles.h"
+#include "engine/HHFileSystem.h"
+#include <stddef.h>
+
+namespace
+{
+	enum ExportId
+	{
+		EX_FJobSetAddJobImpl,
+		EX_FJobSetInitImpl,
+		EX_FJobSetUninitImpl,
+		EX_FJobSetWaitImpl,
+		EX_FSBAAllocate,
+		EX_FSBADeallocate,
+		EX_FSBADisable,
+		EX_FSBAGetMaxAllocatorSize,
+		EX_FSBAHasAllocatorForSize,
+		EX_FSBAIsDisabled,
+		EX_FSBAIsSmallBlock,
+		EX_FSBAPreventCreation,
+		EX_FStringA_GetStringInitData,
+		EX_FStringW_GetStringInitData,
+		EX_GetFileSystemMgr,
+		EX_GetLogFileMgr,
+		EX_GetMemTrackerForDLL,
+		EX_GetSmallObjectAllocator,
+		EX_GetSmallObjectAllocatorInitParams,
+		EX_GetTempHeap,
+		EX_PeekLogFileMgr,
+		EX_InitLocksAssign,
+		NUM_EXPORTS
+	};
+
+	const char* s_aszExportNames[NUM_EXPORTS] =
+	{
+		"FJobSetAddJobImpl", "FJobSetInitImpl", "FJobSetUninitImpl", "FJobSetWaitImpl",
+		"FSBAAllocate", "FSBADeallocate", "FSBADisable", "FSBAGetMaxAllocatorSize",
+		"FSBAHasAllocatorForSize", "FSBAIsDisabled", "FSBAIsSmallBlock", "FSBAPreventCreation",
+		"FStringA_GetStringInitData", "FStringW_GetStringInitData", "GetFileSystemMgr",
+		"GetLogFileMgr", "GetMemTrackerForDLL", "GetSmallObjectAllocator",
+		"GetSmallObjectAllocatorInitParams", "GetTempHeap", "PeekLogFileMgr",
+		"??4_Init_locks@std@@QAEAAV01@ABV01@@Z",
+	};
+
+	volatile LONG s_alExportCounts[NUM_EXPORTS];
+	const char* s_aszExportPhase[NUM_EXPORTS];
+
+	inline void ExportHit(ExportId eId)
+	{
+		if(InterlockedIncrement(&s_alExportCounts[eId]) == 1)
+		{
+			s_aszExportPhase[eId] = HHGetPhase();
+			HHLog("export first call: %s (phase %s)", s_aszExportNames[eId], HHGetPhase());
+		}
+	}
+
+	// Unused exports: count and, under --strict, abort.
+	void UnusedExportHit(ExportId eId)
+	{
+		ExportHit(eId);
+		if(HHGetOptions().strict)
+			HHFatal("--strict: unexpected call of export %s", s_aszExportNames[eId]);
+	}
+
+	// TempHeap layout as read by FireWorks' TempHeap code in the DLL.
+	struct HHTempHeap
+	{
+		__declspec(align(16)) volatile LONG lLock;
+		LONG alPad[3];
+		BYTE* pMemHead;
+		volatile LONG lCurrentOffset;
+		UINT uiCapacity;
+		DWORD dwFlags;
+	};
+	C_ASSERT(offsetof(HHTempHeap, pMemHead) == 0x10);
+	C_ASSERT(offsetof(HHTempHeap, lCurrentOffset) == 0x14);
+	C_ASSERT(offsetof(HHTempHeap, uiCapacity) == 0x18);
+	C_ASSERT(offsetof(HHTempHeap, dwFlags) == 0x1c);
+
+	const UINT kTempHeapBytes = 8u * 1024u * 1024u;
+	HHTempHeap s_tempHeap;
+
+	// FStringAData / FStringWData: alloc length, data length, locked, fixed, then the text.
+	struct HHStringAInit { int iAllocLength; int iDataLength; USHORT bLocked; USHORT bFixed; char sz[4]; };
+	struct HHStringWInit { int iAllocLength; int iDataLength; USHORT bLocked; USHORT bFixed; wchar_t wsz[2]; };
+	HHStringAInit s_stringAInit;
+	HHStringWInit s_stringWInit;
+
+	// Dummy small-object allocator: only its address matters (non-NULL completes binding).
+	struct HHSmallObjectAllocator { char ach[256]; } s_smallObjectAllocator;
+	struct HHSmallObjectAllocatorInitParams { char ach[64]; } s_smallObjectAllocatorInitParams;
+	volatile LONG s_lSBADisabled = 1;
+	volatile LONG s_lSBAPreventCreation = 0;
+}
+
+void HHExportsInit()
+{
+	memset(&s_tempHeap, 0, sizeof(s_tempHeap));
+	s_tempHeap.pMemHead = (BYTE*)_aligned_malloc(kTempHeapBytes, 16);
+	s_tempHeap.uiCapacity = s_tempHeap.pMemHead ? kTempHeapBytes : 0;
+	memset(&s_stringAInit, 0, sizeof(s_stringAInit));
+	memset(&s_stringWInit, 0, sizeof(s_stringWInit));
+}
+
+void HHExportsCheck()
+{
+	// The temp heap must be fully released whenever the DLL is idle.
+	if(s_tempHeap.lLock != 0 || s_tempHeap.lCurrentOffset != 0)
+		HHLogError("TempHeap not released: lock %08x offset %u", (unsigned)s_tempHeap.lLock, (unsigned)s_tempHeap.lCurrentOffset);
+	if(s_stringAInit.iAllocLength || s_stringAInit.iDataLength || s_stringAInit.sz[0] ||
+	   s_stringWInit.iAllocLength || s_stringWInit.iDataLength || s_stringWInit.wsz[0])
+		HHLogError("FString empty-string data was modified");
+}
+
+std::vector<HHExportRecord> HHGetExportRecords()
+{
+	std::vector<HHExportRecord> out;
+	for(int i = 0; i < NUM_EXPORTS; ++i)
+	{
+		HHExportRecord r;
+		r.name = s_aszExportNames[i];
+		r.count = s_alExportCounts[i];
+		r.phase = s_aszExportPhase[i] ? s_aszExportPhase[i] : "";
+		out.push_back(r);
+	}
+	return out;
+}
+
+extern "C"
+{
+	// Job system (unused by the game DLL). Signatures follow CivilizationV_Server.exe.
+	int __cdecl FJobSetAddJobImpl(void* pJobSet, void* pJob, void* pData)
+	{
+		UNUSED_VARIABLE(pJobSet); UNUSED_VARIABLE(pJob); UNUSED_VARIABLE(pData);
+		UnusedExportHit(EX_FJobSetAddJobImpl);
+		return 0;
+	}
+	void __cdecl FJobSetInitImpl(void** ppJobSet)
+	{
+		UnusedExportHit(EX_FJobSetInitImpl);
+		if(ppJobSet)
+			*ppJobSet = NULL;
+	}
+	void __cdecl FJobSetUninitImpl(void** ppJobSet)
+	{
+		UNUSED_VARIABLE(ppJobSet);
+		UnusedExportHit(EX_FJobSetUninitImpl);
+	}
+	void __cdecl FJobSetWaitImpl(void* pJobSet)
+	{
+		UNUSED_VARIABLE(pJobSet);
+		UnusedExportHit(EX_FJobSetWaitImpl);
+	}
+
+	// Small-block allocator: disabled, every request falls back to the CRT heap.
+	FSmallObjectAllocator* __cdecl GetSmallObjectAllocator(bool bCreate)
+	{
+		UNUSED_VARIABLE(bCreate);
+		ExportHit(EX_GetSmallObjectAllocator);
+		return reinterpret_cast<FSmallObjectAllocator*>(&s_smallObjectAllocator);
+	}
+	FSmallObjectAllocatorInitParams* __cdecl GetSmallObjectAllocatorInitParams()
+	{
+		UnusedExportHit(EX_GetSmallObjectAllocatorInitParams);
+		return reinterpret_cast<FSmallObjectAllocatorInitParams*>(&s_smallObjectAllocatorInitParams);
+	}
+	void* __cdecl FSBAAllocate(size_t nSize)
+	{
+		UNUSED_VARIABLE(nSize);
+		ExportHit(EX_FSBAAllocate);
+		return NULL;
+	}
+	bool __cdecl FSBADeallocate(void* pBlock)
+	{
+		UNUSED_VARIABLE(pBlock);
+		ExportHit(EX_FSBADeallocate);
+		return false;
+	}
+	void __cdecl FSBADisable(bool bState)
+	{
+		ExportHit(EX_FSBADisable);
+		// Stays disabled whatever is asked; recorded for the report only.
+		UNUSED_VARIABLE(bState);
+	}
+	bool __cdecl FSBAIsDisabled()
+	{
+		ExportHit(EX_FSBAIsDisabled);
+		return s_lSBADisabled != 0;
+	}
+	bool __cdecl FSBAIsSmallBlock(void* pBlock, size_t& stSize)
+	{
+		UNUSED_VARIABLE(pBlock); UNUSED_VARIABLE(stSize);
+		ExportHit(EX_FSBAIsSmallBlock);
+		return false;
+	}
+	bool __cdecl FSBAHasAllocatorForSize(size_t tSize)
+	{
+		UNUSED_VARIABLE(tSize);
+		ExportHit(EX_FSBAHasAllocatorForSize);
+		return false;
+	}
+	size_t __cdecl FSBAGetMaxAllocatorSize()
+	{
+		ExportHit(EX_FSBAGetMaxAllocatorSize);
+		return 0;
+	}
+	bool __cdecl FSBAPreventCreation(bool bState)
+	{
+		ExportHit(EX_FSBAPreventCreation);
+		return InterlockedExchange(&s_lSBAPreventCreation, bState ? 1 : 0) != 0;
+	}
+
+	void* __cdecl FStringA_GetStringInitData()
+	{
+		ExportHit(EX_FStringA_GetStringInitData);
+		return &s_stringAInit;
+	}
+	void* __cdecl FStringW_GetStringInitData()
+	{
+		ExportHit(EX_FStringW_GetStringInitData);
+		return &s_stringWInit;
+	}
+
+	FIFileSystem* __cdecl GetFileSystemMgr()
+	{
+		ExportHit(EX_GetFileSystemMgr);
+		return &HHFileSystem::Get();
+	}
+	FILogFileMgr* __cdecl GetLogFileMgr()
+	{
+		ExportHit(EX_GetLogFileMgr);
+		return &HHLogFileMgr::Get();
+	}
+	FILogFileMgr* __cdecl PeekLogFileMgr()
+	{
+		ExportHit(EX_PeekLogFileMgr);
+		return &HHLogFileMgr::Get();
+	}
+	void* __cdecl GetMemTrackerForDLL()
+	{
+		UnusedExportHit(EX_GetMemTrackerForDLL);
+		return NULL;
+	}
+	void* __cdecl GetTempHeap()
+	{
+		ExportHit(EX_GetTempHeap);
+		return &s_tempHeap;
+	}
+
+	void __cdecl HHCountInitLocksAssign()
+	{
+		ExportHit(EX_InitLocksAssign);
+	}
+
+	// std::_Init_locks::operator= itself is in HHInitLocks.asm (decorated name).
+}
