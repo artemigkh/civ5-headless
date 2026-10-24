@@ -66,3 +66,6 @@ commit it with the change it describes.
 
 - 2026-10-24: branch and worktree created; plan written; the user's answers recorded as decisions.
   Database builder added (M4), saves made optional (M7), VP map scripts added to the matrix.
+- 2026-10-25: M1 done (fc197fd34). Real-game include() probe (run hh-probe-include-20261025a): one file
+  per name, later-activated mod wins (VP's AssignStartingPlots over CP's), mods over DLC and base; the
+  return value is a table of included paths; a missing name returns an empty table; no `debug` library.
