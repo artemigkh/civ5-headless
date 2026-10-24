@@ -21,14 +21,14 @@ commit it with the change it describes.
   its worktree when paused):
   - host: M2 (new-game generation), worktree `work/wt/hh-host`, branch `hh-host` (at 92caccb78 when last
     checked; it has the merged recorder and digest work).
-  - dbbuild: M4 (database builder as a host subcommand plus `work/headless/build_db.py`), worktree
-    `work/wt/hh-dbbuild`, branch `hh-dbbuild` from 21856555b. Must not launch the game; it prepares three
-    test edits for the main session to check against game launches.
   - contract: writes `docs/headless-engine-contract.md` from the M0 traces, worktree `work/wt/hh-contract`,
     branch `hh-contract` from 0ed40de35. Reads the run data in the main checkout; no game, no tuner.
   On resume after a pause: read each worktree's `RESUME.md` and relaunch each agent with its original
   work order (the briefs are summarised in plan section 4) plus the checkpoint.
-- **Merged:** recorder (D1, 021ba53f4) and digest (D2–D5, 92caccb78); their worktrees are removed.
+- **Merged:** recorder (D1, 021ba53f4), digest (D2–D5, 92caccb78) and database builder (M4, 0c240f6bb); their
+  worktrees are removed. M4: `work/headless/build_db.py` (+ `civ5headless.exe builddb`) builds a database
+  identical to both oracles in about 3 s; usage and findings in `docs/headless-dbbuild.md`. Still open:
+  the test edits against game launches (`work/headless/dbbuild_test_edits.py`, steps in that doc).
   Reference: `docs/headless-dll-additions.md`.
 - **Fixed after the merges** (393b7ceb7): a crash at DLL unload (`~CvGlobals` reset the stacking rules
   cache after its static destruction), which also lost the trace tail; the trace now writes its end line
@@ -67,9 +67,10 @@ commit it with the change it describes.
   1. Finish M0: compare the A/A pair (`python tools/headless/hhdigest.py compare A B` on their
      `HeadlessDigest.log`) and the digest-off run's T100 dump against them.
   2. Review `docs/headless-engine-contract.md` (agent) and merge.
-  3. Review and merge `hh-host` (M2) and `hh-dbbuild` (M4) when they report; run the M4 test edits against
-     game launches.
-  4. Restore the AI build and mods before handing back.
+  3. After the A/A runs: check the four M4 test edits against game launches (the `sqlerror` edit tells
+     whether the engine stops an SQL file at its first error, as the builder does).
+  4. Review and merge `hh-host` (M2) when it reports.
+  5. Restore the AI build and mods before handing back.
 - **Uncommitted files:** none besides this ledger.
 
 ## Milestones
@@ -80,7 +81,7 @@ commit it with the change it describes.
 | M1 | Host boots the DLL | done | fc197fd34 | go: boot passes; small-block allocator disabled (all DLL memory from the MSVCR90 heap) |
 | M2 | New-game generation | in progress | | T000 digest parity, incl. Communitu and Continental Drift |
 | M3 | Turn loop and autoplay | todo | | per-turn digest parity |
-| M4 | Database builder | in progress | | can run alongside M3; `dbdiff.py` oracle |
+| M4 | Database builder | done (game check of test edits open) | 0c240f6bb | can run alongside M3; `dbdiff.py` oracle |
 | M5 | Breadth parity | todo | | matrix in plan section 6 |
 | M6 | Tooling and throughput | todo | | vpbench backend, parallel runner |
 | M7 | Saves | not planned | | optional follow-up |
@@ -94,3 +95,5 @@ commit it with the change it describes.
   return value is a table of included paths; a missing name returns an empty table; no `debug` library.
 - 2026-10-25: D1 recorder and D2–D5 digest merged. Fixed the unload crash in static destruction. vpbench
   pins spec seeds. M4 agent started. Trace build deployed for the M0 recordings.
+- 2026-10-25: M4 merged (0c240f6bb): builder output identical to both game oracles; mod order, error semantics and
+  engine-only steps (DLC blocking, map script defaults, DLL post-processing) in `docs/headless-dbbuild.md`.
