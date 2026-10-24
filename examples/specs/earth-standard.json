@@ -1,0 +1,3 @@
+{"map": {"type": "MAP_EARTH", "size": "WORLDSIZE_STANDARD"},
+ "speed": "GAMESPEED_STANDARD", "era": "ERA_ANCIENT", "difficulty": "HANDICAP_EMPEROR",
+ "seeds": {"map": 7007, "sync": 8008}}

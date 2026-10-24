@@ -78,9 +78,23 @@ public:
 
 	static FILogFile* GetLuaLog();
 
+	// include() implementation (pushes the result table; returns 1).
+	int Include(lua_State* L, const char* szName, bool bPattern);
+	// Loads and runs a file in L's environment; logs errors.
+	bool RunFile(lua_State* L, const std::string& strPath);
+	static std::string StateName(lua_State* L);
+	const std::vector<std::string>& GetLoadedFiles() const { return m_loadedFiles; }
+	void LogIncludeSummary() const;
+	// The DLL's script utility: its libraries are registered in every new thread.
+	void SetScriptUtility(ICvScriptSystemUtility1* pUtility) { m_pUtility = pUtility; }
+
 private:
 	bool ProtectedCall(lua_State* L, int nArgs, int nRet, const char* szWhat);
 	lua_State* m_L;
 	std::map<lua_State*, int> m_threads; // thread -> registry reference
+	void RecordInclude(const std::string& strPath);
 	int m_iErrors;
+	ICvScriptSystemUtility1* m_pUtility;
+	std::vector<std::string> m_loadedFiles;        // every file loaded, in order
+	std::map<std::string, int> m_includeCounts;    // "context|name" -> include calls
 };

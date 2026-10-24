@@ -26,7 +26,16 @@ struct HHOptions
 	std::vector<std::string> luaSearch; // folders LoadFile searches, in order
 	std::vector<HHModRef> mods;          // activated mods (IsModActivated)
 	std::vector<std::string> dlcs;       // valid DLC package GUIDs; empty: every DLC is valid
-	HHOptions() : language("en_US"), strict(false), verbose(false), gameLogging(false), freeLibrary(true) {}
+	// newgame (M2)
+	std::string specPath;    // resolved game spec (work/headless/gamespec.py resolve)
+	std::string modsDir;     // deployed MODS folder (read-only); mod paths are re-rooted to it
+	std::string modsDbPath;  // Civ5ModsDatabase.db (copied into the run folder)
+	bool noMods;             // ignore the mods database (no activated mods)
+	bool luaDebugLibrary;    // keep the debug table in _G (see HHScriptSystem)
+	std::vector<std::string> playerOptions; // TYPE=0|1 overrides of the PlayerOptions defaults
+	__int64 exeSeed;         // pregame seeds before Game.Init (-1: the spec's map seed)
+	HHOptions() : language("en_US"), strict(false), verbose(false), gameLogging(false), freeLibrary(true),
+		noMods(false), luaDebugLibrary(true), exeSeed(-1) {}
 };
 
 struct HHPaths
