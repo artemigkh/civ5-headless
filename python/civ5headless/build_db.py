@@ -240,6 +240,43 @@ def build_vfs(game: Path, ordered, blocked_folders):
     return vfs
 
 
+def dlc_manifest(game: Path):
+    """Hashes of what the expansion/DLC layer is built from: every package's data files."""
+    out = {}
+    for pkg_dir in sorted(d for d in (game / 'Assets/DLC').iterdir() if d.is_dir()):
+        h = hashlib.sha256()
+        for p in sorted(pkg_dir.rglob('*')):
+            if p.is_file() and p.suffix.lower() in ('.xml', '.sql', '.civ5pkg', '.lua'):
+                h.update(str(p.relative_to(pkg_dir)).lower().encode() + b'\0' + p.read_bytes())
+        out[pkg_dir.name] = h.hexdigest().upper()
+    for exe in ('CivilizationV.exe', 'CvGameDatabaseWin32Final Release.dll'):
+        if (game / exe).is_file():
+            out[exe] = sha256(game / exe)
+    return out
+
+
+def snapshot_staleness(game: Path, snapshot: Path, manifest_path):
+    """Warnings when the DLC snapshot no longer matches the installed game."""
+    notes = []
+    con = sqlite3.connect(snapshot.resolve().as_uri() + '?mode=ro', uri=True)
+    in_snapshot = {r[0].upper() for r in con.execute('SELECT PackageID FROM DownloadableContent')}
+    con.close()
+    # Keyed packages are the DLC the game lists in DownloadableContent (EUI/VPUI UI packages have no key).
+    installed = {g.replace('-', '').upper() for g, (pkg, root) in find_dlc_packages(game).items() if text_of(root, 'Key')}
+    if installed - in_snapshot:
+        notes.append('WARNING: DLC installed but not in the snapshot (stale snapshot?): ' + ', '.join(sorted(installed - in_snapshot)))
+    path = manifest_path or snapshot.with_name(snapshot.name + '.dlc.json')
+    if path.is_file():
+        recorded = json.loads(path.read_text(encoding='utf-8'))
+        current = dlc_manifest(game)
+        changed = sorted(k for k in set(recorded) | set(current) if recorded.get(k) != current.get(k))
+        if changed:
+            notes.append('WARNING: game/DLC files changed since the snapshot was taken: ' + ', '.join(changed))
+    elif manifest_path:
+        notes.append(f'WARNING: DLC manifest {manifest_path} not found')
+    return notes
+
+
 def latest_exe():
     marker = ROOT / 'work/latest-headless-build-path.txt'
     if marker.is_file():
@@ -259,10 +296,10 @@ def sha256(path):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--mods-dir', type=Path, required=True, help='MODS folder (or a pinned copy) holding the .modinfo files')
+    ap.add_argument('--mods-dir', type=Path, help='MODS folder (or a pinned copy) holding the .modinfo files')
     ap.add_argument('--mods-db', type=Path, help='Civ5ModsDatabase.db: activated mods (Activated = 1) and a cross-check')
     ap.add_argument('--mod', action='append', default=[], help='activated mod GUID[:version] (repeatable; overrides --mods-db)')
-    ap.add_argument('--out', type=Path, required=True, help='database to write')
+    ap.add_argument('--out', type=Path, help='database to write')
     ap.add_argument('--snapshot', type=Path, default=DEFAULT_SNAPSHOT, help='DLC snapshot (Civ5DebugDatabase.db, no mods)')
     ap.add_argument('--path-as', type=Path, help='MODS folder recorded in MapScripts.FileName (default: the real MODS folder)')
     ap.add_argument('--game-dir', type=Path, default=DEFAULT_GAME)
@@ -270,9 +307,17 @@ def main(argv=None):
     ap.add_argument('--exe', type=Path, help='civ5headless.exe (default: the latest work/build-headless.py output)')
     ap.add_argument('--no-postprocess', action='store_true', help='skip PerformDatabasePostProcessing')
     ap.add_argument('--oracle', type=Path, help='reference database to compare with (dbdiff.py)')
-    ap.add_argument('--keep-run', action='store_true', help='keep the run folder (logs, plan, report) next to --out')
+    ap.add_argument('--dlc-manifest', type=Path,
+                    help='DLC content manifest recorded with the snapshot (default: <snapshot>.dlc.json when present)')
+    ap.add_argument('--write-dlc-manifest', type=Path, help='write the current DLC manifest here and exit')
     a = ap.parse_args(argv)
     t0 = time.monotonic()
+    if a.write_dlc_manifest:
+        a.write_dlc_manifest.write_text(json.dumps(dlc_manifest(a.game_dir), indent=1) + '\n', encoding='utf-8')
+        print('wrote', a.write_dlc_manifest)
+        return 0
+    if not a.mods_dir or not a.out:
+        ap.error('--mods-dir and --out are required')
 
     mods_dir = a.mods_dir.resolve()
     out = a.out.resolve()
@@ -299,6 +344,7 @@ def main(argv=None):
         blocked += [g for g in m.blocked_dlc if g not in blocked]
     dlc_lines, dlc_notes = dlc_removal_sql(a.game_dir, a.snapshot, blocked)
     notes += dlc_notes
+    notes += snapshot_staleness(a.game_dir, a.snapshot, a.dlc_manifest)
     pkgs = find_dlc_packages(a.game_dir)
     blocked_folders = {pkgs[g][0].parent.name for g in blocked if g in pkgs}
 

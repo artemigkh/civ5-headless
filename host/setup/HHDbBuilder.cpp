@@ -571,6 +571,9 @@ namespace
 				const char* kOptionFields[] = { "Name", "Description", "ReadOnly", "Hidden", "DefaultValue", "SortPriority" };
 				for(size_t i = 0; i < sizeof(kOptionFields) / sizeof(kOptionFields[0]); ++i)
 					o.push_back(std::make_pair(std::string(kOptionFields[i]), ReadField(L, opt, kOptionFields[i])));
+				// A missing SortPriority is stored as 0 (base Ice_Age.lua's landmass option).
+				if(o[7].second.type == SqlValue::NIL)
+					o[7].second = IntValue(0);
 				bOk = InsertRow(db, "MapScriptOptions", o, err);
 
 				lua_getfield(L, opt, "Values");
