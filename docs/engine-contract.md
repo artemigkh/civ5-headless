@@ -80,9 +80,10 @@ Limits of the traces (read before trusting a "never seen"):
    the DLL, not from timing, so a host loop "call `Update` until the turn ends" reproduces it. The real game waits
    ~105 ms between Updates (median gap in every turn) [M]: 2.6 s of a ~3 s early turn is idle pacing.
 7. **Lua hook semantics are not what the host does today** (all four dispatchers return false without running
-   listeners). Engine semantics measured in S4 (section 10.1). Gameplay listeners seen in AA100:
-   `PlayerCityFounded`, `TeamTechResearched`, `CityConstructed`, `CityBoughtPlot`, `PlayerDoTurn`,
-   `SetPopulation`, `UnitPromoted` (the last three come from EUI UI scripts; section 10.2).
+   listeners). Engine semantics measured in S4 (section 10.1). Hooks with listeners in AA100:
+   `PlayerCityFounded` and `TeamTechResearched` (the two gameplay add-ins of plan M3.2), and `PlayerDoTurn`,
+   `SetPopulation`, `UnitPromoted`, `CityConstructed`, `CityBoughtPlot` (EUI UI scripts; section 10.2). No test or
+   accumulator event had a listener.
 8. **Autosaves write the game only on turn 0 and every 10th turn** [M]: `AutoSave` is called once per turn
    (`CvPlayer::setTurnActive(false)` for the first alive player) and twice on turn 0 (initial + post-turn), but
    `CvDllGame::Write` & co. run only for the turn-0 calls and on turns 10, 20, … 90 (AA100), i.e.
@@ -95,8 +96,8 @@ Limits of the traces (read before trusting a "never seen"):
    UI thread (`SetTimeStr`, `PreGame::write`, `Game::Write`, `Map::Write`, teams, players,
    `WriteSupportingClassData`), copies the sync RNG (`CvDllRandom::CopyFrom/Write/Read`), calls
    `RandomNumberGeneratorSyncCheck(8, rng, true)` and clears the network deltas, then the core thread advances the
-   turn. AA100 (armed before "continue", the vpbench order for reference runs) has none of this. Use the AA100
-   order as the reference and in the host.
+   turn. AA100 (vpbench calls setup-info → arm-autoplay → continue) has none of this. Use the AA100 order for
+   reference runs and in the host.
 10. **The LoadScreen pauses the game** [S]: `LoadScreen.lua` calls `Game.SetPausePlayer(activePlayer)` when the
     game is initialised and `Game.SetPausePlayer(-1)` on "continue". The first Updates (4 in AA100, 5 in S1) run
     while paused and do nothing; the initial autosave (`AutoSave(true,false)`, `CvGame::update` at turn slice 0)
@@ -135,8 +136,8 @@ Limits of the traces (read before trusting a "never seen"):
 ## 3. Phase A: process start and DLL load (boot)
 
 In the real game the vanilla `CvGameCore_Expansion2.dll` serves the main menu; activating the mods unloads it and
-loads VP's DLL from the mod folder, so the trace (and this phase) starts inside the "activate mods" call
-(t ≈ −3.6 s on the trace clock), with the mods' database already built by the exe [M][I].
+loads VP's DLL from the mod folder [I], so the trace (and this phase) starts inside the "activate mods" call
+(which began at t ≈ −3.6 s on the trace clock), with the mods' database already built by the exe [M][I].
 
 Inbound order (UI thread) [M]:
 
@@ -151,7 +152,7 @@ Inbound order (UI thread) [M]:
 | 0.050 | `GetGame` → `GetGameDeals` → `CreateDeal()` → 0 | the exe's scratch deal (engine-side) |
 | 0.050 | `QueryInterface(ICvGameContext2)`, `SetEngineUserInterface(ui)` | |
 | 0.050 | pregame reset: `setGameMode(-1)`, `setGameType(0,0)`, `resetSlots`, `resetGame`, `resetPlayers`, `loadFromIni(ini)` | **`loadFromIni` sets both seeds to `timeGetTime()`** (config seeds are 0) [S] |
-| 0.051 | `setDLCAllowed(guid,true)` ×12, then the exe re-applies the last session's setup: `setGameMode(-1)`, `setGameType(0,0)`, `setActivePlayer(-1)`, `setGameSpeed(1)`, `setEra(0)`, `setWorldSize(4,true)`, `setMaxTurns(0)`, `setMapScriptName(<MODS>\(2) Vox Populi\Mapscripts/Continental_Drift.lua)`, `SetLoadFileName("",0)`, `setInternetGame(false)`, `setNumMinorCivs(-1)`, `setTurnTimer(1)`, `SetGameOption(QUICK_COMBAT,1)`, `SetGameOption(QUICK_MOVEMENT,1)`, `setPitBossTurnTime(0)`, 64 × `setTurnNotify*`, and per slot 0–63 the block `SetDLCAvailable, setLeaderName, setCivilizationDescription/ShortDescription/Adjective/Password, setEmailAddress, setNickname, setWhiteFlag, setHandicap(p, 5 for slot 0 else 8), setCivilization(p, 20 for slot 0 else −1), setTeamType(p,p), setLeaderHead(p,−1), setPlayerColor(p,−1), setSlotClaim, setSlotStatus, setPlayable, setMinorCiv, setNetID, setReady` | user-profile state; all overwritten or reset by the setup below |
+| 0.051 | `setDLCAllowed(guid,true)` ×12, then the exe re-applies the last session's setup: `setGameMode(-1)`, `setGameType(0,0)`, `setActivePlayer(-1)`, `setGameSpeed(1)`, `setEra(0)`, `setWorldSize(4,true)`, `setMaxTurns(0)`, `setMapScriptName(<MODS>\(2) Vox Populi\Mapscripts/Continental_Drift.lua)`, `SetLoadFileName("",0)`, `setInternetGame(false)`, `setNumMinorCivs(-1)`, `setTurnTimer(1)`, `SetGameOption(QUICK_COMBAT,1)`, `SetGameOption(QUICK_MOVEMENT,1)`, `setPitBossTurnTime(0)`, 64 × `setTurnNotify*`, and per slot 0–63 the block `SetDLCAvailable, setLeaderName, setCivilizationDescription/ShortDescription/Adjective/Password, setEmailAddress, setNickname, setWhiteFlag, setHandicap, setCivilization, setTeamType(p,p), setLeaderHead(p,−1), setPlayerColor(p,−1), setSlotClaim, setSlotStatus, setPlayable, setMinorCiv, setNetID, setReady` (slot 0: handicap 5, civ 20 = Mongolia with key and package id; slots 1–5 as logged: handicap 8, civ −1) | the user's last setup [I]; overwritten or reset by the setup below |
 | 0.062 | `GetDatabaseLoadUtility` → `FlushGameDatabaseData()` → true, `PerformDatabasePostProcessing()` → true | |
 | 0.083 | `CacheGameDatabaseData()` → true (4.48 s) | OUT `ShouldValidateGameDatabase` → **true**; `GetAudioTagIndex(tag,5)` ×13 (soundscape ids: 5,4,8,3,1,6,0,−1); `GetScriptSystem`, `CreateLuaThread("VP_LUAAPI")` → nested IN `RegisterScriptLibraries(L)` → `FreeLuaThread` |
 
@@ -243,10 +244,11 @@ from the loader (OUT `DoMapSetup(2772)`, `CreateLuaThread("WorldBuilderMapLoader
 
 ### 5.2 Inside `Init2` (Lua map script) [M]
 
-`InitPlayers` → OUT `GetLengthSelectionList` → 0, `setCycleSelectionCounter(1)`, `PublishActivePlayerTurnStart`,
-`openSlot(p)` for the 25 used slots (0–7, 22–37, 63) → `InitMap`: `CreateLuaThread("Map Script")`,
-`LoadFile(L, "Assets\\Maps\\Continents.lua")` → true, `CallCFunction(L, GetMapInitData, …)` → true,
-`DoMapSetup(4160)` (from `CvMap::init`), `CallCFunction(L, GenerateRandomMap, …)` → nested
+`InitPlayers` (turns every closed major slot into an `SS_OBSERVER` slot with an unused civ and its first leader
+[S]) → OUT `GetLengthSelectionList` → 0, `setCycleSelectionCounter(1)`, `PublishActivePlayerTurnStart`,
+`openSlot(p)` for 25 slots → `InitMap`: `CreateLuaThread("Map Script")`,
+`LoadFile(L, "Assets\\Maps\\Continents.lua")` → true, `CallCFunction(L, …)` → true (`GetMapInitData` [S][I]),
+`DoMapSetup(4160)` (from `CvMap::init` [I]), `CallCFunction(L, …)` (`GenerateRandomMap` [I]) → nested
 `CallFunction(L,0,0)` (the script's `GenerateMap`, 2 s; inside it the map RNG via `Map.Rand`:
 `IsGameCoreThread` → false, `IsGameCoreExecuting` → false per draw; `HasGameCoreLock` → true;
 `GameplayYieldMightHaveChanged`, `GameplayFeatureChanged`), `CallCFunction(L, GetGameInitialItemsOverrides, …)`,
@@ -362,6 +364,20 @@ UI thread, every few frames: `UnitIsMoving` (16,617 in AA100), `Map::UpdateLayou
 With a human active (S1 turn 0, turn 5): `UpdateTestEndTurn` every frame (954 in S1, none in AA100),
 `EndTurnTimerReset`, `SetBusyUnitUpdatesRemaining(600)`, `UpdateSelectionList`. None is needed for autoplay [S]
 (section 2); `UpdateTestEndTurn` matters only for human end-of-turn.
+
+### 6.7 Callbacks the engine makes inside OUT calls [M]
+
+Non-accessor inbound calls nested in an outbound call (S1, AA100):
+
+| Inside | Callback | Count (AA100) | Host |
+|---|---|---:|---|
+| `GameplayUnitTeleported`, `GameplayUnitVisibility`, `GameplayUnitCreated`, `GameplayUnitEmbark`, `GameplayUnitDestroyed(InCombat)`, `GameplayCityCreated` | `CvDllMap::UpdateDeferredFog()` | 4,999 | not needed: it flushes the deferred-fog plot list, which is filled only when graphics are initialized, and `CvPlot::updateFog` only notifies the engine [S]; with `SetGraphicsInitialized(true)` call it once per `Update` (or at the end of each top-level call) to keep the list from growing |
+| `GameplayEraChanged` | `CvDllUnit::SetupGraphical()` | 8 | no |
+| `AutoSave` | `SetTimeStr`, `PreGame::write`, `Game/Map/Team/Player::Write`, `WriteSupportingClassData` | 6.5 | no |
+| `ICvUserInterface1::doTurn` | `CvDllPlayer::AddNotification(…, "Losing Gold!", …)` after `GetNumCities`/`GetGold`/`CalculateBaseNetGold` of each player | 1 | no for autoplay: `CvNotifications::Add` returns −1 for non-human players [S] |
+| `GetAutorun` | `CvDllPreGame::autorun()` | — | the answer is the pregame flag (false) |
+| `InsertIntoSelectionList`, `ClearSelectionList` | `ResetPathFinder` (no-op), `SelectionListIgnoreBuildingDefense`, `UpdateSymbolVisibility` (no-op) | few | no |
+| `CreateLuaThread("VP_LUAAPI")` (first Lua use of the DLL) | `RegisterScriptLibraries(L)` | 1 | the `Map Script` and `WorldBuilderMapLoader` threads got no callback, so the libraries live in the shared state; the host registers them once in its single state |
 
 ## 7. Autoplay at the boundary
 
