@@ -111,7 +111,7 @@ def main():
         wait_db_written(started, 'dlc', b)
         shutil.copy2(CACHE / 'Civ5DebugDatabase.db', b.run / 'dlc-debug.db')
         out = str((b.run / 'dlc-ingame.db').resolve()).replace('\\', '/')
-        result['dlcExport'] = b.call('MainMenu', EXPORT % tuner.lua_string(out), 'export-dlc', timeout=300)
+        result['dlcExport'] = b.call('MainMenu', EXPORT % tuner.lua_string(out), 'export-dlc', timeout=120)
         if not (b.run / 'ensure-mods-result.json').exists():
             code = subprocess.run([vpbench.PY, '-B', '-u', str(ROOT / 'work/ensure-benchmark-mods.py'), '--run-dir', str(b.run),
                                    '--expected-mods-json', str(vpbench.MODS)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
@@ -126,7 +126,7 @@ def main():
         wait_db_written(before_mods, 'mods', b)
         shutil.copy2(CACHE / 'Civ5DebugDatabase.db', b.run / 'mods-debug.db')
         out = str((b.run / 'mods-ingame.db').resolve()).replace('\\', '/')
-        result['modsExport'] = b.call('ModsSinglePlayer', EXPORT % tuner.lua_string(out), 'export-mods', timeout=300)
+        result['modsExport'] = b.call('ModsSinglePlayer', EXPORT % tuner.lua_string(out), 'export-mods', timeout=120)
     finally:
         b.quit()
     for phase in ('dlc', 'mods'):

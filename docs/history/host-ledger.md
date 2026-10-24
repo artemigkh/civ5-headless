@@ -12,6 +12,8 @@ commit it with the change it describes.
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
   game is free for this work. Before handing back, restore the AI program's deployed DLL
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
+  Staging packs the mod files of the checkout it runs in, so restore from an `ai-improvements` checkout
+  (a temporary worktree with the toolchain junction), not from this branch.
 - **Done:** `tools/headless/gen_interfaces.py` (0c9645861): trace proxies, host stubs, method table,
   compile-tested with VC9. Baseline release build of this branch: `work/msvc-output/Release/20261024-233829`.
 - **Agents in flight** (Opus, high effort; each in its own worktree and branch, all from 0c9645861; each
