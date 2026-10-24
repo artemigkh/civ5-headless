@@ -206,6 +206,12 @@ oracle exposes all three. Rebuilding the expansion and DLC layer too was conside
 more week, more unknowns (package descriptors, directory-wide load order), and that layer doesn't change
 during development.
 
+**Status (2026-10-25):** built. `work/headless/build_db.py` with `civ5headless.exe builddb` gives databases identical
+to both game oracles in about 3 s. Usage, the mod-order rule, the error semantics and the engine-only steps are in
+`docs/headless-dbbuild.md`. The engine-only steps are DLC blocking (VP blocks DLC_SP_Maps), the map script defaults
+and the DLL post-processing. Still open is the check of the test edits against game launches, run by
+`work/headless/dbbuild_test_edits.py`.
+
 ## 5. Milestones
 
 Each milestone ends with a ledger update and a commit. Estimates assume roughly daily sessions and are

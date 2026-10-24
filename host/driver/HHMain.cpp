@@ -25,6 +25,7 @@
 #include "setup/HHVfs.h"
 #include "setup/HHNewGame.h"
 #include "lua/HHLuaGlobals.h"
+#include "setup/HHDbBuilder.h"
 #include <float.h>
 
 // From shlobj.h, which does not compile after the Firaxis Win32 header's NO* switches.
@@ -759,6 +760,8 @@ namespace
 
 int wmain(int argc, wchar_t** argv)
 {
+	if(argc >= 2 && wcscmp(argv[1], L"builddb") == 0)
+		return HHBuildDbMain(argc, argv);
 	HHOptions& o = HHGetOptions();
 	if(!ParseArgs(argc, argv, o))
 	{
