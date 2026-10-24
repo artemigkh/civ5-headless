@@ -7,8 +7,10 @@ Reads the Firaxis interface headers in CvGameCoreDLLUtil/include and writes:
   CvGameCoreDLL_Expansion2/Headless/HHTraceProxies.gen.h
       Forwarding proxies (DLL side, trace builds only). Every method records a call
       through the HHTrace* functions, forwards to the engine's object and records the
-      return value. The recorder (HHTrace.h) defines HHTraceCall, HHTraceArg and
-      HHTraceRet.
+      return value and simple out parameters. Script argument objects are unwrapped
+      before they go back to the engine. The recorder (Headless/HHTrace.h) defines
+      HHTraceMethod, HHTraceCall, HHTraceArg, HHTraceOutRef, HHTraceRet and
+      HHTraceUnwrapArgs.
   Civ5Headless/gen/HHStubs.gen.h
       Stub bases for the headless host. Every method reports itself through
       HH_STUB_CALL(name) and returns a value-initialised result; the host overrides
@@ -148,6 +150,16 @@ def call_args(m):
     return ', '.join(p['name'] for p in m['params'])
 
 
+# Non-const reference parameters whose value after the call is recorded (out parameters).
+OUT_REF = re.compile(r'^(bool|int|uint|unsigned int|float|double|char\s*\*|CvString)\s*&$')
+# Script argument objects handed back to the engine must be the engine's own objects.
+ARGS_PTR = re.compile(r'^ICvEngineScriptSystemArgs1\s*\*$')
+
+
+def bare_type(decl_type):
+    return ' '.join(re.sub(r'\b_\w+_\b', '', decl_type).split())
+
+
 def gen_proxy(suffix, iface, methods, guids):
     lines = [f'class HHTrace{suffix} : public {iface}', '{', 'public:',
              f'\texplicit HHTrace{suffix}({iface}* pInner) : m_pInner(pInner) {{}}',
@@ -162,13 +174,19 @@ def gen_proxy(suffix, iface, methods, guids):
         elif m['owner'] == 'ICvUnknown' and m['name'] == 'Destroy':
             body.append('\t\tm_pInner->Destroy();')
         else:
-            body.append(f'\t\tHHTraceCall hhCall(HHTRACE_OUT, "{qual}");')
+            body.append('\t\tstatic HHTraceMethod* hhSite = NULL;')
+            body.append(f'\t\tHHTraceCall hhCall(HHTRACE_OUT, "{qual}", hhSite);')
             for p in m['params']:
                 body.append(f"\t\tHHTraceArg(hhCall, {p['name']});")
+            for p in m['params']:
+                if OUT_REF.match(bare_type(p['decl_type'])):
+                    body.append(f"\t\tHHTraceOutRef(hhCall, \"{p['name']}\", {p['name']});")
+            forward = ', '.join(f"HHTraceUnwrapArgs({p['name']})" if ARGS_PTR.match(bare_type(p['decl_type']))
+                                else p['name'] for p in m['params'])
             if m['ret'] == 'void':
-                body.append(f'\t\tm_pInner->{m["name"]}({call_args(m)});')
+                body.append(f'\t\tm_pInner->{m["name"]}({forward});')
             else:
-                body.append(f'\t\t{m["ret"]} hhResult = m_pInner->{m["name"]}({call_args(m)});')
+                body.append(f'\t\t{m["ret"]} hhResult = m_pInner->{m["name"]}({forward});')
                 body.append('\t\tHHTraceRet(hhCall, hhResult);')
                 body.append('\t\treturn hhResult;')
         lines += [f'\t{signature(m)}', '\t{', *body, '\t}']
@@ -216,7 +234,7 @@ def main():
     wrap = (['#pragma warning(push)', '#pragma warning(disable:4996)', ''], ['#pragma warning(pop)', ''])
     OUT_PROXIES.parent.mkdir(parents=True, exist_ok=True)
     OUT_STUBS.parent.mkdir(parents=True, exist_ok=True)
-    OUT_PROXIES.write_text('\n'.join(banner + ['// Requires HHTrace.h (HHTraceCall, HHTraceArg, HHTraceRet).', ''] + wrap[0] + proxies + wrap[1]), encoding='utf-8', newline='\r\n')
+    OUT_PROXIES.write_text('\n'.join(banner + ['// Requires Headless/HHTrace.h.', ''] + wrap[0] + proxies + wrap[1]), encoding='utf-8', newline='\r\n')
     OUT_STUBS.write_text('\n'.join(banner + ['// Requires HH_STUB_CALL(name) and template<class T> T HHStubDefault().', ''] + wrap[0] + stubs + wrap[1]), encoding='utf-8', newline='\r\n')
     OUT_JSON.write_text(json.dumps(table, indent=1) + '\n', encoding='utf-8')
     print(f'wrote {OUT_PROXIES.relative_to(ROOT)}, {OUT_STUBS.relative_to(ROOT)}, {OUT_JSON.relative_to(ROOT)}')
