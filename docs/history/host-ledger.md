@@ -24,6 +24,8 @@ commit it with the change it describes.
   - dbbuild: M4 (database builder as a host subcommand plus `work/headless/build_db.py`), worktree
     `work/wt/hh-dbbuild`, branch `hh-dbbuild` from 21856555b. Must not launch the game; it prepares three
     test edits for the main session to check against game launches.
+  - contract: writes `docs/headless-engine-contract.md` from the M0 traces, worktree `work/wt/hh-contract`,
+    branch `hh-contract` from 0ed40de35. Reads the run data in the main checkout; no game, no tuner.
   On resume after a pause: read each worktree's `RESUME.md` and relaunch each agent with its original
   work order (the briefs are summarised in plan section 4) plus the checkpoint.
 - **Merged:** recorder (D1, 021ba53f4) and digest (D2–D5, 92caccb78); their worktrees are removed.
@@ -38,7 +40,20 @@ commit it with the change it describes.
   `dlc-snapshot-CBF411E4.db`, `mods-reference-08D19878.db` (AI program's package) and
   `mods-reference-08D19878-input/` (the mod files, `Civ5ModsDatabase.db` and database logs that produced
   it; the M4 oracle pair).
-- **Runs in flight:** S1 `hh-m0-s1-continents` (vpbench newgame --spec continents-standard, to T5).
+- **M0 recordings done** (trace build, runs in `work/test-runs/`):
+  - S1 `hh-m0-s1-continents`: Continents spec, seeds 1001/2002 pinned from the file, autoplay to T5;
+    complete trace (5.7 M boundary calls, 41 k lines kept), per-turn digests. The M2 T0 reference.
+  - S3 `hh-m0-s3s4-earth`: `Earth_Small.Civ5Map`, 2 turns, state dumps at T0 and T2
+    (`hhdigest.py verify` passes on both: the Python hash matches the DLL's).
+  - S4 `hh-m0-s4-hooks`: GameEvents semantics. Every listener always runs (no short-circuit); nil counts as
+    false; a raising listener counts as false or 0; `CallHook`'s value stays false; the accumulator sums
+    numbers.
+  - Facts: x87 control word 0x027F (53-bit, nearest), MXCSR 0x1F80, `timeBeginPeriod(1)` = 0. The engine's
+    pregame seeds are map = sync = one clock value. Autosave = OUT `AutoSave(true,false)` followed by
+    synchronous IN `Write` calls; no `WriteReplay`. `Game`, `Map`, `Players` are nil in the front end
+    (`PreGame` exists), so the seeds file is the only pinning route.
+- **Runs in flight:** 100-turn A/A on the Continents spec: `hh-m0-aa100-a` and `-b` (digest on), `-c`
+  (digest off), each ending with a state dump (`game_probe.py --turns 100`).
 - **Also done:**
   - `work/headless/gamespec.py` (a93d5faa8): spec → resolved spec (IDs, seeds) and front-end pregame
     Lua; examples in `work/headless/specs/`.
@@ -49,11 +64,9 @@ commit it with the change it describes.
   - The game's `Civ5ModsDatabase.db` lists every mod's actions (`ModActions`), files and VFS imports
     (`ModFiles.Import`) and entry points; useful for M4 and the VFS.
 - **Next steps:**
-  1. M0 recordings with the deployed trace build: S1 (running), S3 (Earth `.Civ5Map`, 2 turns), S4
-     (`tools/headless/hook-probe.lua` in InGame), then the checks in `docs/headless-dll-additions.md`
-     "To test in the real game" (x87/MXCSR, seeds, `Game` in the front end, 100-turn A/A, `hhdigest.py
-     verify`, `WriteReplay` in autosaves, digest on vs off).
-  2. Write `docs/headless-engine-contract.md` from the traces.
+  1. Finish M0: compare the A/A pair (`python tools/headless/hhdigest.py compare A B` on their
+     `HeadlessDigest.log`) and the digest-off run's T100 dump against them.
+  2. Review `docs/headless-engine-contract.md` (agent) and merge.
   3. Review and merge `hh-host` (M2) and `hh-dbbuild` (M4) when they report; run the M4 test edits against
      game launches.
   4. Restore the AI build and mods before handing back.
