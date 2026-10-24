@@ -8,7 +8,7 @@ commit it with the change it describes.
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
-- **Phase:** M0 and M1 in progress.
+- **Phase:** M0 in progress; M1 done (fc197fd34); M2 started.
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
   game is free for this work. Before handing back, restore the AI program's deployed DLL
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
@@ -22,7 +22,9 @@ commit it with the change it describes.
     `hh-recorder`.
   - digest: D2–D5 (digest, seeds, runtime facts, hook probe), worktree `work/wt/hh-digest`, branch
     `hh-digest`.
-  - host: M1 host skeleton, worktree `work/wt/hh-host`, branch `hh-host`.
+  - host: M1 done and merged (fc197fd34; boot passes under `--strict` in 1.55 s, all 24 info counts
+    match, no unimplemented engine call). Now on M2 (new-game generation) in the same worktree and
+    branch `hh-host`.
   On resume after a pause: read each worktree's `RESUME.md` and relaunch each agent with its original
   work order (the briefs are summarised in plan section 4) plus the checkpoint.
 - **M0 steps 5–6 done** (run `hh-dbcapture-20261025b`): the cached `Civ5DebugDatabase.db` equals the
@@ -52,8 +54,8 @@ commit it with the change it describes.
 | ID | Milestone | Status | Commit | Notes |
 |---|---|---|---|---|
 | M0 | Record the engine contract | todo | | trace recordings, reference A/A, DB check, DLC snapshot |
-| M1 | Host boots the DLL | todo | | go/no-go after this |
-| M2 | New-game generation | todo | | T000 digest parity, incl. Communitu and Continental Drift |
+| M1 | Host boots the DLL | done | fc197fd34 | go: boot passes; small-block allocator disabled (all DLL memory from the MSVCR90 heap) |
+| M2 | New-game generation | in progress | | T000 digest parity, incl. Communitu and Continental Drift |
 | M3 | Turn loop and autoplay | todo | | per-turn digest parity |
 | M4 | Database builder | todo | | can run alongside M3; `dbdiff.py` oracle |
 | M5 | Breadth parity | todo | | matrix in plan section 6 |
