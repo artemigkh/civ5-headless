@@ -241,6 +241,12 @@ At the start of `CvGame::init`, before anything consumes the seeds, and only whe
    `Game` table is available in the context that starts the game; whether the engine registers the DLL's Lua
    libraries in front-end contexts is not visible in the source. The file needs no Lua.
 
+The file is also read, without being consumed, when the exe calls `CvPreGame::setGameStarted(true)` for a new
+game, just before `onGameStarted` draws the random civilizations and city-states through `CvGame::randCore` (which
+reads the pregame map seed). Without that the clock seed the engine sets would pick them. This logs
+`HHSEEDS|point=gameStarted|source=file|exeMap=..|exeSync=..|map=..|sync=..` with the engine's own seeds; the
+`gameInit` line that follows then shows the pinned values as `exeMap`/`exeSync`.
+
 A file request wins over a Lua request. The result is in `HHSEEDS` (`source=file|lua|none|skipped`,
 `pinnedMap`, `pinnedSync`, `error` for parse problems or a failed delete).
 
