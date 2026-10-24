@@ -5,20 +5,32 @@ commit it with the change it describes.
 
 ## Resume here
 
-- **Branch:** `headless-host` (base: master `363d26698`), worktree `work/wt/headless`.
-- **Phase:** planning done and decisions recorded (plan section 9); M0 not started.
+- **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
+  `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
+  committed and on hold).
+- **Phase:** M0 and M1 in progress.
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
-  game is free for this work. After any deployment here, restore the AI program's deployed DLL
-  (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods before
-  handing back.
+  game is free for this work. Before handing back, restore the AI program's deployed DLL
+  (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
+- **Done:** `tools/headless/gen_interfaces.py` (0c9645861): trace proxies, host stubs, method table,
+  compile-tested with VC9. Baseline release build of this branch: `work/msvc-output/Release/20261024-233829`.
+- **Agents in flight** (Opus, high effort; each in its own worktree and branch, all from 0c9645861; each
+  writes `RESUME.md` in its worktree when paused):
+  - recorder: D1 boundary recorder and `-Trace` build, worktree `work/wt/hh-recorder`, branch
+    `hh-recorder`.
+  - digest: D2–D5 (digest, seeds, runtime facts, hook probe), worktree `work/wt/hh-digest`, branch
+    `hh-digest`.
+  - host: M1 host skeleton, worktree `work/wt/hh-host`, branch `hh-host`.
+  On resume after a pause: read each worktree's `RESUME.md` and relaunch each agent with its original
+  work order (the briefs are summarised in plan section 4) plus the checkpoint.
+- **Runs in flight:** `work/headless/db_capture.py --run hh-dbcapture-20261025a` (DLC snapshot and
+  in-memory database check; installed DLL unchanged).
 - **Next steps:**
-  1. D1–D4 in the DLL and the `-Trace` build variant.
-  2. `tools/headless/gen_interfaces.py` (needed by D1 and H2).
-  3. Deploy the trace build, record S1, S3 and S4 (S2 only if M7 is wanted), capture the DLC snapshot
-     (mod-free launch), then restore the AI build and mods.
-- **Uncommitted files:** this ledger and the plan, until the planning commit.
-- **Runs in flight:** none.
-- **Agents / sessions in flight:** none.
+  1. Review the capture; keep `dlc-debug.db` as the DLC snapshot.
+  2. Merge agent branches into `headless-host` as they finish (only `VoxPopuli.vcxproj` is expected to
+     conflict).
+  3. Deploy the merged trace build, record S1, S3 and S4, then restore the AI build and mods.
+- **Uncommitted files:** none besides this ledger and `work/headless/db_capture.py`.
 
 ## Milestones
 
