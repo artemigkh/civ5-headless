@@ -97,7 +97,8 @@ void HHLogFile::ErrorMsg(const TCHAR* format, ...)
 void HHLogFile::SetFlags(uint uiFlags) { m_uiFlags = uiFlags; }
 uint HHLogFile::GetFlags() const { return m_uiFlags; }
 void HHLogFile::SetBufSize(int) {}
-LPCWSTR HHLogFile::GetFileName() const { return m_wstrName.c_str(); }
+// The full path: the DLL finds the Logs folder from it (GetFullPathNameW on the returned name).
+LPCWSTR HHLogFile::GetFileName() const { return m_wstrPath.c_str(); }
 void HHLogFile::Archive(LPCWSTR) {}
 
 //------------------------------------------------------------------------------
