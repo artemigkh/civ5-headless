@@ -61,7 +61,7 @@ class RealSide:
                     continue
                 g = self.play(session, game)
                 self.result['games'].append(g)
-                if not database_done and g.get('state') in ('completed', 'partial', 'started'):
+                if not database_done and g.get('started'):
                     self.result['database'] = self.capture_database(session)
                     database_done = True
                 if game is not self.games[-1]:
@@ -98,7 +98,7 @@ class RealSide:
             g['startedAt'] = self.now()
             info = session.start_game(game['spec'], seeds.get('map'), seeds.get('sync'), lua_probes=list(self.probes))
             g['start'] = dict(_as_dict(info), seconds=round(time.monotonic() - t, 2))
-            g['state'] = 'started'
+            g['started'] = True
             self.state['phase'] = f"autoplay {game['name']}"
             left = self.deadline - time.monotonic() - self.settings.reserve_seconds
             t = time.monotonic()
@@ -114,7 +114,7 @@ class RealSide:
         finally:
             self.collect(session, folder, g)
         replay = None
-        if callable(getattr(session, 'replay_data', None)) and g['state'] != 'failed':
+        if callable(getattr(session, 'replay_data', None)) and g.get('started'):
             try:
                 replay = session.replay_data()
             except Exception as error:  # noqa: BLE001

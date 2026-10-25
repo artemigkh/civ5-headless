@@ -39,7 +39,14 @@ class Context:
 
     @property
     def real_mode(self):
-        return bool(self.settings.real)
+        """The real game was asked for and the session existed (a missing session makes the run incomplete)."""
+        return bool(self.settings.real) and not (self.real or {}).get('unavailable')
+
+    @property
+    def no_real_reason(self):
+        if not self.settings.real:
+            return 'host-only mode: no real game'
+        return 'the real-game session is not available (' + '; '.join((self.real or {}).get('errors') or []) + ')'
 
     def job(self, role):
         return next((j for j in self.jobs.values() if j.get('role') == role), None)
@@ -55,7 +62,7 @@ class Context:
 
     def real_dir(self, name):
         g = self.real_game(name)
-        return Path(g['dir']) if g and g.get('dir') and g.get('state') in ('completed', 'partial', 'started') else None
+        return Path(g['dir']) if g and g.get('dir') and g.get('state') in ('completed', 'partial') else None
 
 
 # ---- trajectory ----
@@ -142,7 +149,7 @@ def real_trajectory_checks(ctx):
     out = []
     title = 'Real game against host (seeded Tiny game)'
     if not ctx.real_mode:
-        return [check('trajectory.real', title, 'n/a', 'host-only mode: no real game')]
+        return [check('trajectory.real', title, 'n/a', ctx.no_real_reason)]
     real_aa_dir, real_dir, base = ctx.real_dir('trajectory-aa'), ctx.real_dir('trajectory'), ctx.job_dir('base')
     if real_aa_dir is not None and real_dir is not None:
         r, why = _compare(ctx, 'real-aa', real_dir, real_aa_dir, host_only=False)
@@ -231,6 +238,7 @@ def setup_checks(ctx):
             else:
                 g = ctx.real_game(f'setup-{name}')
                 row['real'] = f"real game missing ({(g or {}).get('state', 'not run')}{': ' + g['error'] if g and g.get('error') else ''})"
+                failed |= bool(g and g.get('state') == 'failed')
         rows.append(row)
     title = 'Turn-0 state, seeded setups' + ('' if ctx.real_mode else ' (host A/A)')
     if not any_compared:
@@ -249,7 +257,7 @@ def setup_checks(ctx):
 def pregame_check(ctx, names):
     title = 'PreGame values after setup'
     if not ctx.real_mode:
-        return check('setup.pregame', title, 'n/a', 'host-only mode: no real game to compare with')
+        return check('setup.pregame', title, 'n/a', ctx.no_real_reason)
     rows, compared, failed = [], 0, False
     pairs = [(f'setup-{n}', f'setup-{n}-a') for n in names] + [('trajectory', 'base')]
     for real_name, role in pairs:
@@ -276,7 +284,7 @@ def pregame_check(ctx, names):
 def database_check(ctx):
     title = "Database: host-built against the game's own"
     if not ctx.real_mode:
-        return check('setup.database', title, 'n/a', 'host-only mode: no real game database')
+        return check('setup.database', title, 'n/a', ctx.no_real_reason)
     info = (ctx.real or {}).get('database') or {}
     if not info.get('path'):
         return check('setup.database', title, 'skipped' if not ctx.real else 'fail',

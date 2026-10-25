@@ -130,9 +130,9 @@ class Suite:
         else:
             refs.insert(0, base)
         width = min(s.reference_workers, s.workers)
-        while len(refs) % width and ensemble and len(refs) < width:
-            refs.append(ensemble.pop(0))  # fill the phase so its throughput is that many games at once
-        phases.append(hostside.Phase('references', min(width, len(refs)), refs, throughput=len(refs) == width))
+        while len(refs) % width and ensemble:
+            refs.append(ensemble.pop(0))  # full waves, so the phase's throughput is that many games at once
+        phases.append(hostside.Phase('references', min(width, len(refs)), refs, throughput=len(refs) % width == 0))
         if ensemble:
             phases.append(hostside.Phase('ensemble', min(s.workers, len(ensemble)), ensemble, throughput=True))
         long_jobs = []

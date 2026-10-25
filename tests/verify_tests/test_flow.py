@@ -1,0 +1,271 @@
+"""c5h verify end to end without the game: fake_host.cmd stands in for civ5headless.exe and FakeRealGameSession for
+the real game, so the quick, full and host-only flows run, decide and write their report."""
+import contextlib
+import io
+import json
+import os
+from pathlib import Path
+import sqlite3
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+from civ5headless import config
+from civ5headless.verify import capabilities, settings as settings_mod, suite
+
+import fake_fingerprint
+from fake_session import FakeRealGameSession
+
+HERE = Path(__file__).resolve().parent
+
+SCHEMA = [
+    'CREATE TABLE Worlds(ID INTEGER, Type TEXT, DefaultPlayers INTEGER, DefaultMinorCivs INTEGER)',
+    'CREATE TABLE MapScripts(FileName TEXT, SupportsSinglePlayer INTEGER, Hidden INTEGER)',
+    'CREATE TABLE MapScriptOptions(FileName TEXT, OptionID TEXT, Name TEXT)',
+    'CREATE TABLE MapScriptOptionPossibleValues(FileName TEXT, OptionID TEXT, Value INTEGER, Name TEXT)',
+    'CREATE TABLE Map_Sizes(FileName TEXT, MapType TEXT, WorldSizeType TEXT)',
+    'CREATE TABLE GameSpeeds(ID INTEGER, Type TEXT)',
+    'CREATE TABLE Eras(ID INTEGER, Type TEXT)',
+    'CREATE TABLE HandicapInfos(ID INTEGER, Type TEXT)',
+    'CREATE TABLE Victories(ID INTEGER, Type TEXT)',
+    'CREATE TABLE GameOptions(ID INTEGER, Type TEXT, SupportsSinglePlayer INTEGER)',
+    'CREATE TABLE Civilizations(ID INTEGER, Type TEXT, Playable INTEGER)',
+]
+ROWS = {
+    'Worlds': [(0, 'WORLDSIZE_DUEL', 2, 4), (1, 'WORLDSIZE_TINY', 4, 8), (2, 'WORLDSIZE_SMALL', 6, 12), (3, 'WORLDSIZE_STANDARD', 8, 16)],
+    'MapScripts': [('Assets\\Maps\\Continents.lua', 1, 0), ('Assets\\Maps\\Pangaea.lua', 1, 0)],
+    'MapScriptOptions': [], 'MapScriptOptionPossibleValues': [],
+    'Map_Sizes': [('Assets\\Maps\\Earth_Small.Civ5Map', 'MAP_EARTH', 'WORLDSIZE_SMALL')],
+    'GameSpeeds': [(2, 'GAMESPEED_STANDARD'), (3, 'GAMESPEED_QUICK')],
+    'Eras': [(0, 'ERA_ANCIENT')],
+    'HandicapInfos': [(5, 'HANDICAP_EMPEROR')],
+    'Victories': [(0, 'VICTORY_TIME'), (2, 'VICTORY_DOMINATION')],
+    'GameOptions': [(0, 'GAMEOPTION_RAGING_BARBARIANS', 1)],
+    'Civilizations': [(0, 'CIVILIZATION_AMERICA', 1)],
+}
+
+
+def make_db(path):
+    con = sqlite3.connect(path)
+    for stmt in SCHEMA:
+        con.execute(stmt)
+    for table, rows in ROWS.items():
+        if rows:
+            con.executemany(f'INSERT INTO {table} VALUES({",".join("?" * len(rows[0]))})', rows)
+    con.commit()
+    con.close()
+
+
+SMALL = dict(turns=12, ensemble=10, workers=4, reference_workers=2, min_members=6, sync_probe_turns=5, stats_from_turn=1,
+             setups=[{'name': 'continents', 'map': {'script': 'Assets/Maps/Continents.lua', 'size': 'WORLDSIZE_TINY'},
+                      'seeds': {'map': 11, 'sync': 12}},
+                     {'name': 'earth', 'map': {'civ5map': 'Assets/Maps/Earth_Small.Civ5Map'}, 'seeds': {'map': 13, 'sync': 14}}],
+             standard_spec={'map': {'script': 'Assets/Maps/Pangaea.lua', 'size': 'WORLDSIZE_STANDARD'}, 'seeds': {'map': 5, 'sync': 6}},
+             affinity='none', reserve_seconds=5)
+
+
+@unittest.skipUnless(os.name == 'nt', 'Windows only (job objects)')
+class FlowTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        tmp = self.root = Path(self.tmp.name)
+        db = tmp / 'game.db'
+        make_db(db)
+        (tmp / 'game').mkdir()
+        for name in ('mods.db', 'loc.db', 'game.dll'):
+            (tmp / name).write_bytes(b'x')
+        self.cfg = config.Config(game_dir=tmp / 'game', mods_dir=tmp / 'MODS', mods_db=tmp / 'mods.db', loc_db=tmp / 'loc.db',
+                                 dll=tmp / 'game.dll', exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs')
+        self.env = mock.patch.dict(os.environ, {'C5H_TEST_PYTHON': sys.executable, 'C5H_FAKE_LUA_PROBE': '1'})
+        self.env.start()
+        for k in [k for k in os.environ if k.startswith('C5H_FAKE_') and k != 'C5H_FAKE_LUA_PROBE']:
+            del os.environ[k]
+        FakeRealGameSession.sync_matters = False
+        FakeRealGameSession.diverge_at = None
+        FakeRealGameSession.transient_at = None
+        FakeRealGameSession.scale = 1.0
+        FakeRealGameSession.fail_in = None
+        FakeRealGameSession.with_extras = True
+        FakeRealGameSession.instances = []
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def run_suite(self, mode, caps=None, **over):
+        s = settings_mod.build(mode, dict(SMALL, **over.pop('table', {})), over)
+        overrides = dict(session_class=FakeRealGameSession, fingerprint=fake_fingerprint,
+                         fingerprint_probe=fake_fingerprint.PROBE, hazards=None)
+        overrides.update(caps or {})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            doc = suite.run(self.cfg, s, out_dir=self.root / f'out-{mode}-{len(list(self.root.glob("out-*")))}',
+                            caps_overrides=overrides, log=lambda m: None)
+        self.checks = {c['id']: c for c in doc['checks']}
+        return doc
+
+    def status(self, cid):
+        return self.checks[cid]['status']
+
+    def test_quick_pass(self):
+        doc = self.run_suite('quick')
+        self.assertEqual(doc['verdict'], 'pass', [c for c in doc['checks'] if c['status'] == 'fail'])
+        self.assertEqual(doc['exitCode'], 0)
+        for cid in ('setup.turn0', 'setup.pregame', 'setup.database', 'trajectory.aa', 'trajectory.frame-skew',
+                    'trajectory.heap-perturb', 'trajectory.probe-neutral', 'trajectory.real', 'statistics.envelope'):
+            self.assertEqual(self.status(cid), 'pass', (cid, self.checks[cid]['summary']))
+        self.assertIn('matches the real game for 12 of 12 turns', doc['headline'])
+        self.assertEqual(self.checks['trajectory.real']['details']['method'], 'digest')
+        out = Path(doc['run'])
+        html = (out / 'report.html').read_text(encoding='utf-8')
+        self.assertIn('<svg', html)
+        self.assertNotIn('<script', html)
+        self.assertNotIn('http', html.split('</style>')[0])
+        self.assertEqual(json.loads((out / 'verify.json').read_text(encoding='utf-8'))['verdict'], 'pass')
+        # the real side: one session, segments per game, the probes injected
+        s = FakeRealGameSession.instances[0]
+        self.assertEqual(s.calls.count('launch'), 1)
+        self.assertEqual(s.calls.count('start_game'), 3)  # 2 setups and the trajectory game
+        seg = (out / 'real/trajectory/Lua.segment.log').read_text(encoding='utf-8')
+        self.assertNotIn('C5HFP|turn=11|p00', (out / 'real/setup-continents/Lua.segment.log').read_text(encoding='utf-8'))
+        self.assertIn('C5HFP|turn=11|', seg)
+        # the ensemble varied the map seed (the fake game ignores the sync seed)
+        self.assertEqual(self.checks['statistics.ensemble']['details']['vary'], 'map')
+        # history: one line; a second analysis does not add another
+        hist = list((self.root / 'runs/verify-history').glob('*.jsonl'))
+        self.assertEqual(len(hist), 1)
+        suite.analyse(out, self.cfg, log=lambda m: None)
+        self.assertEqual(len(hist[0].read_text(encoding='utf-8').splitlines()), 1)
+
+    def test_real_divergence_fails(self):
+        FakeRealGameSession.diverge_at = 7
+        doc = self.run_suite('quick')
+        self.assertEqual(self.status('trajectory.real'), 'fail')
+        self.assertEqual(self.checks['trajectory.real']['details']['matchedTurns'], 7)
+        self.assertEqual(doc['exitCode'], 1)
+        self.assertIn('matches the real game for 7 of 12 turns', doc['headline'])
+
+    def test_transient_is_reported_not_failed(self):
+        FakeRealGameSession.transient_at = 5
+        doc = self.run_suite('quick')
+        self.assertEqual(self.status('trajectory.real'), 'pass')
+        self.assertEqual(len(self.checks['trajectory.real']['details']['transients']), 1)
+        self.assertEqual(doc['exitCode'], 0)
+
+    def test_nondeterministic_dll_sets_the_bar(self):
+        # every run differs from turn 4: the A/A warns, and the real game matching for 4 turns passes
+        os.environ['C5H_FAKE_NONDETERMINISTIC'] = '4'
+        FakeRealGameSession.diverge_at = 4
+        doc = self.run_suite('quick')
+        self.assertEqual(self.status('trajectory.aa'), 'warn')
+        self.assertEqual(self.status('trajectory.real'), 'pass', self.checks['trajectory.real']['summary'])
+        self.assertEqual(self.checks['trajectory.real']['details']['reproducible'], 4)
+        self.assertNotEqual(doc['exitCode'], 3)
+
+    def test_frame_skew_and_probe_dependence(self):
+        os.environ['C5H_FAKE_SKEW_DIVERGE'] = '6'
+        os.environ['C5H_FAKE_PROBE_DIVERGE'] = '3'
+        self.run_suite('host-only')
+        self.assertEqual(self.status('trajectory.frame-skew'), 'warn')
+        self.assertEqual(self.status('trajectory.probe-neutral'), 'fail')
+        self.assertEqual(self.status('trajectory.heap-perturb'), 'pass')
+
+    def test_full_mode(self):
+        os.environ['C5H_FAKE_VICTORY'] = '20'
+        doc = self.run_suite('full', ensemble=8, victory_games=2, victory_max_turns=40, standard_turns=6)
+        self.assertEqual(self.status('trajectory.real-aa'), 'pass')
+        self.assertEqual(self.status('trajectory.standard'), 'pass')
+        self.assertEqual(self.status('performance.standard'), 'info')
+        self.assertEqual(self.status('health.victory-games'), 'pass', self.checks['health.victory-games']['summary'])
+        self.assertEqual(doc['verdict'], 'pass', [c['summary'] for c in doc['checks'] if c['status'] == 'fail'])
+        names = [g['name'] for g in doc['real']['games']]
+        self.assertEqual(names, ['setup-continents', 'setup-earth', 'trajectory', 'trajectory-aa', 'standard'])
+
+    def test_host_only(self):
+        os.environ['C5H_FAKE_SYNC_MATTERS'] = '1'
+        os.environ['C5H_FAKE_HOST_REPORT'] = '1'
+        doc = self.run_suite('host-only')
+        self.assertEqual(doc['mode'], 'host-only')
+        self.assertTrue(doc['headline'].startswith('Host only'))
+        for cid in ('setup.pregame', 'setup.database', 'trajectory.real'):
+            self.assertEqual(self.status(cid), 'n/a')
+        self.assertEqual(self.checks['statistics.ensemble']['details']['vary'], 'sync')
+        self.assertEqual(self.status('health.stubs'), 'fail')  # host-report.json names one unknown stub
+        self.assertEqual(self.checks['health.stubs']['details']['unknown'][0]['method'], 'ICvEngineUtility1::Unknown')
+        self.assertEqual(doc['exitCode'], 1)
+        tp = {r['workers'] for r in doc['performance']['throughput']}
+        self.assertEqual(tp, {1, 2, 4})
+
+    def test_lua_errors_only_in_the_host(self):
+        os.environ['C5H_FAKE_LUA_ERROR'] = '1'
+        self.run_suite('quick')
+        self.assertEqual(self.status('health.lua-errors'), 'fail')
+        self.assertIn('Thing.lua:12', self.checks['health.lua-errors']['details']['hostOnly'][0]['message'])
+
+    def test_biased_real_game_is_flagged(self):
+        FakeRealGameSession.scale = 1.6
+        FakeRealGameSession.diverge_at = 1
+        self.run_suite('quick', ensemble=16)
+        self.assertIn(self.status('statistics.envelope'), ('warn', 'fail'))
+        self.assertEqual(self.status('statistics.bias'), 'warn', self.checks['statistics.bias']['summary'])
+
+    def test_no_session_is_incomplete(self):
+        doc = self.run_suite('quick', caps=dict(session_class=None))
+        self.assertEqual(doc['verdict'], 'incomplete')
+        self.assertEqual(doc['exitCode'], 3)
+        self.assertIn('the real trajectory game', doc['essentialMissing'])
+
+    def test_old_host_without_probes(self):
+        os.environ['C5H_FAKE_LUA_PROBE'] = '0'
+        doc = self.run_suite('quick', caps=dict(fingerprint=None, fingerprint_probe=None))
+        self.assertEqual(self.status('setup.pregame'), 'n/a')
+        self.assertEqual(self.status('trajectory.probe-neutral'), 'n/a')
+        self.assertEqual(self.status('trajectory.real'), 'pass')  # digests still compare
+        self.assertFalse(doc['capabilities']['luaProbe'])
+
+    def test_session_failure_is_reported(self):
+        FakeRealGameSession.fail_in = 'autoplay'
+        doc = self.run_suite('quick')
+        self.assertEqual(doc['verdict'], 'fail')  # the real trajectory game failed
+        self.assertTrue(any('fake failure' in (g.get('error') or '') for g in doc['real']['games']))
+
+    def test_budget_trims_the_ensemble(self):
+        # a 1.5-minute budget with a prior of 400 s per game: the ensemble is cut and the single phase dropped
+        from civ5headless.verify import hostside
+        with mock.patch.dict(hostside.PRIOR, startup=100.0):
+            doc = self.run_suite('host-only', budget_minutes=1.5, ensemble=12)
+        self.assertTrue(any('trimmed' in n for n in doc['notes']), doc['notes'])
+        self.assertTrue(any('beside the references' in n for n in doc['notes']), doc['notes'])
+        self.assertLessEqual(sum(1 for j in doc['jobs'] if j['kind'] == 'ensemble' and j['state'] == 'completed'), 6)
+
+
+class CapabilityTest(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'nt', 'Windows only (.cmd)')
+    def test_host_usage(self):
+        with mock.patch.dict(os.environ, {'C5H_TEST_PYTHON': sys.executable, 'C5H_FAKE_LUA_PROBE': '1'}):
+            opts, err = capabilities.host_options(HERE / 'fake_host.cmd')
+        self.assertIsNone(err)
+        self.assertIn('--lua-probe', opts)
+        self.assertIn('--frame-skew', opts)
+        with mock.patch.dict(os.environ, {'C5H_TEST_PYTHON': sys.executable, 'C5H_FAKE_LUA_PROBE': '0'}):
+            opts, _ = capabilities.host_options(HERE / 'fake_host.cmd')
+        self.assertNotIn('--lua-probe', opts)
+
+    def test_missing_pieces_are_notes(self):
+        cap = capabilities.detect(None, None, dict(host_options=['--frame-skew']))
+        self.assertFalse(cap.lua_probe)
+        self.assertIn('luaProbe', cap.notes)
+        if cap.session_class is None:
+            self.assertIn('realGameSession', cap.notes)
+        d = cap.to_dict()
+        self.assertEqual(d['hostOptions'], ['--frame-skew'])
+
+    def test_unrunnable_host(self):
+        opts, err = capabilities.host_options(Path(tempfile.gettempdir()) / 'no-such-host.exe')
+        self.assertEqual(opts, set())
+        self.assertIn('cannot run', err)
+
+
+if __name__ == '__main__':
+    unittest.main()
