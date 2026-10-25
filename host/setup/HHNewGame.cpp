@@ -1018,6 +1018,48 @@ namespace
 		pPlayer->Destroy();
 	}
 
+	// M6 tooling: runs a Lua file in a fresh thread and returns its result as JSON ("null" when it
+	// returns nothing; empty when the file cannot be read or raises).
+	std::string RunFileToJson(HHScriptSystem& kScripts, const std::string& file, const char* szName)
+	{
+		std::string chunk;
+		if(!HHReadTextFile(file, chunk))
+		{
+			HHLogError("%s: cannot read %s", szName, file.c_str());
+			return std::string();
+		}
+		std::string json;
+		if(lua_State* L = RunReturning(kScripts, szName, chunk.c_str()))
+		{
+			json = lua_isnoneornil(L, -1) ? std::string("null") : HHLuaToJson(L, -1, 0);
+			kScripts.FreeLuaThread(L);
+		}
+		return json;
+	}
+
+	// M6 tooling: appends one line to a run file with a Win32 handle (the DLL's logs can exhaust the CRT's streams).
+	void AppendLine(const std::string& path, const std::string& line)
+	{
+		HANDLE h = CreateFileW(HHWiden(path).c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+		                       FILE_ATTRIBUTE_NORMAL, NULL);
+		if(h == INVALID_HANDLE_VALUE)
+			return;
+		const std::string text = line + "\n";
+		DWORD written = 0;
+		WriteFile(h, text.data(), (DWORD)text.size(), &written, NULL);
+		CloseHandle(h);
+	}
+
+	// M6 tooling: checkpoints\turn-NNNN[-final].json from --checkpoint-lua, wrapped as vpbench writes them.
+	void WriteCheckpoint(HHScriptSystem& kScripts, int iTurn, const char* szSuffix, double dSeconds)
+	{
+		const std::string json = RunFileToJson(kScripts, HHGetOptions().checkpointLua, "Headless checkpoint-lua");
+		if(json.empty())
+			return;
+		HHWriteTextFile(HHGetPaths().run + HHFormat("checkpoints\\turn-%04d%s.json", iTurn, szSuffix),
+		                "{\n \"utc\": \"" + UtcNow() + "\",\n \"seconds\": " + HHFormat("%.3f", dSeconds) + ",\n \"data\": " + json + "\n}\n");
+	}
+
 	std::string DumpState(HHScriptSystem& kScripts, const std::string& folder)
 	{
 		std::string chunk = "if Game.DumpHeadlessState == nil then return nil end\nreturn Game.DumpHeadlessState([==[" + folder + "]==])\n";
@@ -1080,6 +1122,14 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 {
 	const double t0 = Now();
 	HHScriptSystem& kScripts = *kIf.pScripts;
+	const HHOptions& o = HHGetOptions();
+	// M6 tooling (--lua-before-arm): vpbench sets the diagnostics level (and the A/B mask) here.
+	if(!o.luaBeforeArm.empty())
+	{
+		const std::string json = RunFileToJson(kScripts, o.luaBeforeArm, "--lua-before-arm");
+		HHWriteTextFile(HHGetPaths().run + "lua-before-arm.json", (json.empty() ? std::string("null") : json) + "\n");
+		kResult.steps.push_back("--lua-before-arm " + o.luaBeforeArm + (json.empty() ? " failed" : " ok"));
+	}
 	// ARM (work/headless/game_probe.py, InGame context, while the load screen is up): quick combat and
 	// quick movement are game options (serialized state); SetAIAutoPlay moves the active player to an
 	// observer slot and re-sends the player options for it.
@@ -1113,6 +1163,12 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	// engine calls it once per frame from its core thread; one call processes one player).
 	int iTurn = kIf.pGame->GetGameTurn();
 	double tTurn = Now();
+	// M6 tooling: turn-times.jsonl as vpbench writes it (seconds since autoplay started, here exact).
+	const double tStart = tTurn;
+	const std::string turnTimes = HHGetPaths().run + "turn-times.jsonl";
+	DeleteFileW(HHWiden(turnTimes).c_str());
+	if(!o.checkpointLua.empty())
+		HHEnsureDirectory(HHGetPaths().run + "checkpoints");
 	int iTurnUpdates = 0;
 	int iIdle = -1;
 	const int kMaxUpdatesPerTurn = 2000;
@@ -1141,6 +1197,9 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 			iTurn = iNow;
 			tTurn = Now();
 			iTurnUpdates = 0;
+			AppendLine(turnTimes, HHFormat("{\"turn\": %d, \"seconds\": %.3f}", iNow, tTurn - tStart));
+			if(!o.checkpointLua.empty() && o.checkpointEvery > 0 && iNow % o.checkpointEvery == 0)
+				WriteCheckpoint(kScripts, iNow, "", tTurn - tStart);
 		}
 		if(kIf.pGame->GetGameState() != GAMESTATE_ON)
 		{
@@ -1164,19 +1223,15 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	kResult.netMessages = kIf.pEngine->GetNetMessageCounts();
 	kResult.timings.push_back(std::make_pair(std::string("autoplay"), Now() - t0));
 
-	if(!HHGetOptions().luaBeforeDump.empty())
+	// M6 tooling: the final checkpoint (vpbench's turn-NNNN-final.json), after the idle updates.
+	if(!o.checkpointLua.empty())
+		WriteCheckpoint(kScripts, kIf.pGame->GetGameTurn(), "-final", Now() - tStart);
+	if(!o.luaBeforeDump.empty())
 	{
-		std::string chunk;
-		if(HHReadTextFile(HHGetOptions().luaBeforeDump, chunk))
-		{
-			if(lua_State* L = RunReturning(kScripts, "--lua-before-dump", chunk.c_str()))
-			{
-				kResult.steps.push_back(HHFormat("--lua-before-dump %s -> %s", HHGetOptions().luaBeforeDump.c_str(), lua_isstring(L, -1) ? lua_tostring(L, -1) : "?"));
-				kScripts.FreeLuaThread(L);
-			}
-		}
-		else
-			HHLogError("cannot read %s", HHGetOptions().luaBeforeDump.c_str());
+		const std::string json = RunFileToJson(kScripts, o.luaBeforeDump, "--lua-before-dump");
+		HHWriteTextFile(HHGetPaths().run + "lua-before-dump.json", (json.empty() ? std::string("null") : json) + "\n");
+		kResult.steps.push_back(HHFormat("--lua-before-dump %s -> %s", o.luaBeforeDump.c_str(),
+		                                 json.size() > 200 ? (json.substr(0, 200) + "...").c_str() : json.c_str()));
 	}
 	const std::string folder = HHGetPaths().run + HHFormat("dump-t%03d", kResult.iTurnsPlayed);
 	const std::string line = DumpState(kScripts, folder);
