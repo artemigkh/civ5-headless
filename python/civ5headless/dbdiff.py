@@ -28,6 +28,14 @@ def rows(conn, table):
 def diff(ref_path, cand_path, show=5, data_only=False):
     ref = sqlite3.connect(Path(ref_path).resolve().as_uri() + '?mode=ro', uri=True)
     cand = sqlite3.connect(Path(cand_path).resolve().as_uri() + '?mode=ro', uri=True)
+    try:
+        return _diff(ref, cand, ref_path, cand_path, show, data_only)
+    finally:
+        ref.close()
+        cand.close()
+
+
+def _diff(ref, cand, ref_path, cand_path, show, data_only):
     out = {'reference': str(ref_path), 'candidate': str(cand_path)}
     rt, ct = objects(ref, 'table'), objects(cand, 'table')
     out['tables_only_reference'] = sorted(set(rt) - set(ct))

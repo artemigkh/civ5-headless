@@ -216,7 +216,7 @@ def newgame(a, quiet=False, cfg=None):
     cfg = cfg or config.load()
     folder = run_folder(a, cfg)
     if (folder / 'status.json').is_file():
-        raise SystemExit(f'{folder} already has a status.json; use a new run name')
+        raise FileExistsError(f'{folder} already has a status.json; use a new run name')
     run = Run(folder)
     status = dict(state='failed', backend='headless')
     job = None
@@ -400,7 +400,7 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
     cfg: a config.Config (default config.load()); seeds: {'map': M, 'sync': S} over the spec's;
     lua_probes: files for the host's --lua-probe; heap_perturb, frame_skew: the host options of the same name;
     host_args: further host arguments. The other keywords are the c5h run options of the same name; anything left
-    None comes from the configuration."""
+    None comes from the configuration. Raises FileExistsError when the run folder already holds a game."""
     cfg = cfg or config.load()
     if isinstance(spec, dict):
         folder = Path(run_dir).resolve() if run_dir else cfg.require('runs') / (run or f'spec-{datetime.now():%Y%m%d-%H%M%S}')
@@ -465,7 +465,11 @@ def main(argv=None, cfg=None):
     add_arguments(p)
     a = p.parse_args(argv)
     check_args(a, p.error)
-    return newgame(a, cfg=cfg or config.load())
+    try:
+        return newgame(a, cfg=cfg or config.load())
+    except FileExistsError as error:
+        print(f'c5h run: {error}', file=sys.stderr)
+        return 2
 
 
 if __name__ == '__main__':

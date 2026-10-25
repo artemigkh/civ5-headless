@@ -1,8 +1,6 @@
-{"out": "work/test-runs/hh-ab-example", "workers": 8, "affinity": "p-first",
- "defaults": {"spec": "work/headless/specs/continents-standard.json", "turns": 150,
-              "modsDir": "E:/Projects/Civ5StackMod/work/headless/db/mods-headless-host-0ed40de35-input/MODS",
-              "modsDb": "E:/Projects/Civ5StackMod/work/headless/db/mods-headless-host-0ed40de35-input/Civ5ModsDatabase.db",
-              "maxSeconds": 3600, "prune": true},
- "variants": {"A": {"dll": "E:/Projects/Civ5StackMod/work/msvc-output/Release/20261025-015922/CvGameCore_Expansion2.dll", "abRole": "baseline"},
-              "B": {"dll": "E:/Projects/Civ5StackMod/work/msvc-output/Release/20261025-015258/CvGameCore_Expansion2.dll", "abRole": "test"}},
+{"comment": "A/B of two DLL builds on 4 seeds; replace the two dll paths. Mods, databases and the host come from the configuration (c5h doctor); runs go to <runs>/example-ab.",
+ "workers": 8, "affinity": "p-first",
+ "defaults": {"spec": "../specs/continents-standard.json", "turns": 150, "maxSeconds": 3600, "prune": true},
+ "variants": {"A": {"dll": "path/to/baseline/CvGameCore_Expansion2.dll", "abRole": "baseline"},
+              "B": {"dll": "path/to/test/CvGameCore_Expansion2.dll", "abRole": "test"}},
  "seeds": [[1001, 2002], [3101, 3202], [4101, 4202], [5101, 5202]]}

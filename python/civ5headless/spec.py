@@ -68,7 +68,14 @@ def _find_file(db, sql, name, what):
 
 def resolve(spec, db_path):
     """The resolved spec: names checked and IDs looked up in the game database at db_path."""
-    db = sqlite3.connect(f'file:{Path(db_path).as_posix()}?mode=ro', uri=True)
+    db = sqlite3.connect(Path(db_path).resolve().as_uri() + '?mode=ro', uri=True)
+    try:
+        return _resolve(spec, db)
+    finally:
+        db.close()
+
+
+def _resolve(spec, db):
     seeds = dict(spec.get('seeds') or {})
     seeds.setdefault('map', secrets.randbelow(2**31 - 1) + 1)
     seeds.setdefault('sync', secrets.randbelow(2**31 - 1) + 1)

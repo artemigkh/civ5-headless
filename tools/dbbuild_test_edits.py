@@ -1,12 +1,13 @@
 """Test edits for the database builder (plan M4 acceptance), checked later against game launches.
 
-  python work/headless/dbbuild_test_edits.py [--input DIR] [--edits xmlrow,sqlupdate,newtable,sqlerror]
-                                             [--scratch DIR] [--oracle GAME.db] [--dll DLL]
-  python work/headless/dbbuild_test_edits.py --apply-to MODS [--edits ...]   # edit a MODS folder in place
-  python work/headless/dbbuild_test_edits.py --revert MODS                   # undo --apply-to
+  python tools/dbbuild_test_edits.py --input DIR [--edits xmlrow,sqlupdate,newtable,sqlerror]
+                                     [--scratch DIR] [--oracle GAME.db] [--baseline GAME.db] [--dll DLL]
+  python tools/dbbuild_test_edits.py --apply-to MODS [--edits ...]   # edit a MODS folder in place
+  python tools/dbbuild_test_edits.py --revert MODS                   # undo --apply-to
 
-Default mode copies the pinned builder input (MODS files and Civ5ModsDatabase.db) to a scratch
-folder, applies the edits there, builds the database with build_db.py and prints the values each
+Development tool for Vox Populi mod sets (the edits name VP and CP files). Default mode copies a pinned builder
+input (DIR with MODS/ and Civ5ModsDatabase.db) to a scratch folder (default <runs>/dbbuild-test-edits),
+applies the edits there, builds the database with c5h dbbuild and prints the values each
 edit should produce. The edits only change existing UpdateDatabase files (no modinfo change):
 
   xmlrow     VP Units/NewUnits.xml: UNIT_HEAVY_SKIRMISHER PortraitIndex 10 -> 47 (a changed XML row)
@@ -17,13 +18,13 @@ edit should produce. The edits only change existing UpdateDatabase files (no mod
              launch shows whether the engine does the same (the one error semantic the oracle could
              not check, because the current mods have no SQL errors).
 
-Checking against the game (main session, with the game free):
+Checking against the game (with the game free):
   1. --apply-to "<Documents>\\My Games\\Sid Meier's Civilization 5\\MODS" (backs up each file as
      *.hhtest-orig), launch the game with the benchmark mods active, copy cache\\Civ5DebugDatabase.db
-     (e.g. work/headless/db_capture.py), then --revert.
+     (realgame/dbcapture.py), then --revert.
   2. Build from the same edited files: copy the deployed MODS (.modinfo/.xml/.sql/.lua) and
      Civ5ModsDatabase.db as a new pinned input, and run this script with --input on the unedited
-     copy plus --oracle GAME.db, or run build_db.py on the edited copy with --oracle.
+     copy plus --oracle GAME.db, or run c5h dbbuild on the edited copy with --oracle.
   3. dbdiff prints identical when the builder matches; the printed checks name the rows to inspect.
 """
 from __future__ import annotations
@@ -36,12 +37,9 @@ import sqlite3
 import sys
 
 sys.dont_write_bytecode = True
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
-import build_db  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'python'))  # the package, from this checkout
+from civ5headless import config, dbbuild  # noqa: E402
 
-DEFAULT_INPUT = build_db.MAIN / 'work/headless/db/mods-reference-08D19878-input'
-DEFAULT_SCRATCH = build_db.ROOT / 'work/headless-builds/test-edits'
 VP = '(2) Vox Populi'
 CP = '(1) Community Patch'
 BACKUP = '.hhtest-orig'
@@ -120,14 +118,14 @@ def copy_input(src: Path, dst: Path):
 
 
 def main(argv=None):
+    cfg = config.load()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--input', type=Path, default=DEFAULT_INPUT, help='pinned builder input (MODS\\, Civ5ModsDatabase.db)')
-    ap.add_argument('--scratch', type=Path, default=DEFAULT_SCRATCH)
+    ap.add_argument('--input', type=Path, help='pinned builder input (MODS\\, Civ5ModsDatabase.db)')
+    ap.add_argument('--scratch', type=Path, default=cfg.runs / 'dbbuild-test-edits' if cfg.runs else None)
     ap.add_argument('--edits', default=','.join(ORDER))
     ap.add_argument('--oracle', type=Path, help='game database captured with the same edits')
-    ap.add_argument('--baseline', type=Path, default=build_db.MAIN / 'work/headless/db/mods-reference-08D19878.db',
-                    help='game database without the edits (for the before values)')
-    ap.add_argument('--dll', type=Path, default=build_db.MAIN / 'work/msvc-output/Release/20261025-002246/CvGameCore_Expansion2.dll')
+    ap.add_argument('--baseline', type=Path, help='game database without the edits (for the before values)')
+    ap.add_argument('--dll', type=Path, default=cfg.dll, help='game DLL for post-processing (default: config dll)')
     ap.add_argument('--apply-to', type=Path, help='apply the edits to this MODS folder in place (with backups)')
     ap.add_argument('--revert', type=Path, help='restore the backups below this MODS folder')
     a = ap.parse_args(argv)
@@ -140,8 +138,10 @@ def main(argv=None):
         return 0
     if a.apply_to:
         apply_edits(a.apply_to, names, backup=True)
-        print(f'revert with: python {Path(__file__).name} --revert "{a.apply_to}"')
+        print(f'revert with: python tools/{Path(__file__).name} --revert "{a.apply_to}"')
         return 0
+    if not a.input:
+        ap.error('--input DIR (a pinned builder input) is required')
 
     scratch = a.scratch.resolve()
     copy_input(a.input, scratch / 'input')
@@ -151,7 +151,7 @@ def main(argv=None):
             '--out', str(out), '--dll', str(a.dll)]
     if a.oracle:
         args += ['--oracle', str(a.oracle)]
-    rc = build_db.main(args)
+    rc = dbbuild.main(args, cfg)
     con = sqlite3.connect(out)
     base = sqlite3.connect(a.baseline.resolve().as_uri() + '?mode=ro', uri=True) if a.baseline and a.baseline.is_file() else None
     ok = True

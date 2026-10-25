@@ -263,7 +263,7 @@ def steam_libraries(root):
             if isinstance(value, dict) and value.get('path'):
                 libs.append(Path(value['path']))
             elif isinstance(value, str) and key.isdigit():
-                libs.append(Path(value))  # pre-2021 format: "1" "D:\\SteamLibrary"
+                libs.append(Path(value))  # pre-2021 format: "1" "<library folder>"
         break
     unique = []
     for lib in libs:
