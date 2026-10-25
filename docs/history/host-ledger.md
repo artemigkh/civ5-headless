@@ -135,13 +135,18 @@ commit it with the change it describes.
     --rolling-dumps 5`: game_probe compares the live digest log, writes `divergence.json`/`live-compare.json`, quits 2
     turns after the first difference and keeps the per-turn DLL dumps from 5 turns before it (`<run>/HeadlessDumps`);
   - short re-records: game_probe `--stop-turn S` (same `--turns` arm count) and `--dump-from/--dump-to`.
-- **Runs in flight:** `m5-batch2.json` (16 short Tiny cases): host_first on 6C73DC9A with host exe
-  `work/wt/hh-host/work/headless-output/Release/20261025-074012`, then recorded host-first with rolling dumps
-  (status `work/test-runs/hh-m5b-matrix.json`); then host_first for `m5-long.json`. The m5-long recording waits for the
-  T125 verdict (a DLL fix would mean another deploy). Its status has continents-s1 "failed" (stopped at T81 on
-  89F146A7, identical to the host to T81) and a stop file `work/test-runs/hh-m5l-matrix.stop`: remove it and add
-  `--retry-failed` when recording. s1 dump re-record done: the real game is identical to itself T0–127 (A/A), so the
-  T125 difference is the host's.
+- **Frame-count dependence (T125 cause, 326c159b6, merged 23bb05ebf):** `CvPlayerTrade::UpdateTradeStats` cached the
+  per-city trade route counts for one turn slice (one `CvGame::update`, one engine frame); a route cleared in the same
+  slice left `UpdateReligion` reading the old count (+production per active trade route: real game 600, host 400 for
+  one turn). The real game's value was the stale one; results depended on how many Updates each engine runs. Fixed
+  with a trade connections version. Host `--frame-skew K` (8c4406842) adds an Update before every K-th one: a
+  host-only detector of frame-dependent caches. Rule: no more real-game recording until skew vs no-skew is identical
+  across the Tiny long games, the 100-turn Tiny cases and continents-s1/-s2 Standard (K=2 and K=7).
+- **Runs in flight:** the 9 Tiny map-option cases of `m5-batch2.json` (3 turns, no trade routes yet) on 6C73DC9A,
+  host-first; the recorder stops before the 100-turn cases (stop file `work/test-runs/hh-m5b-matrix.stop`). The host
+  agent runs the frame-skew sweep. Then: field-map build of the merged DLL, deploy, host_first for m5-long and the
+  rest of m5-batch2, record host-first with rolling dumps (m5-long: remove `work/test-runs/hh-m5l-matrix.stop`, add
+  `--retry-failed`). s1 dump re-record done: the real game is identical to itself T0–127 (A/A).
 - **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: the s1 T124–127 dumps against the
   host's (and the A/A check); the late-game logging fix (the AI settle log called `GetDanger`, which rebuilds dirty
   danger plots; host logging on/off differed at T154, T209, T252–254, T292–294; the uncommitted fix clears T154 and
