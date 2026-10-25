@@ -35,7 +35,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-from . import config, dbdiff
+from . import config, dbdiff, snapshot
 
 # Schema of the game's localization database (Localization-Merged.db): Language_en_US is a view
 # over LocalizedText with INSTEAD OF triggers. The game resolves mods' Language_* statements
@@ -287,7 +287,8 @@ def main(argv=None, cfg=None):
     ap.add_argument('--mods-db', type=Path, help='Civ5ModsDatabase.db: activated mods (Activated = 1) and a cross-check')
     ap.add_argument('--mod', action='append', default=[], help='activated mod GUID[:version] (repeatable; overrides --mods-db)')
     ap.add_argument('--out', type=Path, help='database to write')
-    ap.add_argument('--snapshot', type=Path, default=cfg.snapshot, help='DLC snapshot (Civ5DebugDatabase.db, no mods; default: config snapshot)')
+    ap.add_argument('--snapshot', type=Path, default=cfg.snapshot,
+                    help='DLC snapshot (no mods; default: config snapshot, else the one built from the game files)')
     ap.add_argument('--path-as', type=Path, help='MODS folder recorded in MapScripts.FileName (default: the real MODS folder)')
     ap.add_argument('--game-dir', type=Path, default=cfg.game_dir, help='game folder (default: config game_dir)')
     ap.add_argument('--dll', type=Path, help='game DLL for post-processing (default: the CP mod folder\'s CvGameCore_Expansion2.dll)')
@@ -307,10 +308,13 @@ def main(argv=None, cfg=None):
         return 0
     if not a.mods_dir or not a.out:
         ap.error('--mods-dir and --out are required')
-    if a.snapshot is None:
-        ap.error('no DLC snapshot: pass --snapshot or set snapshot in civ5headless.toml')
     if a.exe is None:
         ap.error('no civ5headless.exe: build it (python tools/build_host.py), pass --exe or set exe in civ5headless.toml')
+    if a.snapshot is None:
+        try:
+            a.snapshot = snapshot.cached(cfg, exe=a.exe, log=lambda m: print(m, file=sys.stderr))[0]
+        except (config.ConfigError, snapshot.SnapshotError, RuntimeError) as error:
+            ap.error(f'no DLC snapshot: {error}')
 
     mods_dir = a.mods_dir.resolve()
     out = a.out.resolve()
