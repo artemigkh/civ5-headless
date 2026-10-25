@@ -52,15 +52,7 @@ class ImportTest(unittest.TestCase):
         self.assertEqual(project['project']['requires-python'], '>=3.11')
         self.assertEqual(project['project']['dependencies'], [])
         self.assertEqual(project['tool']['setuptools']['package-dir'], {'': 'python'})
-
-    def test_realgame_tools_stop_clearly(self):
-        from civ5headless.realgame import dbcapture, probe, record
-        cfg = config.Config()
-        with mock.patch.dict(sys.modules, {'vpbench': None}):
-            for mod, argv in ((probe, ['--run', 'x']), (record, ['matrix.json']), (dbcapture, ['--run', 'x'])):
-                with self.subTest(module=mod.__name__), self.assertRaises(SystemExit) as stop:
-                    mod.main(argv, cfg)
-                self.assertIn('not functional yet', str(stop.exception))
+        self.assertEqual(project['tool']['setuptools']['package-data'], {'civ5headless.realgame': ['*.lua']})
 
 
 class CliTest(unittest.TestCase):

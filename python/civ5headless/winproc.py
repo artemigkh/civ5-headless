@@ -194,6 +194,24 @@ kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
 
 
+def listening_pids(port):
+    """Ids of the processes listening on TCP port (IPv4), from GetExtendedTcpTable (TCP_TABLE_OWNER_PID_LISTENER)."""
+    iphlpapi = ctypes.WinDLL('iphlpapi')
+    size = wintypes.DWORD(0)
+    iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), False, 2, 3, 0)  # AF_INET, TCP_TABLE_OWNER_PID_LISTENER
+    buf = ctypes.create_string_buffer(size.value + 4096)
+    size = wintypes.DWORD(len(buf))
+    if iphlpapi.GetExtendedTcpTable(buf, ctypes.byref(size), False, 2, 3, 0) != 0:
+        return []
+    count = struct.unpack_from('<I', buf.raw, 0)[0]
+    out = []
+    for i in range(count):  # MIB_TCPROW_OWNER_PID: state, local addr, local port, remote addr, remote port, pid
+        _, _, local_port, _, _, pid = struct.unpack_from('<IIIIII', buf.raw, 4 + 24 * i)
+        if ((local_port & 0xFF) << 8 | (local_port >> 8) & 0xFF) == port:
+            out.append(pid)
+    return out
+
+
 # ---- background load (measurements must say what else ran) ----
 class PROCESSENTRY32W(ctypes.Structure):
     _fields_ = [('dwSize', wintypes.DWORD), ('cntUsage', wintypes.DWORD), ('th32ProcessID', wintypes.DWORD),

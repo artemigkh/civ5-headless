@@ -25,9 +25,15 @@ This file stays on the branch (left out of main).
   captured snapshot. Unit tests on a synthetic game folder; integration test with C5H_INTEGRATION=1
   (C5H_SNAPSHOT_ORACLE for the comparison).
 
+- realgame/: tuner.py (+ tuner_result.lua as package data), launch.py (launcher, steam_appid.txt, CPU guard),
+  mods.py, seeds.py (config.ini pin/restore with a marker in <workspace>/cache), session.py (RealGameSession),
+  probe.py, record.py, dbcapture.py rebuilt on the session. Tests: tests/platform_tests/test_realgame.py with
+  fake_tuner.py (a fake game behind a fake tuner); Lua tests with C5H_LUPA_PATH (lupa).
+  Never run against the real game.
+
 ## In progress / next
 
-- realgame/ (step 1), then doctor, get_toolchain, launcher, docs.
+- doctor, get_toolchain, c5h.cmd, docs.
 
 ## For the report
 

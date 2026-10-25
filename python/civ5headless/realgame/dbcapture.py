@@ -1,54 +1,25 @@
-"""Capture the game's databases for the headless host, and check them against the live game.
+"""Capture the game's databases from the real game, and check them against what the game holds in memory.
 
-NOT FUNCTIONAL YET: ported from the source repository, where it runs on that repository's vpbench module (launcher,
-FireTuner calls, mod activation). Milestone 2 rebuilds it on realgame/session.py. Until then main() stops with a
-message unless a vpbench module is importable (PYTHONPATH).
+  python -m civ5headless.realgame.dbcapture --run NAME [--snapshot-only]
 
-  python -m civ5headless.realgame.dbcapture --run NAME [--dll-sha SHA]
-
-Launches the game (vpbench launcher: tuner service and CPU guard), then:
-  1. Main menu, no mods active: copies cache/Civ5DebugDatabase.db (the expansion/DLC snapshot the
-     database builder starts from) and exports the database the game holds in memory.
-  2. Activates the benchmark mods (as vpbench does), then copies the modded Civ5DebugDatabase.db and
-     exports the in-memory database again.
+Launches the game (session.py), then:
+  1. Main menu, no mods active: copies cache/Civ5DebugDatabase.db (the DLC snapshot: base game, expansions and DLC)
+     and exports the database the game holds in memory (RealGameSession.game_database).
+  2. Activates the configured mods (the activated mods of mods_db), then copies the modded Civ5DebugDatabase.db and
+     exports the in-memory database again. Skipped with --snapshot-only.
   3. Quits normally and compares each copy with its in-memory export, table by table.
 
-The in-memory export runs in-game: ATTACH a new file and CREATE TABLE ... AS SELECT for every table.
-Results go to <runs>/NAME (dlc-debug.db, dlc-ingame.db, mods-debug.db, mods-ingame.db,
-db-capture.json).
+Results go to <runs>/NAME: dlc-debug.db, dlc-ingame.db, mods-debug.db, mods-ingame.db, db-capture.json.
+`c5h snapshot` builds the DLC snapshot from the game's files without the game; dlc-debug.db is the captured
+alternative (set `snapshot` in civ5headless.toml to use it), and `c5h snapshot --oracle dlc-debug.db` compares them.
 """
 from pathlib import Path
-import argparse, hashlib, json, shutil, sqlite3, subprocess, sys, time
+import argparse, hashlib, json, shutil, sqlite3, sys, time
 
 from .. import config
 from ..run import utc, write
-
-
-def vpbench_module(what):
-    """The source repository's vpbench module, which realgame/session.py replaces (milestone 2)."""
-    try:
-        import vpbench
-    except ImportError:
-        raise SystemExit(f'{what} is not functional yet: it needs the real-game session (realgame/session.py, '
-                         'milestone 2), or the source repository\'s vpbench module on PYTHONPATH') from None
-    return vpbench
-
-EXPORT = r'''
-local path=%s
-local ok,err=pcall(function() for _ in DB.Query("ATTACH DATABASE '"..path.."' AS hhx") do end end)
-if not ok then return {error='attach: '..tostring(err)} end
-local names,failed={},{}
-for row in DB.Query("SELECT name FROM main.sqlite_master WHERE type='table'") do
- if string.sub(row.name,1,7)~='sqlite_' then names[#names+1]=row.name end
-end
-for _,t in ipairs(names) do
- local ok2,e2=pcall(function() for _ in DB.Query('CREATE TABLE hhx."'..t..'" AS SELECT * FROM main."'..t..'"') do end end)
- if not ok2 then failed[#failed+1]=t..': '..tostring(e2) end
-end
-for _ in DB.Query("DETACH DATABASE hhx") do end
-local mods={};local okm,act=pcall(Modding.GetActivatedMods);if okm and act then for _,m in ipairs(act) do mods[#mods+1]=m.ID end end
-return {tables=#names,failed=failed,activated=mods}
-'''
+from .session import RealGameSession, SessionError
+from .tuner import TunerError
 
 
 def sha256(path):
@@ -58,19 +29,19 @@ def sha256(path):
     return h.hexdigest().upper()
 
 
-def wait_db_written(cache, after, label, b, timeout=300):
-    """Wait until Civ5DebugDatabase.db is newer than `after` and unchanged for 5 s; return its mtime."""
+def wait_db_written(cache, after, label, session, timeout=300, settle=5):
+    """Wait until Civ5DebugDatabase.db is newer than `after` and unchanged for settle seconds; return its mtime."""
     db = cache / 'Civ5DebugDatabase.db'
     deadline = time.monotonic() + timeout
     last = None
     while time.monotonic() < deadline:
-        st = db.stat()
-        sig = (st.st_mtime, st.st_size)
-        if st.st_mtime > after and sig == last:
-            b.log('debug_db_ready', phase=label, mtime=st.st_mtime, size=st.st_size)
+        st = db.stat() if db.exists() else None
+        sig = (st.st_mtime, st.st_size) if st else None
+        if st and st.st_mtime > after and sig == last:
+            session.event('debug_db_ready', phase=label, mtime=st.st_mtime, size=st.st_size)
             return st.st_mtime
         last = sig
-        time.sleep(5)
+        time.sleep(settle)
     raise TimeoutError(f'{label}: Civ5DebugDatabase.db was not rewritten')
 
 
@@ -82,74 +53,67 @@ def table_rows(conn, table):
 
 def compare(cached, ingame):
     a, b = sqlite3.connect(cached), sqlite3.connect(ingame)
-    ta = {r[0] for r in a.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%'")}
-    tb = {r[0] for r in b.execute("select name from sqlite_master where type='table'")}
-    diffs = []
-    for t in sorted(ta & tb):
-        ca, ra = table_rows(a, t)
-        cb, rb = table_rows(b, t)
-        if ca != cb or ra != rb:
-            diffs.append({'table': t, 'columns_equal': ca == cb, 'rows_cached': len(ra), 'rows_ingame': len(rb)})
-    return {'tables_cached': len(ta), 'tables_ingame': len(tb), 'only_cached': sorted(ta - tb),
-            'only_ingame': sorted(tb - ta), 'differing': diffs}
+    try:
+        ta = {r[0] for r in a.execute("select name from sqlite_master where type='table' and name not like 'sqlite_%'")}
+        tb = {r[0] for r in b.execute("select name from sqlite_master where type='table'")}
+        diffs = []
+        for t in sorted(ta & tb):
+            ca, ra = table_rows(a, t)
+            cb, rb = table_rows(b, t)
+            if ca != cb or ra != rb:
+                diffs.append({'table': t, 'columns_equal': ca == cb, 'rows_cached': len(ra), 'rows_ingame': len(rb)})
+        return {'tables_cached': len(ta), 'tables_ingame': len(tb), 'only_cached': sorted(ta - tb),
+                'only_ingame': sorted(tb - ta), 'differing': diffs}
+    finally:
+        a.close()
+        b.close()
+
+
+def capture(cfg, run, snapshot_only=False, session=None, settle=5):
+    """Runs the capture into the run folder; returns the db-capture.json dict."""
+    cache = cfg.require('cache_dir')
+    s = session or RealGameSession(cfg, run, log=lambda m: print(f'{utc()} {m}', flush=True))
+    result = {'utc': utc(), 'dll': str(cfg.dll) if cfg.dll else None}
+    try:
+        started = time.time()
+        s.launch()
+        wait_db_written(cache, started, 'dlc', s, settle=settle)
+        shutil.copy2(cache / 'Civ5DebugDatabase.db', run / 'dlc-debug.db')
+        s.game_database(run / 'dlc-ingame.db')
+        if not snapshot_only:
+            before = (cache / 'Civ5DebugDatabase.db').stat().st_mtime
+            result['mods'] = s.set_mods([m.id for m in cfg.active_mods])['mods']
+            wait_db_written(cache, before, 'mods', s, settle=settle)
+            shutil.copy2(cache / 'Civ5DebugDatabase.db', run / 'mods-debug.db')
+            s.game_database(run / 'mods-ingame.db')
+    except (SessionError, TunerError, OSError) as error:
+        result['error'] = f'{type(error).__name__}: {error}'
+    finally:
+        result['quit'] = s.quit()
+    for phase in ('dlc', 'mods'):
+        cached, ingame = run / f'{phase}-debug.db', run / f'{phase}-ingame.db'
+        if cached.exists() and ingame.exists():
+            result[phase + 'Compare'] = compare(cached, ingame)
+            result[phase + 'DebugSha'] = sha256(cached)
+    write(run / 'db-capture.json', result)
+    return result
 
 
 def main(argv=None, cfg=None):
     cfg = cfg or config.load()
     ap = argparse.ArgumentParser(prog='python -m civ5headless.realgame.dbcapture', description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--run', required=True)
-    ap.add_argument('--dll-sha')
+    ap.add_argument('--run', required=True, help='run folder name below <runs>')
+    ap.add_argument('--snapshot-only', action='store_true', help='only the DLC snapshot (main menu, no mods)')
     args = ap.parse_args(argv)
-    vpbench = vpbench_module('realgame.dbcapture')
-    cache = cfg.require('cache_dir')
-    dll_sha = args.dll_sha or sha256(cfg.require('dll'))
-    b = vpbench.Bench(args.run)
-    started = time.time()
-    log = b.run.parent / (args.run + '-launch.log')
-    with log.open('wb') as stream:
-        code = subprocess.run([vpbench.PWSH, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(Path(vpbench.__file__).parent / 'vpbench-launch.ps1'),
-                               '-RunName', args.run, '-ExpectedDLLSHA', dll_sha, '-MaximumSeconds', '1800'],
-                              stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT).returncode
-    if code: raise RuntimeError(f'Launch failed; see {log}')
-    (b.run / 'calls').mkdir(exist_ok=True)
-    b.guards = json.loads((b.run / 'watcher-manifest.json').read_text(encoding='utf-8-sig'))
-    b.log('launched', game=b.guards['Game'], dllSha=dll_sha)
-    result = {'utc': utc(), 'dllSha': dll_sha}
-    try:
-        deadline = time.monotonic() + 240
-        while not ({'MainMenu', 'LegalScreen', 'ModsBrowser'} & b.states()):
-            if time.monotonic() >= deadline: raise TimeoutError('Main menu did not appear')
-            time.sleep(2)
-        wait_db_written(cache, started, 'dlc', b)
-        shutil.copy2(cache / 'Civ5DebugDatabase.db', b.run / 'dlc-debug.db')
-        out = str((b.run / 'dlc-ingame.db').resolve()).replace('\\', '/')
-        result['dlcExport'] = b.call('MainMenu', EXPORT % vpbench.tuner.lua_string(out), 'export-dlc', timeout=120)
-        if not (b.run / 'ensure-mods-result.json').exists():
-            code = subprocess.run([vpbench.PY, '-B', '-u', str(Path(vpbench.__file__).parents[1] / 'ensure-benchmark-mods.py'), '--run-dir', str(b.run),
-                                   '--expected-mods-json', str(vpbench.MODS)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
-            if code.returncode: raise RuntimeError('Benchmark mods could not be verified: ' + code.stdout[-400:])
-            b.call('LegalScreen', 'UIManager:DequeuePopup(ContextPtr)', 'dismiss-legal')
-        before_mods = (cache / 'Civ5DebugDatabase.db').stat().st_mtime
-        b.call('ModsBrowser', "assert(#Modding.GetEnabledModsByActivationOrder()>0,'No mods enabled');OnNextButtonClicked();return 'activated'", 'activate-mods')
-        deadline = time.monotonic() + 240
-        while 'ModsSinglePlayer' not in b.states():
-            if time.monotonic() >= deadline: raise TimeoutError('Mod activation did not complete')
-            time.sleep(1)
-        wait_db_written(cache, before_mods, 'mods', b)
-        shutil.copy2(cache / 'Civ5DebugDatabase.db', b.run / 'mods-debug.db')
-        out = str((b.run / 'mods-ingame.db').resolve()).replace('\\', '/')
-        result['modsExport'] = b.call('ModsSinglePlayer', EXPORT % vpbench.tuner.lua_string(out), 'export-mods', timeout=120)
-    finally:
-        b.quit()
-    for phase in ('dlc', 'mods'):
-        cached, ingame = b.run / f'{phase}-debug.db', b.run / f'{phase}-ingame.db'
-        if cached.exists() and ingame.exists():
-            result[phase + 'Compare'] = compare(cached, ingame)
-            result[phase + 'DebugSha'] = sha256(cached)
-    write(b.run / 'db-capture.json', result)
-    print(json.dumps({k: (v if not isinstance(v, dict) or 'differing' not in v else {'differing': len(v['differing']), 'only_cached': len(v['only_cached']), 'only_ingame': len(v['only_ingame'])}) for k, v in result.items()}, indent=1))
-    return 0
+    run = cfg.require('runs') / args.run
+    if run.exists():
+        ap.error(f'{run} exists')
+    result = capture(cfg, run, args.snapshot_only)
+    print(json.dumps({k: (v if not isinstance(v, dict) or 'differing' not in v else
+                          {'differing': len(v['differing']), 'only_cached': len(v['only_cached']), 'only_ingame': len(v['only_ingame'])})
+                      for k, v in result.items()}, indent=1, default=str))
+    return 1 if result.get('error') else 0
 
 
 if __name__ == '__main__':
