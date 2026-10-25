@@ -153,6 +153,10 @@ needed:
   5. dbdiff should print `identical`.
 - If the game applies the Scout update in `sqlerror`, the engine does not stop at the first SQL error. The builder's
   `sql` step must then change.
+- **Checked 2026-10-25** (run `work/test-runs/hh-m4-testedits`, trace DLL 008A4227, headless-host package): the game
+  gave 47, 11, 3 rows and Scout Cost 90, and its `Database.log` has `no such table: HeadlessBuilderMissingTable`.
+  So the engine also stops an SQL file at its first error. The built database (input
+  `mods-headless-host-0ed40de35-input` plus the edits) is identical to the game's (dbdiff).
 
 ## Limits
 

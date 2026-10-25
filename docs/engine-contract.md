@@ -551,14 +551,22 @@ real game, whose control word was not recorded (open question 3).
 1. **Late front-end setters and turn-0 hooks are capped** (4.2). Resolve: record with a higher cap for
    `CvDllPreGame::*` and `ICvEngineScriptSystem1::Call*`, or reset the per-method cap at `CvDllGame::Init` and at
    the first `Update` (a small `HHTrace` change), then rerun S1.
+   **Resolved (bfa298d6b):** cap periods restart at `CvDllGame::Init` and at the first `Update` (TURN lines with
+   `phase=`); re-recorded as `work/test-runs/hh-m0-s1c-continents` (game_probe order, 5 turns, dumps at T0 and T5).
 2. **Random civs/CS** (finding 1): decided, the seeds file pins at `setGameStarted` (255e26ba2). Still to verify
    with two runs that the `HHPREGAME slot` lines match (the second AA100 pair does this).
+   **Verified:** `hh-m0-aa100b-{a,b,c}` and `hh-m0-s1b-continents` got the same civs.
 3. **x87/MXCSR of the UI thread during `Init2`** (map generation runs there): extend D4 to log the control word
    at `CvGame::init` too.
+   **Resolved (bfa298d6b):** `HeadlessRuntime.log` now has `point=gameInit` from the thread that runs `CvGame::init`.
+   In `hh-m0-s1c-continents` it is 0x027F (53-bit, nearest), MXCSR as on the core thread.
 4. **`GetEvaluatedMapScriptPath` output** is not recorded; inferred from the pregame snapshot (unchanged
    relative path). Resolve: have the proxy format the out buffer, or log `CvPreGame::mapScriptName()` after
    `Commit` (the pregame snapshot at `gameInit` already shows it; check a mod map script such as
    Communitu, whose path is absolute in the user setup).
+   **Resolved:** in `hh-m0-communitu` the `gameInit` snapshot shows the absolute mod path exactly as the setup set
+   it (`...\MODS\(2) Vox Populi\Mapscripts/Communitu_79a.lua`, mixed slashes kept), so the engine returns the name
+   unchanged for a mod map script too.
 5. **Which player option is the sixth hash (−304873808)**: order suggests `PLAYEROPTION_SAFE_AUTOMATION`;
    confirm with the `ResponsePlayerOption` → `GetInfoTypeForHash` lines beyond the cap, or by computing the
    engine's hash of the type names.
