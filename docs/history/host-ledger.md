@@ -5,6 +5,15 @@ commit it with the change it describes.
 
 ## Resume here
 
+**PAUSED 2026-10-25 ~02:05 (user restarting the app).** To resume:
+- Host agent (worktree `work/wt/hh-host`, branch `hh-host`): told to pause; it writes a WIP commit and
+  `RESUME.md` there. Relaunch it with its work order (below, "Agents in flight") plus `RESUME.md`.
+- Real-game chain `m0-chain3.sh`: stopped after `hh-m2-aa100-a` (that run was allowed to finish). Not run:
+  `hh-m2-aa100-b`. To finish it:
+  `python work/headless/game_probe.py --run hh-m2-aa100-b --dll-sha 39F621D3C716FB68ADC7ABD562A617C11DF2569B0B5ABF95933DCB06111F192D --spec work/headless/specs/continents-standard.json --turns 100 --probe InGame@start=work/headless/probes/dump-state.lua --probe InGame@end=work/headless/probes/dump-state.lua`
+  (the field-map DLL must still be deployed; check the MODS DLL hash first).
+- Done in that chain: `hh-m2-cdrift`, `hh-m2-continents`, `hh-m2-earth`, `hh-m2-communitu`, `hh-m2-aa100-a`.
+
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
