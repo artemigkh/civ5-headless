@@ -2,7 +2,8 @@
 
   python work/headless/skew_sweep.py [MATRIX.json ...] --dll DLL [--db DB] [--mods-db DB] [--loc-db DB] [--exe EXE]
          [--only REGEX] [--min-turns N] [--skews 2,7] [--workers N] [--tag TAG]
-         [--case NAME=SPEC.json:TURNS ...] [--host-arg=ARG ...]
+         [--case NAME=SPEC.json:TURNS ...] [--host-arg=ARG ...] [--resolved-from DIR]
+  python work/headless/skew_sweep.py --recompare TAG     (compare an existing sweep's digests again)
 
 civ5headless.exe --frame-skew K runs one extra CvGame::update before every K-th one, so the turn slice (+1 per
 update) advances differently while the game is the same. Any digest difference between K=0 and K>0 is a result that
@@ -35,14 +36,22 @@ def latest_exe():
 def first_difference(a, b):
     da, db = hhdigest.digest_lines(a), hhdigest.digest_lines(b)
     keys = sorted(set(da) & set(db), key=lambda k: (k[1], k[0] or ''))
+    differing = []
     for key in keys:
         fa, oa = da[key]
         fb, ob = db[key]
         if fa['total'] != fb['total'] or any(fa.get(n) != fb.get(n) for n in set(oa) | set(ob) if n not in META):
             diff = [n for n in oa if n not in META and fa.get(n) != fb.get(n)]
             diff += [n for n in ob if n not in META and n not in fa]
-            return dict(identical=False, turn=key[1], point=key[0], sections=diff, common=len(keys))
-    return dict(identical=True, common=len(keys), onlyBase=len(set(da) - set(db)), onlySkew=len(set(db) - set(da)))
+            differing.append((key, diff))
+    if not differing:
+        return dict(identical=True, common=len(keys), onlyBase=len(set(da) - set(db)), onlySkew=len(set(db) - set(da)))
+    (key, diff) = differing[0]
+    # A transient difference (later points identical again, e.g. UI-timing state such as a dismissed notification)
+    # is reported apart from one that persists (a changed game).
+    return dict(identical=False, turn=key[1], point=key[0], sections=diff, common=len(keys),
+                differingPoints=len(differing), differingTurns=sorted({k[1] for k, _ in differing}),
+                sectionsAll=sorted({n for _, d in differing for n in d}), lastPointIdentical=differing[-1][0] != keys[-1])
 
 
 def run(case, k, a):
@@ -62,7 +71,27 @@ def run(case, k, a):
     return case['name'], k, dict(exitCode=code, seconds=round(time.monotonic() - started, 1), digest=str(out / 'Logs/HeadlessDigest.log'))
 
 
+def recompare(tag):
+    """Compare the digests of an existing sweep's runs again (skew-TAG-<case>-k<K>), without playing anything."""
+    runs = {}
+    for d in OUT.glob(f'skew-{tag}-*-k*'):
+        m = re.fullmatch(rf'skew-{re.escape(tag)}-(.+)-k(\d+)', d.name)
+        if m and d.is_dir() and (d / 'Logs/HeadlessDigest.log').exists():
+            runs[(m.group(1), int(m.group(2)))] = d / 'Logs/HeadlessDigest.log'
+    ok = True
+    for (case, k) in sorted(runs):
+        if k and (case, 0) in runs:
+            res = first_difference(runs[(case, 0)], runs[(case, k)])
+            ok &= res['identical']
+            print(f"{case} k={k}: " + (f"identical on {res['common']} points" if res['identical'] else
+                  f"turns {res['differingTurns']} sections {', '.join(res['sectionsAll'])}"
+                  f" ({'identical again at the end' if res['lastPointIdentical'] else 'still different at the end'})"))
+    return 0 if ok else 1
+
+
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '--recompare':
+        return recompare(sys.argv[2])
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('matrix', nargs='*')
     ap.add_argument('--dll', required=True)
@@ -126,7 +155,9 @@ def main():
                         elif res.get('identical') is None:
                             text = 'missing digest'
                         else:
-                            text = f"DIFFERENT from turn {res['turn']} ({res['point']}): {', '.join(res['sections'])}"
+                            text = (f"DIFFERENT from turn {res['turn']} ({res['point']}): {', '.join(res['sections'])};"
+                                    f" {res['differingPoints']} points differ, sections {', '.join(res['sectionsAll'])},"
+                                    f" {'identical again at the end' if res['lastPointIdentical'] else 'still different at the end'}")
                         print(f"{n} k={kk}: {text} (exit {res['baseExit']}/{res['skewExit']})", flush=True)
                         summary_path.write_text(json.dumps(results, indent=1) + '\n', encoding='utf-8')
     return 0 if all(r.get('identical') for r in results) else 1
