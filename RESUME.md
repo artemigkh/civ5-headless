@@ -1,39 +1,35 @@
 # Platform workstream: resume point
 
-Branch `c5h-platform` in this worktree. Main (973c324, anydll merged) is merged in. Never push.
+Branch `c5h-platform` in this worktree. Main (d3bc856, verify merged) is merged in. Never push.
 
-## Work order: milestone 3 (integrate anydll's pieces), plus the coordinator's additions
+## Milestone 3: complete
 
-1. pyproject package-data: `civ5headless = ["data/*.json"]` and the realgame Lua; profiles/ and probes/ resolve
-   from the workspace (config keys `profiles`, `probes`). DONE
-2. cli: `c5h fingerprint`, `c5h hazards` (main(argv), no cfg), `c5h modsdb`. DONE
-3. run.py / queue.py: `--profiles` always passed; `--fingerprint` (+ every/turns/split through a generated
-   config probe before probes/fingerprint.lua); `--no-profiles`, `--skip-addin`, `--no-addins`; `--mod` / `--no-mods`
-   with a generated registry. Result.report reads host-report.json. DONE
-4. realgame/session.py: start_game(fingerprint=...) injects the same files. DONE
-5. modsdb.py: the mods registry from .modinfo files; run/queue/dbcache use it for explicit mods. DONE, validated:
-   registry identical to the game's (all tables) for the 5 active mods; dbbuild identical (dbdiff); Tiny 30-turn
-   games HHDIGEST identical (30 points), fingerprints identical (31 turns), host-report mods/addins/uiFiles/profiles
-   identical; no-mods + stock DLL build identical to the captured main-menu database.
-6. doctor: profiles/ and probes/fingerprint.lua. DONE
-7. docs/user-guide.md: host options, host-report.json, fingerprint, hazards, modsdb, mod sets. TODO
-8. Coordinator additions (after the verify merge, 22d209f): merge main; spec field `minorCivs` (resolve only,
-   no Lua; keys index/slot/type/id, slot = MAX_MAJOR_CIVS from Defines + i); RealGameSession.replay_data()
-   (the FINAL Lua's replay data). TODO
-9. Tests; full suite; commit; report.
+Integrated anydll's pieces and the coordinator's additions; everything committed:
 
-## State
+- e5d9c51 mods registry generator (`c5h modsdb`, modsdb.py), dbcache `--mod` / `--no-mods`.
+- 44b484b config keys `profiles` / `probes`; run/queue `--profiles`, `--no-profiles`, `--skip-addin`, `--no-addins`,
+  `--fingerprint[-every|-turns|-split]`, `--mod`, `--no-mods`; probes.py; start_game(fingerprint=...);
+  `c5h fingerprint`, `c5h hazards`; doctor checks; package data.
+- d0193a1 merge of main (verify workstream).
+- 00d6336 spec `minorCivs`; RealGameSession.replay_data(); a run without a configured profiles folder leaves the
+  choice to the host (verify's tests build a Config without one).
+- cc31bb0 user guide, README, database-builder note, example config.
 
-- Committed: items 1-6 with tests (see git log).
-- Next: merge main, items 8 and 7, then report.
+Validation (host-only, scratch config): generated registry identical to the game's for the 5 active mods (all
+tables); dbbuild from it identical (dbdiff); Tiny 30-turn games with the game's and the generated registry: HHDIGEST
+identical on 30 points, fingerprints identical on 31 turns, host-report mods/addins/uiFiles/profiles/stubs identical;
+`--no-mods` with the stock DLL: database identical to the captured main-menu database, game passes; a two-job queue
+(mod set, stock no-mods) completes.
+
+## Open (outside this branch)
+
+- Host `--skip-addin` matches only the name without extension (HHAddins.cpp Skipped() is given the base path's
+  name, already without extension), though its usage says "with or without extension".
 
 ## Next steps
 
-Tests: `python -m unittest discover -s tests` from the worktree root.
-Validation config (scratch, not committed): a toml with the pinned registry, loc db, fieldmap DLL and a scratch
-db_cache; games: `c5h --config X run examples/specs/continents-tiny.json --turns 30 --fingerprint [--mod ...]`.
-Host exe: `python tools/build_host.py` with C5H_TOOLCHAIN set to the toolchain folder.
+Wait for the coordinator. Tests: `python -m unittest discover -s tests`.
 
 ## Uncommitted
 
-Nothing beyond this file's latest edits.
+Nothing.
