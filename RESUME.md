@@ -27,8 +27,12 @@ then `... compare runs/baseline runs/NAME` (config and baselines are under the i
   tests/anydll_tests/test_fingerprint.py (unit), tests/anydll_tests/probe_check.py (dense / sparse / off runs).
   Probe on, all 8 cases: digests identical to the baseline (runs/probe-on). probe_check speed-quick and
   players-teams2 with --every 7: passed (runs/probe-check).
-- Next: item 3 (hazards.py + data/lua-hazards.json), docs/profiles.md, engine-contract section on the run report,
-  known-ui-files.json filled from the reference set, item 7 (stock DLL, mod-free database, probe_check with it).
+- Milestone 3 (committed): item 3. python/civ5headless/hazards.py (scan, methods), data/lua-state-methods.json
+  (derived from the VP fork and stock sources), data/lua-hazards.json (curated), tests/anydll_tests/test_hazards.py.
+  Reference set: `python -m civ5headless.hazards scan --report runs/step1/speed-quick/host-report.json`
+  (112 files, 281 calls, 6 covered by profiles).
+- Next: docs/profiles.md, engine-contract section on the run report, known-ui-files.json filled from the reference
+  set, item 7 (stock DLL, mod-free database, probe_check with it).
 
 ## Build and run
 

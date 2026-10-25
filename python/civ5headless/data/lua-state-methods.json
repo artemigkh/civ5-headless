@@ -1,0 +1,7667 @@
+{
+ "about": "Lua methods of the DLL that change game state (python -m civ5headless.hazards methods); writes: the binding calls a mutating method; cache: it reaches a lazy cache.",
+ "source": "VP fork (headless-host branch, 2026-10-25) + stock BNW (Firaxis SDK source)",
+ "counts": {
+  "writes": 545,
+  "cache": 206
+ },
+ "classes": {
+  "City": {
+   "AddProductionExperience": {
+    "kind": "writes",
+    "calls": [
+     "addProductionExperience"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "AdoptReligionFully": {
+    "kind": "writes",
+    "calls": [
+     "AdoptReligionFully"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "AllUpgradesAvailable": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::allUpgradesAvailable",
+     "CvCity::canTrain",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AlterWorkingPlot": {
+    "kind": "writes",
+    "calls": [
+     "DoAlterWorkingPlot"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanBuyAnyPlot": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::CanBuyAnyPlot",
+     "CvMap::calculateInfluenceDistance",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanBuyPlot": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::CanBuyPlot",
+     "CvCity::GetBuyPlotCost",
+     "CvMap::calculateInfluenceDistance",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanBuyPlotAt": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::CanBuyPlot",
+     "CvCity::GetBuyPlotCost",
+     "CvMap::calculateInfluenceDistance",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanContinueProduction": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::canContinueProduction",
+     "CvCity::canTrain",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CanRangeStrikeAt": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanRangeStrikeNow": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::CanRangeStrikeNow writes mutable m_bombardCheckTurn"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanTrain": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::canTrain",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CanTrainTooltip": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::canTrain",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeBaseGreatPeopleRate": {
+    "kind": "writes",
+    "calls": [
+     "changeBaseGreatPeopleRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBaseYieldRateFromBuildings": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromBuildings"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBaseYieldRateFromMisc": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromMisc"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBaseYieldRateFromReligion": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromReligion"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBaseYieldRateFromSpecialists": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromSpecialists"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBaseYieldRateFromTerrain": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromTerrain"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBuildingProduction": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBuildingProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBuildingProductionTime": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBuildingProductionTime"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeCityAutomatonWorkersChange": {
+    "kind": "writes",
+    "calls": [
+     "changeCityAutomatonWorkersChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeCityWorkingChange": {
+    "kind": "writes",
+    "calls": [
+     "changeCityWorkingChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeCultureRateModifier": {
+    "kind": "writes",
+    "calls": [
+     "changeYieldRateModifier"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeDamage": {
+    "kind": "writes",
+    "calls": [
+     "changeDamage"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeDisloyaltyCounter": {
+    "kind": "writes",
+    "calls": [
+     "ChangeDisloyaltyCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeFaithPerTurnFromReligion": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromReligion"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeFood": {
+    "kind": "writes",
+    "calls": [
+     "changeFood"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeHealRate": {
+    "kind": "writes",
+    "calls": [
+     "changeHealRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCultureLevel": {
+    "kind": "writes",
+    "calls": [
+     "ChangeJONSCultureLevel"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCulturePerTurnFromBuildings": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromBuildings"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCulturePerTurnFromPolicies": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromPolicies"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCulturePerTurnFromReligion": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromReligion"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeJONSCulturePerTurnFromSpecialists": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseYieldRateFromSpecialists"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCultureStored": {
+    "kind": "writes",
+    "calls": [
+     "ChangeJONSCultureStored"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCultureStoredTimes100": {
+    "kind": "writes",
+    "calls": [
+     "ChangeJONSCultureStoredTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeLoyaltyCounter": {
+    "kind": "writes",
+    "calls": [
+     "ChangeLoyaltyCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeOverflowProduction": {
+    "kind": "writes",
+    "calls": [
+     "changeOverflowProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangePlagueCounter": {
+    "kind": "writes",
+    "calls": [
+     "ChangePlagueCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangePlagueTurns": {
+    "kind": "writes",
+    "calls": [
+     "ChangePlagueTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangePopulation": {
+    "kind": "writes",
+    "calls": [
+     "changePopulation"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeProduction": {
+    "kind": "writes",
+    "calls": [
+     "changeProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeRazingTurns": {
+    "kind": "writes",
+    "calls": [
+     "ChangeRazingTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeResistanceCounter": {
+    "kind": "writes",
+    "calls": [
+     "ChangeResistanceCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeResistanceTurns": {
+    "kind": "writes",
+    "calls": [
+     "ChangeResistanceTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeSappedTurns": {
+    "kind": "writes",
+    "calls": [
+     "ChangeSappedTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeSpecialistGreatPersonProgressTimes100": {
+    "kind": "writes",
+    "calls": [
+     "ChangeSpecialistGreatPersonProgressTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeTourismRateModifier": {
+    "kind": "writes",
+    "calls": [
+     "changeTourismRateModifier"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeUnitProduction": {
+    "kind": "writes",
+    "calls": [
+     "changeUnitProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeWeLoveTheKingDayCounter": {
+    "kind": "writes",
+    "calls": [
+     "ChangeWeLoveTheKingDayCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeWonderProductionModifier": {
+    "kind": "writes",
+    "calls": [
+     "ChangeWonderProductionModifier"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeYieldFromTraits": {
+    "kind": "writes",
+    "calls": [
+     "ChangeYieldFromTraits"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChooseProduction": {
+    "kind": "writes",
+    "calls": [
+     "chooseProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ClearGreatWorks": {
+    "kind": "writes",
+    "calls": [
+     "ClearGreatWorks"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ClearHiddenBuildings": {
+    "kind": "writes",
+    "calls": [
+     "ClearHiddenBuildings"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ClearOrderQueue": {
+    "kind": "writes",
+    "calls": [
+     "clearOrderQueue"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ClearWorkingOverride": {
+    "kind": "writes",
+    "calls": [
+     "clearWorkingOverride"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ConvertPercentFollowers": {
+    "kind": "writes",
+    "calls": [
+     "ConvertPercentFollowers"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CreateApolloProgram": {
+    "kind": "writes",
+    "calls": [
+     "CreateProject"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CreateGreatAdmiral": {
+    "kind": "writes",
+    "calls": [
+     "createGreatAdmiral"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CreateGreatGeneral": {
+    "kind": "writes",
+    "calls": [
+     "createGreatGeneral"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoCancelCityEventChoice": {
+    "kind": "writes",
+    "calls": [
+     "DoCancelEventChoice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoCityEventChoice": {
+    "kind": "writes",
+    "calls": [
+     "DoEventChoice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoCityStartEvent": {
+    "kind": "writes",
+    "calls": [
+     "DoStartEvent"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoFranchiseAtCity": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerCorporations::BuildFranchiseInCity",
+     "CvCityBuildings::SetNumRealBuilding",
+     "CvCityBuildings::SetNumRealBuildingTimed",
+     "CvCityCitizens::DoRemoveAllSpecialistsFromBuilding",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoJONSCultureLevelIncrease": {
+    "kind": "writes",
+    "calls": [
+     "DoJONSCultureLevelIncrease"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoPickResourceDemanded": {
+    "kind": "writes",
+    "calls": [
+     "DoPickResourceDemanded"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoReallocateCitizens": {
+    "kind": "writes",
+    "calls": [
+     "DoReallocateCitizens"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoTask": {
+    "kind": "writes",
+    "calls": [
+     "doTask"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoVerifyWorkingPlots": {
+    "kind": "writes",
+    "calls": [
+     "DoVerifyWorkingPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "FindBaseYieldRateRank": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::findBaseYieldRateRank writes m_abBaseYieldRankValid"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FindPopulationRank": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::findPopulationRank writes m_bPopulationRankValid"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "FindYieldRateRank": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::findYieldRateRank writes m_abYieldRankValid"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FoodConsumption": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getFoodConsumptionTimes100",
+     "CvCity::getFoodPerTurnBeforeConsumptionTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FoodDifference": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FoodDifferenceTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetBaseJONSCulturePerTurn": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetBaseTourism": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetBaseYieldRate": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetBaseYieldRateFromGreatWorks": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetBaseYieldRateTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetBuyPlotCost": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetBuyPlotCost",
+     "CvMap::calculateInfluenceDistance",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetBuyablePlotList": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetBuyablePlotList",
+     "CvMap::calculateInfluenceDistance",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetCityUnhappinessBreakdown": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetCityUnhappinessBreakdown",
+     "CvCity::GetBoredomRaw",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetCompetitiveSpawnUnitType": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetCompetitiveSpawnUnitType",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetCurrentProductionDifference": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetCurrentProductionDifferenceTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetDisabledTooltip": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetDisabledTooltip",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetFaithPerTurn": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetFoodConsumptionTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getFoodConsumptionTimes100",
+     "CvCity::getFoodPerTurnBeforeConsumptionTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetFoodTurnsLeft": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getFoodTurnsLeft",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetJONSCulturePerTurn": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetJONSCulturePerTurnFromGreatWorks": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetNextBuyablePlot": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetNextBuyablePlot",
+     "CvCity::GetBuyablePlotList",
+     "CvMap::calculateInfluenceDistance",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetPressurePerTurn": {
+    "kind": "cache",
+    "chain": [
+     "CvCityReligions::GetPressurePerTurn",
+     "CvGameReligions::GetAdjacentCityReligiousPressure",
+     "CvPlayer::IsCityConnectedToCity",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetProductionTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getProductionTimes100",
+     "CvCity::getProcessProductionTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetPurchaseUnitTooltip": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetRawProductionDifference": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getRawProductionPerTurnTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetRawProductionDifferenceTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getRawProductionPerTurnTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetStrengthValue": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getStrengthValue",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTourismTooltip": {
+    "kind": "cache",
+    "chain": [
+     "CvCityCulture::GetTourismTooltip",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetUnhappinessFromFamine": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetUnhappinessFromFamine",
+     "CvCity::getFoodPerTurnBeforeConsumptionTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetUnhappinessFromYield": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetBoredom",
+     "CvCity::GetBoredomRaw",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetYieldRate": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetYieldRateTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetYieldRateTooltip": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "Hurry": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::hurry",
+     "CvUnit::kill",
+     "CvPlayer::changeCombatExperience",
+     "CvPlayer::setCombatExperience",
+     "CvCity::findPopulationRank writes m_bPopulationRankValid"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IsCanPurchase": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::IsCanPurchase",
+     "CvCity::canTrain",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "IsCityEventChoiceValidEspionage": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::IsCityEventChoiceValidEspionage",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "Kill": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::kill",
+     "CvGameTrade::ClearAllCityTradeRoutes",
+     "CvGameTrade::ClearTradeRoute",
+     "CvPlayer::UpdateReligion",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "PopOrder": {
+    "kind": "writes",
+    "calls": [
+     "popOrder"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Purchase": {
+    "kind": "writes",
+    "calls": [
+     "PurchaseBuilding",
+     "PurchaseProject",
+     "PurchaseUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "PushOrder": {
+    "kind": "writes",
+    "calls": [
+     "pushOrder"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "RangeCombatDamage": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::rangeCombatDamage",
+     "CvCity::getStrengthValue",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "RefreshTourism": {
+    "kind": "writes",
+    "calls": [
+     "UpdateCityYields"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetAdditionalFood": {
+    "kind": "writes",
+    "calls": [
+     "SetAdditionalFood"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetAutomatons": {
+    "kind": "writes",
+    "calls": [
+     "setAutomatons"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetBuildingGreatWork": {
+    "kind": "writes",
+    "calls": [
+     "SetBuildingGreatWork"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetBuildingHidden": {
+    "kind": "writes",
+    "calls": [
+     "SetBuildingHidden"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetBuildingProduction": {
+    "kind": "writes",
+    "calls": [
+     "SetBuildingProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetBuildingProductionTime": {
+    "kind": "writes",
+    "calls": [
+     "SetBuildingProductionTime"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetBuildingYieldChange": {
+    "kind": "writes",
+    "calls": [
+     "SetBuildingYieldChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetCityEventChoiceCooldown": {
+    "kind": "writes",
+    "calls": [
+     "SetEventChoiceDuration"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetCityEventCooldown": {
+    "kind": "writes",
+    "calls": [
+     "SetEventCooldown"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetCitySizeBoost": {
+    "kind": "writes",
+    "calls": [
+     "setCitySizeBoost"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetColony": {
+    "kind": "writes",
+    "calls": [
+     "SetColony"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetDamage": {
+    "kind": "writes",
+    "calls": [
+     "setDamage"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetDisloyaltyCounter": {
+    "kind": "writes",
+    "calls": [
+     "SetDisloyaltyCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetDrafted": {
+    "kind": "writes",
+    "calls": [
+     "setDrafted"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetFeatureProduction": {
+    "kind": "writes",
+    "calls": [
+     "setFeatureProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetFocusType": {
+    "kind": "writes",
+    "calls": [
+     "SetFocusType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetFood": {
+    "kind": "writes",
+    "calls": [
+     "setFood"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHighestPopulation": {
+    "kind": "writes",
+    "calls": [
+     "setHighestPopulation"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetJONSCultureLevel": {
+    "kind": "writes",
+    "calls": [
+     "SetJONSCultureLevel"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetJONSCultureStored": {
+    "kind": "writes",
+    "calls": [
+     "SetJONSCultureStoredTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetJONSCultureStoredTimes100": {
+    "kind": "writes",
+    "calls": [
+     "SetJONSCultureStoredTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetLoyaltyCounter": {
+    "kind": "writes",
+    "calls": [
+     "SetLoyaltyCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetLoyaltyState": {
+    "kind": "writes",
+    "calls": [
+     "SetLoyaltyState"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetName": {
+    "kind": "writes",
+    "calls": [
+     "setName"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNeverLost": {
+    "kind": "writes",
+    "calls": [
+     "setNeverLost"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumFreeBuilding": {
+    "kind": "writes",
+    "calls": [
+     "SetNumFreeBuilding"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetNumRealBuilding": {
+    "kind": "writes",
+    "calls": [
+     "SetNumRealBuilding"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetOccupied": {
+    "kind": "writes",
+    "calls": [
+     "SetOccupied"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetOrganizedCrime": {
+    "kind": "writes",
+    "calls": [
+     "SetOrganizedCrime"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetOverflowProduction": {
+    "kind": "writes",
+    "calls": [
+     "setOverflowProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPlagueCounter": {
+    "kind": "writes",
+    "calls": [
+     "SetPlagueCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlagueTurns": {
+    "kind": "writes",
+    "calls": [
+     "SetPlagueTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlagueType": {
+    "kind": "writes",
+    "calls": [
+     "SetPlagueType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPopulation": {
+    "kind": "writes",
+    "calls": [
+     "setPopulation"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetProduction": {
+    "kind": "writes",
+    "calls": [
+     "setProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetProductionAutomated": {
+    "kind": "writes",
+    "calls": [
+     "setProductionAutomated"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetProvinceLevel": {
+    "kind": "writes",
+    "calls": [
+     "SetProvinceLevel"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPuppet": {
+    "kind": "writes",
+    "calls": [
+     "SetPuppet"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetResistanceCounter": {
+    "kind": "writes",
+    "calls": [
+     "SetResistanceCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetResourceDemanded": {
+    "kind": "writes",
+    "calls": [
+     "SetResourceDemanded"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetRevealed": {
+    "kind": "writes",
+    "calls": [
+     "setRevealed"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetSappedTurns": {
+    "kind": "writes",
+    "calls": [
+     "SetSappedTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetUnitProduction": {
+    "kind": "writes",
+    "calls": [
+     "setUnitProduction"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetWeLoveTheKingDayCounter": {
+    "kind": "writes",
+    "calls": [
+     "SetWeLoveTheKingDayCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetYieldFromCrime": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldFromCrime"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldFromDevelopment": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldFromDevelopment"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldFromHappiness": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldFromHappiness"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldFromHealth": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldFromHealth"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldModifierFromCrime": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldModifierFromCrime"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldModifierFromDevelopment": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldModifierFromDevelopment"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldModifierFromHappiness": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldModifierFromHappiness"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldModifierFromHealth": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldModifierFromHealth"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldPerTurnFromMinors": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldFromMinors"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "UpdateStrengthValue": {
+    "kind": "writes",
+    "calls": [
+     "updateStrengthValue"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   }
+  },
+  "Deal": {
+   "AddAllowEmbassy": {
+    "kind": "writes",
+    "calls": [
+     "AddAllowEmbassy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddCityTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddCityTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddDeclarationOfFriendship": {
+    "kind": "writes",
+    "calls": [
+     "AddDeclarationOfFriendship"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddDefensivePact": {
+    "kind": "writes",
+    "calls": [
+     "AddDefensivePact"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddGoldPerTurnTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddGoldPerTurnTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddGoldTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddGoldTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddMapTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddMapTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddOpenBorders": {
+    "kind": "writes",
+    "calls": [
+     "AddOpenBorders"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddPeaceTreaty": {
+    "kind": "writes",
+    "calls": [
+     "AddPeaceTreaty"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddResearchAgreement": {
+    "kind": "writes",
+    "calls": [
+     "AddResearchAgreement"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddResourceTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddResourceTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddRevokeVassalageTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddRevokeVassalageTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddTechTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddTechTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddThirdPartyPeace": {
+    "kind": "writes",
+    "calls": [
+     "AddThirdPartyPeace"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddThirdPartyWar": {
+    "kind": "writes",
+    "calls": [
+     "AddThirdPartyWar"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddVassalageTrade": {
+    "kind": "writes",
+    "calls": [
+     "AddVassalageTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddVoteCommitment": {
+    "kind": "writes",
+    "calls": [
+     "AddVoteCommitment"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetRenewDealMessage": {
+    "kind": "cache",
+    "chain": [
+     "CvDealAI::IsDealWithHumanAcceptable",
+     "CvDealAI::GetDealValue",
+     "CvDealAI::GetTradeItemValue writes mutable m_iDealItemValuesTurnSlice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "RemoveByType": {
+    "kind": "writes",
+    "calls": [
+     "RemoveByType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "RemoveVoteCommitment": {
+    "kind": "writes",
+    "calls": [
+     "RemoveVoteCommitment"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   }
+  },
+  "Game": {
+   "AddPlayer": {
+    "kind": "writes",
+    "calls": [
+     "addPlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "AddReformation": {
+    "kind": "writes",
+    "calls": [
+     "AddReformationBelief"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CalculateSyncChecksum": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::calculateSyncChecksum",
+     "CvPlayer::calculateTotalYield",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanHandleAction": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::canHandleAction",
+     "CvUnit::canDoCommand",
+     "CvUnit::CanAutomate",
+     "CvReligionAI::ChooseMissionaryTargetCity",
+     "CvReligionAI::GetReligionToSpread writes mutable m_eReligionToSpread"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeActivePlayer": {
+    "kind": "writes",
+    "calls": [
+     "setActivePlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeMaxTurns": {
+    "kind": "writes",
+    "calls": [
+     "changeMaxTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeMinorPlayer": {
+    "kind": "writes",
+    "calls": [
+     "changeMinorPlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeNoNukesCount": {
+    "kind": "writes",
+    "calls": [
+     "changeNoNukesCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNukesExploded": {
+    "kind": "writes",
+    "calls": [
+     "changeNukesExploded"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumVotesForTeam": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumVotesForTeam"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangePlotExtraCost": {
+    "kind": "writes",
+    "calls": [
+     "changePlotExtraCost"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CountTotalCivPower": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::countTotalCivPower",
+     "CvPlayer::getPower const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CreateGreatWork": {
+    "kind": "writes",
+    "calls": [
+     "CreateGreatWork"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoControl": {
+    "kind": "writes",
+    "calls": [
+     "doControl"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoEnactResolution": {
+    "kind": "writes",
+    "calls": [
+     "DoEnactResolutionPublic"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoFromUIDiploEvent": {
+    "kind": "writes",
+    "calls": [
+     "DoFromUIDiploEvent"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoMinorBullyAnnex": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorBullyAnnex"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoMinorBullyGold": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorBullyGold"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoMinorBullyUnit": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorBullyUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoMinorBuyout": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorBuyout"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoMinorGiftGold": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorGiftGold"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoMinorGiftTileImprovement": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorGiftTileImprovement"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoMinorMarriage": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorMarriage"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoMinorPledgeProtection": {
+    "kind": "writes",
+    "calls": [
+     "DoMinorPledgeProtection"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoRepealResolution": {
+    "kind": "writes",
+    "calls": [
+     "DoRepealResolutionPublic"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoSpawnFreeCity": {
+    "kind": "writes",
+    "calls": [
+     "CreateFreeCityPlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoUpdateContracts": {
+    "kind": "writes",
+    "calls": [
+     "DoUpdateContracts"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "EnhancePantheon": {
+    "kind": "cache",
+    "chain": [
+     "CvGameReligions::EnhanceReligion",
+     "CvPlayerAI::AI_chooseFreeTech",
+     "CvTeam::setHasTech",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "EnhanceReligion": {
+    "kind": "cache",
+    "chain": [
+     "CvGameReligions::EnhanceReligion",
+     "CvPlayerAI::AI_chooseFreeTech",
+     "CvTeam::setHasTech",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FoundCorporation": {
+    "kind": "writes",
+    "calls": [
+     "FoundCorporation"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FoundPantheon": {
+    "kind": "writes",
+    "calls": [
+     "FoundPantheon"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "FoundReligion": {
+    "kind": "writes",
+    "calls": [
+     "FoundReligion"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetLongestCityConnectionPlots": {
+    "kind": "writes",
+    "calls": [
+     "SetExtraChildGetterFunc",
+     "SetNumExtraChildrenFunc",
+     "UnlockAchievement"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetTradeRoute": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "HandleAction": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::handleAction",
+     "CvGame::doControl",
+     "CvGame::setAIAutoPlay",
+     "CvPlot::setRevealed",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "MakeCircumnavigated": {
+    "kind": "writes",
+    "calls": [
+     "makeCircumnavigated"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "MakeNukesValid": {
+    "kind": "writes",
+    "calls": [
+     "makeNukesValid"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "MakeSpecialUnitValid": {
+    "kind": "writes",
+    "calls": [
+     "makeSpecialUnitValid"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ReviveActivePlayer": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::ReviveActivePlayer",
+     "CvGame::setAIAutoPlay",
+     "CvPlot::changeVisibilityCount",
+     "CvPlot::setRevealed",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SaveReplay": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::saveReplay",
+     "CvPlayer::GetScore",
+     "CvPlayer::GetScoreFromMilitarySize",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ScoreBelief": {
+    "kind": "cache",
+    "chain": [
+     "CvReligionAI::ScoreBelief",
+     "CvReligionAI::ScoreBeliefAtCity",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ScorePolicy": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerPolicies::ScorePolicy",
+     "CvPolicyAI::WeighPolicy",
+     "CvDiplomacyAI::IsCloseToWorldConquest",
+     "CvDiplomacyAI::GetDominationVictoryProgress",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ScorePolicyBranch": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerPolicies::ScorePolicyBranch",
+     "CvPolicyAI::WeighBranch",
+     "CvBuildingProductionAI::CheckBuildingBuildSanity",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SelectedUnit_SpeculativePopupTradeRoute_Display": {
+    "kind": "cache",
+    "chain": [
+     "CvGameTrade::DisplayTemporaryPopupTradeRoute",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SelectionListGameNetMessage": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::selectionListGameNetMessage",
+     "CvUnit::CanSwapWithUnitHere",
+     "CvStepPathFinder::DoesPathExist",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SelectionListMove": {
+    "kind": "cache",
+    "chain": [
+     "CvGame::selectionListMove",
+     "CvUnit::CanSwapWithUnitHere",
+     "CvStepPathFinder::DoesPathExist",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAIAutoPlay": {
+    "kind": "writes",
+    "calls": [
+     "setAIAutoPlay"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetActivePlayer": {
+    "kind": "writes",
+    "calls": [
+     "setActivePlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAdvisorBadAttackInterrupt": {
+    "kind": "writes",
+    "calls": [
+     "SetAdvisorBadAttackInterrupt"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAdvisorCityAttackInterrupt": {
+    "kind": "writes",
+    "calls": [
+     "SetAdvisorCityAttackInterrupt"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAdvisorMessageHasBeenSeen": {
+    "kind": "writes",
+    "calls": [
+     "SetAdvisorMessageHasBeenSeen"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAdvisorRecommenderCity": {
+    "kind": "writes",
+    "calls": [
+     "UpdateCityRecommendations"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAdvisorRecommenderTech": {
+    "kind": "writes",
+    "calls": [
+     "UpdateTechRecommendations"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetCombatWarned": {
+    "kind": "writes",
+    "calls": [
+     "SetCombatWarned"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetContractUnits": {
+    "kind": "writes",
+    "calls": [
+     "SetContractUnits"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetDebugMode": {
+    "kind": "writes",
+    "calls": [
+     "setDebugMode"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetEstimateEndTurn": {
+    "kind": "writes",
+    "calls": [
+     "setEstimateEndTurn"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetEverRightClickMoved": {
+    "kind": "writes",
+    "calls": [
+     "SetEverRightClickMoved"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetExeWantForceResyncValue": {
+    "kind": "writes",
+    "calls": [
+     "SetExeWantForceResyncValue"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetFoundYear": {
+    "kind": "writes",
+    "calls": [
+     "SetFoundYear"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetFounder": {
+    "kind": "writes",
+    "calls": [
+     "SetFounder"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetGameState": {
+    "kind": "writes",
+    "calls": [
+     "setGameState"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetGameTurn": {
+    "kind": "writes",
+    "calls": [
+     "setGameTurn"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHolyCity": {
+    "kind": "writes",
+    "calls": [
+     "SetHolyCity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHumanAIPath": {
+    "kind": "writes",
+    "calls": [
+     "setHumanAIPath"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetMaxCityElimination": {
+    "kind": "writes",
+    "calls": [
+     "setMaxCityElimination"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetMaxTurns": {
+    "kind": "writes",
+    "calls": [
+     "setMaxTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetMinimumFaithNextPantheon": {
+    "kind": "writes",
+    "calls": [
+     "SetMinimumFaithNextPantheon"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetName": {
+    "kind": "writes",
+    "calls": [
+     "setName"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumAdvancedStartPoints": {
+    "kind": "writes",
+    "calls": [
+     "setNumAdvancedStartPoints"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumVotesForTeam": {
+    "kind": "writes",
+    "calls": [
+     "SetNumVotesForTeam"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetObserverUIOverridePlayer": {
+    "kind": "writes",
+    "calls": [
+     "setObserverUIOverridePlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetOption": {
+    "kind": "writes",
+    "calls": [
+     "setOption"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPausePlayer": {
+    "kind": "writes",
+    "calls": [
+     "setPausePlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPitbossTurnTime": {
+    "kind": "writes",
+    "calls": [
+     "setPitbossTurnTime"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPlotExtraYield": {
+    "kind": "writes",
+    "calls": [
+     "setPlotExtraYield"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetScoreDirty": {
+    "kind": "writes",
+    "calls": [
+     "setScoreDirty"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetStartYear": {
+    "kind": "writes",
+    "calls": [
+     "setStartYear"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetStaticTutorialActive": {
+    "kind": "writes",
+    "calls": [
+     "SetStaticTutorialActive"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetTargetScore": {
+    "kind": "writes",
+    "calls": [
+     "setTargetScore"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetUnitedNationsCountdown": {
+    "kind": "writes",
+    "calls": [
+     "SetUnitedNationsCountdown"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetVictoryValid": {
+    "kind": "writes",
+    "calls": [
+     "setVictoryValid"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetWinner": {
+    "kind": "writes",
+    "calls": [
+     "setWinner"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "UpdateFOW": {
+    "kind": "writes",
+    "calls": [
+     "setFOW"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "UpdateScore": {
+    "kind": "writes",
+    "calls": [
+     "updateScore"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   }
+  },
+  "League": {
+   "DoProposeEnact": {
+    "kind": "writes",
+    "calls": [
+     "DoProposeEnact"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoProposeRepeal": {
+    "kind": "writes",
+    "calls": [
+     "DoProposeRepeal"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoVoteAbstain": {
+    "kind": "writes",
+    "calls": [
+     "DoVoteAbstain"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoVoteEnact": {
+    "kind": "writes",
+    "calls": [
+     "DoVoteEnact"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoVoteRepeal": {
+    "kind": "writes",
+    "calls": [
+     "DoVoteRepeal"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   }
+  },
+  "Map": {
+   "CalculateAreas": {
+    "kind": "cache",
+    "chain": [
+     "CvMap::calculateAreas",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeAIMapHint": {
+    "kind": "writes",
+    "calls": [
+     "ChangeAIMapHint"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DefaultContinentStamper": {
+    "kind": "cache",
+    "chain": [
+     "CvMap::DefaultContinentStamper",
+     "CvMap::recalculateLandmasses",
+     "CvMap::calculateLandmasses",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoPlaceNaturalWonders": {
+    "kind": "writes",
+    "calls": [
+     "DoPlaceNaturalWonders"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "RecalculateAreas": {
+    "kind": "cache",
+    "chain": [
+     "CvMap::recalculateAreas",
+     "CvMap::calculateAreas",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "UpdateDeferredFog": {
+    "kind": "writes",
+    "calls": [
+     "updateDeferredFog"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   }
+  },
+  "Player": {
+   "AI_updateFoundValues": {
+    "kind": "writes",
+    "calls": [
+     "updatePlotFoundValues"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AcquireCity": {
+    "kind": "writes",
+    "calls": [
+     "acquireCity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "AddCityName": {
+    "kind": "writes",
+    "calls": [
+     "addCityName"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "AddFreeUnit": {
+    "kind": "writes",
+    "calls": [
+     "addFreeUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "AddMinorCivQuestIfAble": {
+    "kind": "writes",
+    "calls": [
+     "AddQuestIfAble"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "AddNotificationName": {
+    "kind": "writes",
+    "calls": [
+     "AddByName"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "AddTemporaryDominanceZone": {
+    "kind": "writes",
+    "calls": [
+     "AddFocusArea"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CalculateGoldRate": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::calculateGoldRate",
+     "CvPlayer::calculateGoldRateTimes100",
+     "CvTreasury::CalculateBaseNetGoldTimes100",
+     "CvTreasury::CalculateInflatedCosts",
+     "CvTreasury::CalculatePreInflatedCosts writes m_iExpensePerTurnUnitMaintenance"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CalculateGoldRateTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::calculateGoldRateTimes100",
+     "CvTreasury::CalculateBaseNetGoldTimes100",
+     "CvTreasury::CalculateInflatedCosts",
+     "CvTreasury::CalculatePreInflatedCosts writes m_iExpensePerTurnUnitMaintenance"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CalculateGrossGoldTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvTreasury::CalculateGrossGoldTimes100",
+     "CvTreasury::GetGoldFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CalculateInflatedCosts": {
+    "kind": "cache",
+    "chain": [
+     "CvTreasury::CalculateInflatedCosts",
+     "CvTreasury::CalculatePreInflatedCosts writes m_iExpensePerTurnUnitMaintenance"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CalculateTotalYield": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::calculateTotalYield",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CanMajorBullyGold": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::CanMajorBullyGold",
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanMajorBullyUnit": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanMajorProtect": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::CanMajorProtect",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CanMajorStartProtection": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::CanMajorStartProtection",
+     "CvMinorCivAI::CanMajorProtect",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CanMoveSpyTo": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerEspionage::CanMoveSpyTo",
+     "CvPlot::setRevealed",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeAdvancedStartPoints": {
+    "kind": "writes",
+    "calls": [
+     "changeAdvancedStartPoints"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeAlwaysSeeBarbCampsCount": {
+    "kind": "writes",
+    "calls": [
+     "ChangeAlwaysSeeBarbCampsCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeAnarchyNumTurns": {
+    "kind": "writes",
+    "calls": [
+     "ChangeAnarchyNumTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBarbarianCombatBonus": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBarbarianCombatBonus"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBaseBuildingGoldMaintenance": {
+    "kind": "writes",
+    "calls": [
+     "ChangeBaseBuildingGoldMaintenance"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeCityAutomatonWorkersChange": {
+    "kind": "writes",
+    "calls": [
+     "ChangeCityAutomatonWorkersChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeCityWorkingChange": {
+    "kind": "writes",
+    "calls": [
+     "ChangeCityWorkingChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeCombatExperience": {
+    "kind": "writes",
+    "calls": [
+     "changeCombatExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeConscriptCount": {
+    "kind": "writes",
+    "calls": [
+     "changeConscriptCount"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeContractTurns": {
+    "kind": "writes",
+    "calls": [
+     "ChangeContractEndTurn"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeExtraHappinessPerCity": {
+    "kind": "writes",
+    "calls": [
+     "ChangeExtraHappinessPerCity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeFaith": {
+    "kind": "writes",
+    "calls": [
+     "ChangeFaith"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeFreePromotionCount": {
+    "kind": "writes",
+    "calls": [
+     "ChangeFreePromotionCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeGarrisonedCityRangeStrikeModifier": {
+    "kind": "writes",
+    "calls": [
+     "ChangeGarrisonedCityRangeStrikeModifier"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeGold": {
+    "kind": "writes",
+    "calls": [
+     "ChangeGold"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeGoldPerUnitTimes100": {
+    "kind": "writes",
+    "calls": [
+     "changeGoldPerUnitTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeGoldenAgeProgressMeter": {
+    "kind": "writes",
+    "calls": [
+     "ChangeGoldenAgeProgressMeterTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeGoldenAgeTurns": {
+    "kind": "writes",
+    "calls": [
+     "changeGoldenAgeTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeGovernmentCooldown": {
+    "kind": "writes",
+    "calls": [
+     "ChangeGovernmentCooldown"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeGovernmentCooldownRate": {
+    "kind": "writes",
+    "calls": [
+     "ChangeGovernmentCooldownRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeHappinessPerGarrisonedUnit": {
+    "kind": "writes",
+    "calls": [
+     "ChangeHappinessPerGarrisonedUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeHappinessPerTradeRoute": {
+    "kind": "writes",
+    "calls": [
+     "ChangeHappinessPerTradeRoute"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeInfluenceOnAllPlayers": {
+    "kind": "writes",
+    "calls": [
+     "ChangeInfluenceOn"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeInfluenceOnPlayer": {
+    "kind": "writes",
+    "calls": [
+     "ChangeInfluenceOn"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeJONSCulture": {
+    "kind": "writes",
+    "calls": [
+     "changeJONSCultureTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCulturePerTurnForFree": {
+    "kind": "writes",
+    "calls": [
+     "ChangeJONSCulturePerTurnForFree"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCulturePerTurnFromMinorCivs": {
+    "kind": "writes",
+    "calls": [
+     "ChangeJONSCulturePerTurnFromMinorCivs"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeJONSCultureTimes100": {
+    "kind": "writes",
+    "calls": [
+     "changeJONSCultureTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeMinorCivFriendshipWithMajor": {
+    "kind": "writes",
+    "calls": [
+     "ChangeFriendshipWithMajor"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNavalCombatExperience": {
+    "kind": "writes",
+    "calls": [
+     "changeNavalCombatExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNewCityExtraPopulation": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNewCityExtraPopulation"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumFaithGreatPeople": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumFaithGreatPeople"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumFreeGreatPeople": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumFreeGreatPeople"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumFreePolicies": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumFreePolicies"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumFreeTenets": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumFreeTenets"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumGoldenAges": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumGoldenAges"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumMayaBoosts": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumMayaBoosts"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumPlotsBought": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumPlotsBought"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumResourceTotal": {
+    "kind": "writes",
+    "calls": [
+     "changeNumResourceTotal"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumUnitGoldenAges": {
+    "kind": "writes",
+    "calls": [
+     "changeNumUnitGoldenAges"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumWorldWonders": {
+    "kind": "writes",
+    "calls": [
+     "ChangeNumWonders"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeOverflowResearch": {
+    "kind": "writes",
+    "calls": [
+     "changeOverflowResearch"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangePiety": {
+    "kind": "writes",
+    "calls": [
+     "ChangePiety"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangePietyRate": {
+    "kind": "writes",
+    "calls": [
+     "ChangePietyRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeReformCooldown": {
+    "kind": "writes",
+    "calls": [
+     "ChangeReformCooldown"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeReformCooldownRate": {
+    "kind": "writes",
+    "calls": [
+     "ChangeReformCooldownRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeRestingPointChange": {
+    "kind": "writes",
+    "calls": [
+     "ChangeRestingPointChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeScoreFromFutureTech": {
+    "kind": "writes",
+    "calls": [
+     "ChangeScoreFromFutureTech"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeScoreFromScenario1": {
+    "kind": "writes",
+    "calls": [
+     "ChangeScoreFromScenario1"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeScoreFromScenario2": {
+    "kind": "writes",
+    "calls": [
+     "ChangeScoreFromScenario2"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeScoreFromScenario3": {
+    "kind": "writes",
+    "calls": [
+     "ChangeScoreFromScenario3"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeScoreFromScenario4": {
+    "kind": "writes",
+    "calls": [
+     "ChangeScoreFromScenario4"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeSovereignty": {
+    "kind": "writes",
+    "calls": [
+     "ChangeSovereignty"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeUnhappinessFromUnits": {
+    "kind": "writes",
+    "calls": [
+     "ChangeUnhappinessFromUnits"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeUnitSupplyFromExpendedGreatPeople": {
+    "kind": "writes",
+    "calls": [
+     "ChangeUnitSupplyFromExpendedGreatPeople"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeWarWeariness": {
+    "kind": "writes",
+    "calls": [
+     "ChangeWarWeariness"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChooseTech": {
+    "kind": "writes",
+    "calls": [
+     "chooseTech"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ClearResearchQueue": {
+    "kind": "writes",
+    "calls": [
+     "clearResearchQueue"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CompleteAccomplishment": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::CompleteAccomplishment",
+     "CvCity::UpdateAllNonPlotYields",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CountCityFeatures": {
+    "kind": "writes",
+    "calls": [
+     "UpdateCityFeatureCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CountNumBuildings": {
+    "kind": "writes",
+    "calls": [
+     "UpdateNumBuildings"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CreateGreatGeneral": {
+    "kind": "writes",
+    "calls": [
+     "createGreatGeneral"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Disband": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::disband",
+     "CvUnit::jumpToNearestValidPlot",
+     "CvUnit::EmergencyRebase",
+     "CvUnit::rebase",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DisbandContractUnits": {
+    "kind": "writes",
+    "calls": [
+     "DisbandContractUnits"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DisbandUnit": {
+    "kind": "writes",
+    "calls": [
+     "disbandUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoAdoptPolicy": {
+    "kind": "writes",
+    "calls": [
+     "doAdoptPolicy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoBeginDiploWithHuman": {
+    "kind": "writes",
+    "calls": [
+     "DoBeginDiploWithHuman"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoCancelEventChoice": {
+    "kind": "writes",
+    "calls": [
+     "DoCancelEventChoice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoEventChoice": {
+    "kind": "writes",
+    "calls": [
+     "DoEventChoice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoForceDefPact": {
+    "kind": "writes",
+    "calls": [
+     "SetHasDefensivePact"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoForceDenounce": {
+    "kind": "writes",
+    "calls": [
+     "DoDenouncePlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoForceDoF": {
+    "kind": "writes",
+    "calls": [
+     "DoReevaluatePlayer",
+     "SetDoFAccepted"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoGoody": {
+    "kind": "writes",
+    "calls": [
+     "doGoody"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoInstantYield": {
+    "kind": "writes",
+    "calls": [
+     "doInstantYield"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoMarriage": {
+    "kind": "writes",
+    "calls": [
+     "DoBuyout"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoMinorLiberationByMajor": {
+    "kind": "writes",
+    "calls": [
+     "DoLiberationByMajor"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoSetDisableAutomaticFaithPurchase": {
+    "kind": "writes",
+    "calls": [
+     "DoSetDisableAutomaticFaithPurchase"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoStartEvent": {
+    "kind": "writes",
+    "calls": [
+     "DoStartEvent"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoSwapGreatWorks": {
+    "kind": "writes",
+    "calls": [
+     "DoSwapGreatWorks"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoSwapGreatWorksHuman": {
+    "kind": "writes",
+    "calls": [
+     "DoSwapGreatWorksHuman"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoTradeScreenClosed": {
+    "kind": "writes",
+    "calls": [
+     "DoTradeScreenClosed"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoTradeScreenOpened": {
+    "kind": "writes",
+    "calls": [
+     "DoTradeScreenOpened"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoUpdateProximityToPlayer": {
+    "kind": "writes",
+    "calls": [
+     "DoUpdateProximityToPlayer"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "EndContract": {
+    "kind": "writes",
+    "calls": [
+     "EndContract"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "EndTurnsForReadyUnits": {
+    "kind": "writes",
+    "calls": [
+     "EndTurnsForReadyUnits"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "EspionageCreateSpy": {
+    "kind": "writes",
+    "calls": [
+     "CreateSpies"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "EspionagePromoteSpy": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerEspionage::LevelUpSpy",
+     "CvCity::DoCancelEventChoice",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "EspionageSetPassive": {
+    "kind": "writes",
+    "calls": [
+     "SetPassive"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FindNewCapital": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::findNewCapital",
+     "CvCity::AddFreeCapitalBuildings",
+     "CvCityBuildings::SetNumFreeBuilding",
+     "CvCity::processBuilding",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "FindPathLength": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::findPathLength",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Found": {
+    "kind": "writes",
+    "calls": [
+     "foundCity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetAdvancedStartTechCost": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::getAdvancedStartTechCost",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetAgricultureHistory": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::getReplayDataSetIndex writes m_ReplayDataSets"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetAvailableSpyRelocationCities": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerEspionage::CanMoveSpyTo",
+     "CvPlot::setRevealed",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetBuyPlotCost": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetBuyPlotCost",
+     "CvMap::calculateInfluenceDistance",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetClosestGoodyPlot": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetClosestGoodyPlot",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetCombinedChangeValue": {
+    "kind": "cache",
+    "chain": [
+     "CvCityCitizens::ScoreYieldChange",
+     "CvCity::getGrowthMods",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetCompetitiveSpawnUnitType": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetCompetitiveSpawnUnitType",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetDealValue": {
+    "kind": "cache",
+    "chain": [
+     "CvDealAI::GetDealValue",
+     "CvDealAI::GetTradeItemValue writes mutable m_iDealItemValuesTurnSlice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetDisabledTooltip": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetDisabledTooltip",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetEconomyHistory": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::getReplayDataSetIndex writes m_ReplayDataSets"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetEspionageCityStatus": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerEspionage::CalcPerTurn",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetFaithPerTurnFromCities": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetFriendshipChangePerTurnTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::GetFriendshipChangePerTurnTimes100",
+     "CvMinorCivAI::CanMajorBullyGold",
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetGAPFromCities": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetGoldenAgePointsFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetGAPFromCitiesTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetGoldenAgePointsFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetGoldFromCitiesMinusTradeRoutesTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvTreasury::GetGoldFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetGoldFromCitiesTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvTreasury::GetGoldFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetHurryGoldCost": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetHurryGoldCost",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetIndustryHistory": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::getReplayDataSetIndex writes m_ReplayDataSets"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetInfluenceTrend": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerCulture::GetInfluenceTrend writes mutable m_influenceTrendCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetInternationalTradeRouteCulture": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetInternationalTradeRouteFood": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetInternationalTradeRouteGPTBonus": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetInternationalTradeRouteProduction": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetInternationalTradeRouteScience": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetInternationalTradeRouteTotal": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetJONSCulturePerTurnFromCities": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetMajorBullyAnnexDetails": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::GetMajorBullyAnnexDetails",
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetMajorBullyGoldDetails": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::GetMajorBullyGoldDetails",
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetMajorBullyUnitDetails": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::GetMajorBullyUnitDetails",
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetMajorBullyValue": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetMilitaryAirMight": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetMilitaryAirMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetMilitaryLandMight": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetMilitaryLandMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetMilitaryMight": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetMilitaryMightForCS": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetMilitarySeaMight": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetMilitarySeaMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetMinorCivBullyGoldAmount": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::GetBullyGoldAmount",
+     "CvMinorCivAI::CalculateBullyScore",
+     "CvMinorCivAI::GetBullyRelevantPlots writes m_bullyRelevantPlots"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetNumUnitsOutOfSupply": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetNumUnitsSupplied": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetOpinionTable": {
+    "kind": "cache",
+    "chain": [
+     "CvPlot::erase",
+     "CvCity::kill",
+     "CvPlayerEspionage::ExtractSpyFromCity",
+     "CvCity::DoCancelEventChoice",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetPledgeProtectionInvalidReason": {
+    "kind": "cache",
+    "chain": [
+     "CvMinorCivAI::GetPledgeProtectionInvalidReason",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetPlotValueCity": {
+    "kind": "cache",
+    "chain": [
+     "CvCityCitizens::GetPlotValue",
+     "CvCityCitizens::ScoreYieldChange",
+     "CvCity::getGrowthMods",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetPotentialInternationalTradeRouteDestinations": {
+    "kind": "cache",
+    "chain": [
+     "CvCityReligions::WouldExertTradeRoutePressureToward",
+     "CvGameReligions::GetAdjacentCityReligiousPressure",
+     "CvPlayer::IsCityConnectedToCity",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetPower": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::getPower const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetRandomIntrigue": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerEspionage::GetRandomIntrigue",
+     "CvPlayerEspionage::AddIntrigueMessage",
+     "CvPlayerEspionage::LevelUpSpy",
+     "CvCity::DoCancelEventChoice",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetRecommendedFoundCityPlots": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetResearchCost": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetResearchTurnsLeft": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTechs::GetResearchTurnsLeft",
+     "CvPlayerTechs::GetResearchTurnsLeftTimes100",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetScienceFromBudgetDeficitTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScienceFromBudgetDeficitTimes100",
+     "CvPlayer::calculateGoldRateTimes100",
+     "CvTreasury::CalculateBaseNetGoldTimes100",
+     "CvTreasury::CalculateInflatedCosts",
+     "CvTreasury::CalculatePreInflatedCosts writes m_iExpensePerTurnUnitMaintenance"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetScienceFromCitiesTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScienceFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetScienceFromHappinessTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScienceFromHappinessTimes100",
+     "CvPlayer::GetScienceFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetScienceFromResearchAgreementsTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScienceFromResearchAgreementsTimes100",
+     "CvPlayer::GetScienceFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetSciencePerTurnFromPassiveSpyBonusesTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetSciencePerTurnFromPassiveSpyBonusesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetScienceTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScienceTimes100",
+     "CvPlayer::GetScienceFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetScore": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScore",
+     "CvPlayer::GetScoreFromMilitarySize",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetScoreFromMilitarySize": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScoreFromMilitarySize",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetScoreHistory": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::getReplayDataSetIndex writes m_ReplayDataSets"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetSpecialistValueCity": {
+    "kind": "cache",
+    "chain": [
+     "CvCityCitizens::GetSpecialistValue",
+     "CvCityCitizens::ScoreYieldChange",
+     "CvCity::getGrowthMods",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTotalCulturePerTurnTooltip": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetTotalJONSCulturePerTurnTimes100",
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTotalFaithPerTurn": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetTotalFaithPerTurnTimes100",
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTotalFaithPerTurnTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetTotalFaithPerTurnTimes100",
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTotalJONSCulturePerTurn": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetTotalJONSCulturePerTurnTimes100",
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTotalJONSCulturePerTurnTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetTotalJONSCulturePerTurnTimes100",
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTotalValueToMe": {
+    "kind": "cache",
+    "chain": [
+     "CvDealAI::GetDealValue",
+     "CvDealAI::GetTradeItemValue writes mutable m_iDealItemValuesTurnSlice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTotalValueToMeNormal": {
+    "kind": "cache",
+    "chain": [
+     "CvDealAI::GetDealValue",
+     "CvDealAI::GetTradeItemValue writes mutable m_iDealItemValuesTurnSlice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTourism": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerCulture::GetTourism",
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTradeRoutes": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetTradeRoutesAvailable": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetTradeRoutesToYou": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetTradeToYouRoutesTTString": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTradeYourRoutesTTString": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTrade::GetTradeConnectionValueTimes100",
+     "CvPlayerTrade::GetTradeConnectionGPTValueTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetTurnsToInfluential": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerCulture::GetTurnsToInfluential",
+     "CvPlayerCulture::GetInfluenceTrend writes mutable m_influenceTrendCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetUnhappinessForecast": {
+    "kind": "writes",
+    "calls": [
+     "DoUpdateTotalUnhappiness",
+     "SetUnhappiness"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetUnhappinessFromFamine": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::GetUnhappinessFromFamine",
+     "CvCity::getFoodPerTurnBeforeConsumptionTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetUnitProductionMaintenanceMod": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetUnitProductionMaintenanceMod",
+     "CvPlayer::calculateUnitProductionMaintenanceMod",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetWrittenArtifactCulture": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerCulture::GetWrittenArtifactCulture",
+     "CvPlayer::GetCultureYieldFromPreviousTurns",
+     "CvPlayer::getReplayDataSetIndex writes m_ReplayDataSets"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetYieldRateFromCitiesTimes100": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetYieldRateFromCitiesTimes100",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GrantPolicy": {
+    "kind": "writes",
+    "calls": [
+     "grantPolicy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "InitCity": {
+    "kind": "writes",
+    "calls": [
+     "DoUpdateNextPolicyCost",
+     "initCity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "InitContractUnits": {
+    "kind": "writes",
+    "calls": [
+     "InitContractUnits"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "InitNamedUnit": {
+    "kind": "writes",
+    "calls": [
+     "initNamedUnit",
+     "setFacingDirection"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "InitUnit": {
+    "kind": "writes",
+    "calls": [
+     "initUnit",
+     "setFacingDirection"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "InitUnitWithNameOffset": {
+    "kind": "writes",
+    "calls": [
+     "initUnitWithNameOffset",
+     "setFacingDirection"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IsAnyGoodyPlotAccessible": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetClosestGoodyPlot",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IsCanHurry": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::IsCanHurry",
+     "CvPlayer::GetHurryGoldCost",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IsCanPurchaseAnyCity": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::IsCanPurchaseAnyCity",
+     "CvCity::IsCanPurchase",
+     "CvCity::canTrain",
+     "CvPlayer::GetNumUnitsOutOfSupply",
+     "CvPlayer::GetNumUnitsSupplied writes mutable m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "IsCapitalConnectedToCity": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::IsCapitalConnectedToCity",
+     "CvPlayer::IsCityConnectedToCity",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IsTradeItemValuedImpossible": {
+    "kind": "cache",
+    "chain": [
+     "CvDealAI::GetTradeItemValue writes mutable m_iDealItemValuesTurnSlice"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "IsVassalageAcceptable": {
+    "kind": "cache",
+    "chain": [
+     "CvDiplomacyAI::IsVassalageAcceptable",
+     "CvDiplomacyAI::IsVoluntaryVassalageAcceptable",
+     "CvPlayerCulture::GetInfluenceTrend writes mutable m_influenceTrendCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "KillCities": {
+    "kind": "writes",
+    "calls": [
+     "killCities"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "KillUnits": {
+    "kind": "writes",
+    "calls": [
+     "killUnits"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "PopResearch": {
+    "kind": "writes",
+    "calls": [
+     "popResearch"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "PushResearch": {
+    "kind": "writes",
+    "calls": [
+     "pushResearch"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Raze": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::raze",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ReceiveGoody": {
+    "kind": "writes",
+    "calls": [
+     "receiveGoody"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "RemoveBuildingClass": {
+    "kind": "writes",
+    "calls": [
+     "removeBuildingClass"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ResetOriginalCapitalXY": {
+    "kind": "writes",
+    "calls": [
+     "resetOriginalCapitalXY"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "RevokePolicy": {
+    "kind": "writes",
+    "calls": [
+     "revokePolicy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetAdvancedStartPoints": {
+    "kind": "writes",
+    "calls": [
+     "setAdvancedStartPoints"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAlwaysSeeBarbCampsCount": {
+    "kind": "writes",
+    "calls": [
+     "SetAlwaysSeeBarbCampsCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetAnarchyNumTurns": {
+    "kind": "writes",
+    "calls": [
+     "SetAnarchyNumTurns"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetBarbarianCombatBonus": {
+    "kind": "writes",
+    "calls": [
+     "SetBarbarianCombatBonus"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetBaseBuildingGoldMaintenance": {
+    "kind": "writes",
+    "calls": [
+     "SetBaseBuildingGoldMaintenance"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetBullyUnit": {
+    "kind": "writes",
+    "calls": [
+     "SetBullyUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetCapitalCity": {
+    "kind": "writes",
+    "calls": [
+     "setCapitalCity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetCombatExperience": {
+    "kind": "writes",
+    "calls": [
+     "setCombatExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetConscriptCount": {
+    "kind": "writes",
+    "calls": [
+     "setConscriptCount"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetCurrency": {
+    "kind": "writes",
+    "calls": [
+     "SetCurrency"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetCurrencyName": {
+    "kind": "writes",
+    "calls": [
+     "SetCurrencyName"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetDisableAutomaticFaithPurchase": {
+    "kind": "writes",
+    "calls": [
+     "SetDisableAutomaticFaithPurchase"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetEconomicStrategies": {
+    "kind": "writes",
+    "calls": [
+     "SetUsingStrategy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetEmbarkedGraphicOverride": {
+    "kind": "writes",
+    "calls": [
+     "SetEmbarkedGraphicOverride"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetEventChoiceCooldown": {
+    "kind": "writes",
+    "calls": [
+     "SetEventChoiceDuration"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetEventCooldown": {
+    "kind": "writes",
+    "calls": [
+     "SetEventCooldown"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetFaith": {
+    "kind": "writes",
+    "calls": [
+     "SetFaithTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetFaithPurchaseIndex": {
+    "kind": "writes",
+    "calls": [
+     "SetFaithPurchaseIndex"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetFaithPurchaseType": {
+    "kind": "writes",
+    "calls": [
+     "SetFaithPurchaseType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetGold": {
+    "kind": "writes",
+    "calls": [
+     "SetGold"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetGoldenAgeProgressMeter": {
+    "kind": "writes",
+    "calls": [
+     "SetGoldenAgeProgressMeterTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetGovernment": {
+    "kind": "writes",
+    "calls": [
+     "SetGovernment"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetGovernmentCooldown": {
+    "kind": "writes",
+    "calls": [
+     "SetGovernmentCooldown"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetGovernmentCooldownRate": {
+    "kind": "writes",
+    "calls": [
+     "SetGovernmentCooldownRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetGrandStrategy": {
+    "kind": "writes",
+    "calls": [
+     "SetActiveGrandStrategy",
+     "SetNumTurnsSinceActiveSet",
+     "SetPrimaryVictoryPursuit",
+     "SetSecondaryVictoryPursuit",
+     "SetSpecializationsDirty"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetGreatGeneralCombatBonus": {
+    "kind": "writes",
+    "calls": [
+     "SetGreatGeneralCombatBonus"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHappiness": {
+    "kind": "writes",
+    "calls": [
+     "SetHappiness"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHappinessPerGarrisonedUnit": {
+    "kind": "writes",
+    "calls": [
+     "SetHappinessPerGarrisonedUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHappinessPerTradeRoute": {
+    "kind": "writes",
+    "calls": [
+     "SetHappinessPerTradeRoute"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHasPolicy": {
+    "kind": "writes",
+    "calls": [
+     "setHasPolicy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHasSecularized": {
+    "kind": "writes",
+    "calls": [
+     "SetHasSecularized"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetInstantYieldNotificationDisabled": {
+    "kind": "writes",
+    "calls": [
+     "SetInstantYieldNotificationDisabled"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetJONSCulture": {
+    "kind": "writes",
+    "calls": [
+     "setJONSCultureTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetJONSCultureTimes100": {
+    "kind": "writes",
+    "calls": [
+     "setJONSCultureTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetLeaderType": {
+    "kind": "writes",
+    "calls": [
+     "setLeaderType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetLegislatureName": {
+    "kind": "writes",
+    "calls": [
+     "SetLegislatureName"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetMilitaryStrategies": {
+    "kind": "writes",
+    "calls": [
+     "SetUsingStrategy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetMinorCivActiveQuestForPlayer": {
+    "kind": "writes",
+    "calls": [
+     "AddQuestForPlayer"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetMinorCivUniqueUnit": {
+    "kind": "writes",
+    "calls": [
+     "SetUniqueUnit"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNavalCombatExperience": {
+    "kind": "writes",
+    "calls": [
+     "setNavalCombatExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumFaithGreatPeople": {
+    "kind": "writes",
+    "calls": [
+     "SetNumFaithGreatPeople"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumFreeGreatPeople": {
+    "kind": "writes",
+    "calls": [
+     "SetNumFreeGreatPeople"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumFreePolicies": {
+    "kind": "writes",
+    "calls": [
+     "SetNumFreePolicies"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumFreeTechs": {
+    "kind": "writes",
+    "calls": [
+     "SetNumFreeTechs"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumFreeTenets": {
+    "kind": "writes",
+    "calls": [
+     "SetNumFreeTenets"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumGoldenAges": {
+    "kind": "writes",
+    "calls": [
+     "SetNumGoldenAges"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumMayaBoosts": {
+    "kind": "writes",
+    "calls": [
+     "SetNumMayaBoosts"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumPlotsBought": {
+    "kind": "writes",
+    "calls": [
+     "SetNumPlotsBought"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumWondersBeatenTo": {
+    "kind": "writes",
+    "calls": [
+     "SetNumWondersBeatenTo"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetOption": {
+    "kind": "writes",
+    "calls": [
+     "setOption"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetOriginalCapitalXY": {
+    "kind": "writes",
+    "calls": [
+     "setOriginalCapitalXY"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetOverflowResearch": {
+    "kind": "writes",
+    "calls": [
+     "setOverflowResearch"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPersonality": {
+    "kind": "writes",
+    "calls": [
+     "SetPersonality"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPersonalityType": {
+    "kind": "writes",
+    "calls": [
+     "setPersonalityType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPiety": {
+    "kind": "writes",
+    "calls": [
+     "SetPiety"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPietyRate": {
+    "kind": "writes",
+    "calls": [
+     "SetPietyRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlayable": {
+    "kind": "writes",
+    "calls": [
+     "setPlayable"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPolicyBranchUnlocked": {
+    "kind": "writes",
+    "calls": [
+     "SetPolicyBranchUnlocked"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPoliticLeader": {
+    "kind": "writes",
+    "calls": [
+     "SetPoliticLeader"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPoliticLeaderKey": {
+    "kind": "writes",
+    "calls": [
+     "SetPoliticLeaderKey"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPoliticPercent": {
+    "kind": "writes",
+    "calls": [
+     "SetPoliticPercent"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetProsperityScore": {
+    "kind": "writes",
+    "calls": [
+     "SetProsperityScore"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetReformCooldown": {
+    "kind": "writes",
+    "calls": [
+     "SetReformCooldown"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetReformCooldownRate": {
+    "kind": "writes",
+    "calls": [
+     "SetReformCooldownRate"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRefuseBrokeredPeaceTrade": {
+    "kind": "writes",
+    "calls": [
+     "SetRefuseBrokeredPeaceTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRefuseBrokeredWarTrade": {
+    "kind": "writes",
+    "calls": [
+     "SetRefuseBrokeredWarTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRefuseDefensivePactTrade": {
+    "kind": "writes",
+    "calls": [
+     "SetRefuseDefensivePactTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRefuseEmbassyTrade": {
+    "kind": "writes",
+    "calls": [
+     "SetRefuseEmbassyTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRefuseOpenBordersTrade": {
+    "kind": "writes",
+    "calls": [
+     "SetRefuseOpenBordersTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRefuseResearchAgreementTrade": {
+    "kind": "writes",
+    "calls": [
+     "SetRefuseResearchAgreementTrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetReplayDataValue": {
+    "kind": "writes",
+    "calls": [
+     "setReplayDataValue"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetResearchingTech": {
+    "kind": "writes",
+    "calls": [
+     "setResearchingTech"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetResourceAvailable": {
+    "kind": "writes",
+    "calls": [
+     "SetResourceAvailable"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetResourceNotForSale": {
+    "kind": "writes",
+    "calls": [
+     "SetResourceNotForSale"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRestingPointChange": {
+    "kind": "writes",
+    "calls": [
+     "SetRestingPointChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetScriptData": {
+    "kind": "writes",
+    "calls": [
+     "setScriptData"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetSovereignty": {
+    "kind": "writes",
+    "calls": [
+     "SetSovereignty"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetStartingPlot": {
+    "kind": "writes",
+    "calls": [
+     "setStartingPlot"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetStateReligion": {
+    "kind": "writes",
+    "calls": [
+     "SetStateReligionOverride"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetTurnsSinceConversion": {
+    "kind": "writes",
+    "calls": [
+     "SetTurnsSinceConversion"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetUnitSpawnCounter": {
+    "kind": "writes",
+    "calls": [
+     "SetUnitSpawnCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetWarWeariness": {
+    "kind": "writes",
+    "calls": [
+     "SetWarWeariness"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetYieldPerTurnFromMinors": {
+    "kind": "writes",
+    "calls": [
+     "SetYieldPerTurnFromMinors"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SpawnResourceInVicinity": {
+    "kind": "writes",
+    "calls": [
+     "SpawnResourceInVicinity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "StartContract": {
+    "kind": "writes",
+    "calls": [
+     "StartContract"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SwapPolicy": {
+    "kind": "writes",
+    "calls": [
+     "swapPolicy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   }
+  },
+  "Plot": {
+   "AddArchaeologicalRecord": {
+    "kind": "writes",
+    "calls": [
+     "AddArchaeologicalRecord"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CalculateNatureYield": {
+    "kind": "cache",
+    "chain": [
+     "CvPlot::calculateNatureYield",
+     "CvCity::getStrengthValue",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeBuildProgress": {
+    "kind": "writes",
+    "calls": [
+     "changeBuildProgress"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeExtraMovePathCost": {
+    "kind": "writes",
+    "calls": [
+     "changeExtraMovePathCost"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeImprovementDuration": {
+    "kind": "writes",
+    "calls": [
+     "changeImprovementDuration"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeInvisibleVisibilityCount": {
+    "kind": "writes",
+    "calls": [
+     "changeInvisibleVisibilityCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNumResource": {
+    "kind": "writes",
+    "calls": [
+     "changeNumResource"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeOwnershipDuration": {
+    "kind": "writes",
+    "calls": [
+     "changeOwnershipDuration"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeUpgradeProgress": {
+    "kind": "writes",
+    "calls": [
+     "changeUpgradeProgress"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeVisibilityCount": {
+    "kind": "writes",
+    "calls": [
+     "changeVisibilityCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeYield": {
+    "kind": "writes",
+    "calls": [
+     "changeYield"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "Erase": {
+    "kind": "cache",
+    "chain": [
+     "CvPlot::erase",
+     "CvCity::kill",
+     "CvPlayerEspionage::ExtractSpyFromCity",
+     "CvCity::DoCancelEventChoice",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetFoundValue": {
+    "kind": "cache",
+    "chain": [
+     "CvPlot::getFoundValue writes m_aiFoundValue"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetNumFriendlyUnitsOfType": {
+    "kind": "cache",
+    "chain": [
+     "CvPlot::getNumFriendlyUnitsOfType",
+     "CvUnit::canEmbarkOnto",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "RemoveGoody": {
+    "kind": "writes",
+    "calls": [
+     "removeGoody"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetArchaeologicalRecord": {
+    "kind": "writes",
+    "calls": [
+     "SetArchaeologicalRecord"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetArea": {
+    "kind": "writes",
+    "calls": [
+     "setArea"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetCityPurchaseID": {
+    "kind": "writes",
+    "calls": [
+     "setOwningCity"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetContinentArtType": {
+    "kind": "writes",
+    "calls": [
+     "SetContinentType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetFeatureType": {
+    "kind": "writes",
+    "calls": [
+     "setFeatureType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetImprovementDuration": {
+    "kind": "writes",
+    "calls": [
+     "setImprovementDuration"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetImprovementPillaged": {
+    "kind": "writes",
+    "calls": [
+     "SetImprovementPillaged"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetImprovementType": {
+    "kind": "writes",
+    "calls": [
+     "setImprovementType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNEOfRiver": {
+    "kind": "writes",
+    "calls": [
+     "setNEOfRiver"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNWOfRiver": {
+    "kind": "writes",
+    "calls": [
+     "setNWOfRiver"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNumResource": {
+    "kind": "writes",
+    "calls": [
+     "setNumResource"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetOwner": {
+    "kind": "writes",
+    "calls": [
+     "setOwner"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetOwnershipDuration": {
+    "kind": "writes",
+    "calls": [
+     "setOwnershipDuration"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPlannedRouteState": {
+    "kind": "writes",
+    "calls": [
+     "SetPlannedRouteState"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlayerResponsibleForImprovement": {
+    "kind": "writes",
+    "calls": [
+     "SetPlayerResponsibleForImprovement"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlayerResponsibleForRoute": {
+    "kind": "writes",
+    "calls": [
+     "SetPlayerResponsibleForRoute"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlayerThatBuiltImprovement": {
+    "kind": "writes",
+    "calls": [
+     "SetPlayerThatBuiltImprovement"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlayerThatClearedBarbCampHere": {
+    "kind": "writes",
+    "calls": [
+     "SetPlayerThatClearedBarbCampHere"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPlotType": {
+    "kind": "writes",
+    "calls": [
+     "setPlotType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetResourceType": {
+    "kind": "writes",
+    "calls": [
+     "setResourceType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetRevealed": {
+    "kind": "writes",
+    "calls": [
+     "setRevealed"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetRoutePillaged": {
+    "kind": "writes",
+    "calls": [
+     "SetRoutePillaged"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetRouteType": {
+    "kind": "writes",
+    "calls": [
+     "setRouteType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetScriptData": {
+    "kind": "writes",
+    "calls": [
+     "setScriptData"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetStartingPlot": {
+    "kind": "writes",
+    "calls": [
+     "setStartingPlot"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetTerrainType": {
+    "kind": "writes",
+    "calls": [
+     "setTerrainType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetUpgradeProgress": {
+    "kind": "writes",
+    "calls": [
+     "setUpgradeProgress"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetWOfRiver": {
+    "kind": "writes",
+    "calls": [
+     "setWOfRiver"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "UpdateFog": {
+    "kind": "writes",
+    "calls": [
+     "updateFog"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "UpdateVisibility": {
+    "kind": "writes",
+    "calls": [
+     "updateVisibility"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   }
+  },
+  "Team": {
+   "AddTeam": {
+    "kind": "writes",
+    "calls": [
+     "addTeam"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeAllowEmbassyTradingAllowedCount": {
+    "kind": "writes",
+    "calls": [
+     "changeAllowEmbassyTradingAllowedCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBorderObstacleCount": {
+    "kind": "writes",
+    "calls": [
+     "changeBorderObstacleCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeBridgeBuildingCount": {
+    "kind": "writes",
+    "calls": [
+     "changeBridgeBuildingCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeCityAutomatonWorkersChange": {
+    "kind": "writes",
+    "calls": [
+     "changeCityAutomatonWorkersChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeCityWorkingChange": {
+    "kind": "writes",
+    "calls": [
+     "changeCityWorkingChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeDefensivePactTradingAllowedCount": {
+    "kind": "writes",
+    "calls": [
+     "changeDefensivePactTradingAllowedCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeExtraMoves": {
+    "kind": "writes",
+    "calls": [
+     "changeExtraMoves"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeExtraWaterSeeFromCount": {
+    "kind": "writes",
+    "calls": [
+     "changeExtraWaterSeeFromCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeForceTeamVoteEligibilityCount": {
+    "kind": "writes",
+    "calls": [
+     "changeForceTeamVoteEligibilityCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeGoldTradingCount": {
+    "kind": "writes",
+    "calls": [
+     "changeGoldTradingCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeImprovementYieldChange": {
+    "kind": "writes",
+    "calls": [
+     "changeImprovementYieldChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeMapTradingCount": {
+    "kind": "writes",
+    "calls": [
+     "changeMapTradingCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeNukeInterception": {
+    "kind": "writes",
+    "calls": [
+     "changeNukeInterception"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeOpenBordersTradingAllowedCount": {
+    "kind": "writes",
+    "calls": [
+     "changeOpenBordersTradingAllowedCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangePermanentAllianceTradingCount": {
+    "kind": "writes",
+    "calls": [
+     "changePermanentAllianceTradingCount"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeProjectCount": {
+    "kind": "writes",
+    "calls": [
+     "changeProjectCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeRouteChange": {
+    "kind": "writes",
+    "calls": [
+     "changeRouteChange"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeTechShareCount": {
+    "kind": "writes",
+    "calls": [
+     "changeTechShareCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeTechTradingCount": {
+    "kind": "writes",
+    "calls": [
+     "changeTechTradingCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeVictoryPoints": {
+    "kind": "writes",
+    "calls": [
+     "changeVictoryPoints"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeWaterWorkCount": {
+    "kind": "writes",
+    "calls": [
+     "changeWaterWorkCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DeclareWar": {
+    "kind": "writes",
+    "calls": [
+     "declareWar"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoApplyVassalTax": {
+    "kind": "writes",
+    "calls": [
+     "DoApplyVassalTax"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoBecomeVassal": {
+    "kind": "writes",
+    "calls": [
+     "DoBecomeVassal"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoEndVassal": {
+    "kind": "writes",
+    "calls": [
+     "DoEndVassal"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoLiberateVassal": {
+    "kind": "writes",
+    "calls": [
+     "DoLiberateVassal"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetDefensivePower": {
+    "kind": "cache",
+    "chain": [
+     "CvTeam::getDefensivePower",
+     "CvPlayer::getPower const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetPower": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::getPower const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetScore": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayer::GetScore",
+     "CvPlayer::GetScoreFromMilitarySize",
+     "CvPlayer::GetMilitaryMight const_cast(this)->updateMightStatistics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "MakePeace": {
+    "kind": "writes",
+    "calls": [
+     "makePeace"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Meet": {
+    "kind": "writes",
+    "calls": [
+     "DoFirstContactWithMajor"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetCurrentEra": {
+    "kind": "writes",
+    "calls": [
+     "SetCurrentEra"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetForcePeace": {
+    "kind": "writes",
+    "calls": [
+     "setForcePeace"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetHasTech": {
+    "kind": "writes",
+    "calls": [
+     "setHasTech"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetMapCentering": {
+    "kind": "writes",
+    "calls": [
+     "setMapCentering"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetOpenBorders": {
+    "kind": "writes",
+    "calls": [
+     "SetAllowsOpenBordersToTeam"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetPermanentWarPeace": {
+    "kind": "writes",
+    "calls": [
+     "setPermanentWarPeace"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetProjectArtType": {
+    "kind": "writes",
+    "calls": [
+     "setProjectArtType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetProjectDefaultArtType": {
+    "kind": "writes",
+    "calls": [
+     "setProjectDefaultArtType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "UpdateEmbarkGraphics": {
+    "kind": "writes",
+    "calls": [
+     "UpdateEmbarkGraphics"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   }
+  },
+  "TeamTech": {
+   "ChangeResearchProgress": {
+    "kind": "writes",
+    "calls": [
+     "ChangeResearchProgress"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeResearchProgressPercent": {
+    "kind": "writes",
+    "calls": [
+     "ChangeResearchProgressPercent"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeResearchProgressTimes100": {
+    "kind": "writes",
+    "calls": [
+     "ChangeResearchProgressTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetResearchCost": {
+    "kind": "cache",
+    "chain": [
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetResearchLeft": {
+    "kind": "cache",
+    "chain": [
+     "CvTeamTechs::GetResearchLeft",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IncrementTechCount": {
+    "kind": "writes",
+    "calls": [
+     "IncrementTechCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetEurekaCounter": {
+    "kind": "writes",
+    "calls": [
+     "SetEurekaCounter"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetHasTech": {
+    "kind": "writes",
+    "calls": [
+     "SetHasTech"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNoTradeTech": {
+    "kind": "writes",
+    "calls": [
+     "SetNoTradeTech"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetResearchProgress": {
+    "kind": "writes",
+    "calls": [
+     "SetResearchProgress"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetResearchProgressTimes100": {
+    "kind": "writes",
+    "calls": [
+     "SetResearchProgressTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   }
+  },
+  "Unit": {
+   "CanAirliftAt": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canAirliftAt",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanAutomate": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::CanAutomate",
+     "CvReligionAI::ChooseMissionaryTargetCity",
+     "CvReligionAI::GetReligionToSpread writes mutable m_eReligionToSpread"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanDisembark": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canDisembark",
+     "CvUnit::canDisembarkOnto",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanDisembarkOnto": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canDisembarkOnto",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanDoCommand": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canDoCommand",
+     "CvUnit::CanAutomate",
+     "CvReligionAI::ChooseMissionaryTargetCity",
+     "CvReligionAI::GetReligionToSpread writes mutable m_eReligionToSpread"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanEmbarkOnto": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canEmbarkOnto",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanMoveOrAttackInto": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canMoveOrAttackInto",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanMoveThrough": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canMoveThrough",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanParadropAt": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::canParadropAt",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanRangeStrikeAt": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CanStartMission": {
+    "kind": "cache",
+    "chain": [
+     "CvUnitMission::CanStartMission",
+     "CvUnit::canAirliftAt",
+     "CvUnit::canMoveInto",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeCargoSpace": {
+    "kind": "writes",
+    "calls": [
+     "changeCargoSpace"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeDamage": {
+    "kind": "writes",
+    "calls": [
+     "changeDamage"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeExperience": {
+    "kind": "writes",
+    "calls": [
+     "changeExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeExperienceTimes100": {
+    "kind": "writes",
+    "calls": [
+     "changeExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeLevel": {
+    "kind": "writes",
+    "calls": [
+     "changeLevel"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "ChangeMaxHitPointsBase": {
+    "kind": "writes",
+    "calls": [
+     "changeMaxHitPointsBase"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ChangeMoves": {
+    "kind": "writes",
+    "calls": [
+     "changeMoves"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Convert": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::convert",
+     "CvCity::kill",
+     "CvPlayerEspionage::ExtractSpyFromCity",
+     "CvCity::DoCancelEventChoice",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "CreateFreeLuxuryCheck": {
+    "kind": "writes",
+    "calls": [
+     "CreateFreeLuxuryCheck"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CreateFreeLuxuryCheckCopy": {
+    "kind": "writes",
+    "calls": [
+     "CreateFreeLuxuryCheckCopy"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "CreateGreatWork": {
+    "kind": "writes",
+    "calls": [
+     "createGreatWork"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoCommand": {
+    "kind": "writes",
+    "calls": [
+     "doCommand"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "DoGroupMovement": {
+    "kind": "writes",
+    "calls": [
+     "DoGroupMovement"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "DoSquadMovement": {
+    "kind": "writes",
+    "calls": [
+     "DoSquadMovement"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "Embark": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::embark",
+     "CvPlot::changeAdjacentSight",
+     "CvPlot::changeVisibilityCount",
+     "CvPlot::setRevealed",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "EndTrader": {
+    "kind": "writes",
+    "calls": [
+     "EndTradeRoute"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "ExecuteSpecialExploreMove": {
+    "kind": "writes",
+    "calls": [
+     "ExecuteSpecialExploreMove"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetDeclareWarRangeStrike": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::GetDeclareWarRangeStrike",
+     "CvCity::canRangeStrikeAt",
+     "CvCity::canRangedStrikeTarget const_cast(this)->rangedStrikeTarget"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetDiscoverAmount": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::getDiscoverAmount",
+     "CvPlayer::GetScienceYieldFromPreviousTurns",
+     "CvPlayer::getReplayDataSetIndex writes m_ReplayDataSets"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetGivePoliciesCulture": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::getGivePoliciesCulture",
+     "CvPlayer::GetCultureYieldFromPreviousTurns",
+     "CvPlayer::getReplayDataSetIndex writes m_ReplayDataSets"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetMaxAttackStrength": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::GetMaxAttackStrength",
+     "CvUnit::GetGenericMaxStrengthModifier",
+     "CvUnit::IsHigherTechThan",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetMaxDefenseStrength": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::GetMaxDefenseStrength",
+     "CvUnit::GetGenericMaxStrengthModifier",
+     "CvUnit::IsHigherTechThan",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "GetMeleeCombatDamageCity": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::getMeleeCombatDamageCity",
+     "CvCity::getStrengthValue",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GetRangeCombatDamage": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::GetRangeCombatDamage",
+     "CvCity::getStrengthValue",
+     "CvCity::getYieldRateTimes100",
+     "CvCity::getBaseYieldRateTimes100",
+     "CvCity::GetBaseYieldRateFromGreatWorksTimes100 writes mutable m_GwYieldCache"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "GiveExperience": {
+    "kind": "writes",
+    "calls": [
+     "giveExperience"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IsEnemyInMovementRange": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::IsEnemyInMovementRange",
+     "CvUnit::GeneratePath writes mutable m_uiLastPathCacheDest"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "IsHigherTechThan": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::IsHigherTechThan",
+     "CvPlayerTechs::GetResearchCost",
+     "CvPlayer::GetMaxEffectiveCities writes m_iMaxEffectiveCities"
+    ],
+    "in": [
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "JumpToNearestValidPlot": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::jumpToNearestValidPlot",
+     "CvUnit::EmergencyRebase",
+     "CvUnit::rebase",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Kill": {
+    "kind": "cache",
+    "chain": [
+     "CvCity::kill",
+     "CvGameTrade::ClearAllCityTradeRoutes",
+     "CvGameTrade::ClearTradeRoute",
+     "CvPlayer::UpdateReligion",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Lead": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::lead",
+     "CvCity::kill",
+     "CvPlayerEspionage::ExtractSpyFromCity",
+     "CvCity::DoCancelEventChoice",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "MoveLinkedLeader": {
+    "kind": "writes",
+    "calls": [
+     "MoveLinkedLeader"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "PlunderTradeRoute": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::plunderTradeRoute",
+     "CvPlayerTrade::PlunderTradeRoute",
+     "CvGameTrade::ClearTradeRoute",
+     "CvPlayer::UpdateReligion",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "PopMission": {
+    "kind": "writes",
+    "calls": [
+     "PopMission"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Promote": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::promote",
+     "CvCity::changeDamage",
+     "CvUnit::setDamage",
+     "CvUnit::kill",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "RebaseAt": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::rebase",
+     "CvPlayer::CalculateNetHappiness writes m_iNumUnitsSuppliedCached"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "RemoveFromSquad": {
+    "kind": "writes",
+    "calls": [
+     "RemoveFromSquad"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetActivityType": {
+    "kind": "writes",
+    "calls": [
+     "SetActivityType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetBaseCombatStrength": {
+    "kind": "writes",
+    "calls": [
+     "SetBaseCombatStrength"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetBaseRangedCombatStrength": {
+    "kind": "writes",
+    "calls": [
+     "SetBaseRangedCombatStrength"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetConversionStrength": {
+    "kind": "writes",
+    "calls": [
+     "SetReligiousStrength"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetDamage": {
+    "kind": "writes",
+    "calls": [
+     "setDamage"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetDeployFromOperationTurn": {
+    "kind": "writes",
+    "calls": [
+     "SetDeployFromOperationTurn"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetEmbarked": {
+    "kind": "writes",
+    "calls": [
+     "setEmbarked"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetExperience": {
+    "kind": "writes",
+    "calls": [
+     "setExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetExperienceTimes100": {
+    "kind": "writes",
+    "calls": [
+     "setExperienceTimes100"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetHasPromotion": {
+    "kind": "writes",
+    "calls": [
+     "setHasPromotion"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetHotKeyNumber": {
+    "kind": "writes",
+    "calls": [
+     "setHotKeyNumber"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetLeaderUnitType": {
+    "kind": "writes",
+    "calls": [
+     "setLeaderUnitType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetLevel": {
+    "kind": "writes",
+    "calls": [
+     "setLevel"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetMadeAttack": {
+    "kind": "writes",
+    "calls": [
+     "setMadeAttack"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetMadeInterception": {
+    "kind": "writes",
+    "calls": [
+     "resetInterceptionCount"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetMaxHitPointsBase": {
+    "kind": "writes",
+    "calls": [
+     "setMaxHitPointsBase"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetMoves": {
+    "kind": "writes",
+    "calls": [
+     "setMoves"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetName": {
+    "kind": "writes",
+    "calls": [
+     "setName"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetNoMaintenance": {
+    "kind": "writes",
+    "calls": [
+     "SetNoMaintenance"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetOriginalOwner": {
+    "kind": "writes",
+    "calls": [
+     "SetOriginalOwner"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetPromotionReady": {
+    "kind": "writes",
+    "calls": [
+     "setPromotionReady"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetReconPlot": {
+    "kind": "writes",
+    "calls": [
+     "setReconPlot"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetReligion": {
+    "kind": "writes",
+    "calls": [
+     "SetReligion"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetScenarioData": {
+    "kind": "writes",
+    "calls": [
+     "setScenarioData"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetScriptData": {
+    "kind": "writes",
+    "calls": [
+     "setScriptData"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "SetSpreadsLeft": {
+    "kind": "writes",
+    "calls": [
+     "SetSpreadsUsed"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetSquadEndMovementType": {
+    "kind": "writes",
+    "calls": [
+     "SetSquadEndMovementType"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "SetXY": {
+    "kind": "writes",
+    "calls": [
+     "setXY"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)",
+     "stock BNW (Firaxis SDK source)"
+    ]
+   },
+   "Upgrade": {
+    "kind": "writes",
+    "calls": [
+     "DoUpgrade"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "UpgradeTo": {
+    "kind": "writes",
+    "calls": [
+     "DoUpgradeTo"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   },
+   "greatperson": {
+    "kind": "cache",
+    "chain": [
+     "CvUnit::greatperson",
+     "CvPlayer::DoGreatPersonExpended",
+     "CvPlayer::doInstantYield",
+     "CvPlayer::setCombatExperienceTimes100",
+     "CvCity::findPopulationRank writes m_bPopulationRankValid"
+    ],
+    "in": [
+     "VP fork (headless-host branch, 2026-10-25)"
+    ]
+   }
+  }
+ }
+}
