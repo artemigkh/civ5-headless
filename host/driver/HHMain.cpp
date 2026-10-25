@@ -73,6 +73,8 @@ namespace
 		"                       popups, human-turn unit cycle)\n"
 		"  --lua-before-dump <file>  newgame (experiment): run a Lua file after autoplay, before the final dump\n"
 		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
+		"  --game-log-flags <m> with game logging: 1 AILog, 2 AIPerfLog, 4 BuilderAILog, 8 PlayerAndCityAILogSplit\n"
+		"                       (default 15, as the reference profile; diagnostics of log-dependent results)\n"
 		"  --rand-log <flags>   config.ini RandLog: 5 = every synced RNG call incl. map generation (Logs\\RandCalls.csv)\n"
 		"  --strict             abort on the first unimplemented engine call\n"
 		"  --verbose            log the first call of every implemented engine method too\n"
@@ -202,6 +204,7 @@ namespace
 			else if(a == "--turns") { o.turns = atoi(v.c_str()); ++i; }
 			else if(a == "--lua-before-dump") { o.luaBeforeDump = v; ++i; }
 			else if(a == "--rand-log") { o.randLog = atoi(v.c_str()); ++i; }
+			else if(a == "--game-log-flags") { o.gameLogFlags = atoi(v.c_str()); ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
@@ -600,10 +603,10 @@ namespace
 		pContext->SetLogging(o.gameLogging);
 		if(o.gameLogging)
 		{
-			pContext->SetAILogging(true);
-			pContext->SetAIPerfLogging(true);
-			pContext->SetBuilderAILogging(true);
-			pContext->SetPlayerAndCityAILogSplit(true);
+			pContext->SetAILogging((o.gameLogFlags & 1) != 0);
+			pContext->SetAIPerfLogging((o.gameLogFlags & 2) != 0);
+			pContext->SetBuilderAILogging((o.gameLogFlags & 4) != 0);
+			pContext->SetPlayerAndCityAILogSplit((o.gameLogFlags & 8) != 0);
 		}
 		// config.ini RandLog (bit 0 on, 1 callstacks, 2 pregame calls, 3 async): Logs\RandCalls.csv
 		if(o.randLog > 0)

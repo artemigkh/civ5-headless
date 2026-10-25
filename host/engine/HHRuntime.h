@@ -40,12 +40,13 @@ struct HHOptions
 	bool noUiFrame;            // newgame: skip the per-Update UI frame emulation (EUI civ ribbon)
 	std::string luaBeforeDump; // newgame (experiment): Lua file run after autoplay, before the final dump
 	int randLog;             // SetRandLogging flags (config.ini RandLog; 0: off)
+	int gameLogFlags;        // with game logging: 1 AILog, 2 AIPerfLog, 4 BuilderAILog, 8 PlayerAndCityAILogSplit
 	int idleUpdates;        // newgame: Updates after autoplay ends (the reference idles in the human turn)
 	int crtSse2;             // _set_SSE2_enable(v) in every loaded MSVCR90 instance (-1: untouched)
 	int fpuPrecision;        // x87 precision bits for the new game (24, 53, 64; 0: untouched)
 	__int64 crtSrand;        // srand() on the main thread before the new game (-1: untouched, CRT default 1)
 	HHOptions() : language("en_US"), strict(false), verbose(false), gameLogging(false), noGameLogging(false), freeLibrary(true),
-		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1), turns(0), noUiFrame(false), randLog(0), idleUpdates(10), dumpFrom(-1), dumpTo(-1) {}
+		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1), turns(0), noUiFrame(false), randLog(0), gameLogFlags(15), idleUpdates(10), dumpFrom(-1), dumpTo(-1) {}
 };
 
 struct HHPaths
