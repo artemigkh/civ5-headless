@@ -291,12 +291,13 @@ def database_check(ctx):
                      info.get('error') or 'the real game did not give its database')
     if not ctx.db:
         return check('setup.database', title, 'n/a', 'the host database is unknown')
+    exported = info.get('method') == 'export'  # CREATE TABLE AS copies: no schema, indexes or triggers to compare
     try:
-        d = dbdiff.diff(info['path'], ctx.db)
+        d = dbdiff.diff(info['path'], ctx.db, data_only=exported)
     except Exception as error:  # noqa: BLE001
         return check('setup.database', title, 'fail', f'cannot compare: {type(error).__name__}: {error}')
     tables = [t['table'] for t in d['tables_differ']]
-    summary = 'identical, table by table' if d['identical'] else (
+    summary = ('identical, table by table' + (' (data only: the game exported its database)' if exported else '')) if d['identical'] else (
         f"{len(tables)} table(s) differ" + (f": {', '.join(tables[:8])}" if tables else '') +
         (f"; tables only in the game's: {len(d['tables_only_reference'])}" if d['tables_only_reference'] else '') +
         (f"; only in the host's: {len(d['tables_only_candidate'])}" if d['tables_only_candidate'] else ''))
@@ -324,13 +325,14 @@ def health_checks(ctx):
     out = []
     # Lua errors
     host_errors, real_errors = {}, {}
-    for d in _host_runs(ctx):
+    for d in _host_runs(ctx):  # Lua.log on both sides, so the messages compare
         for msg, n in exact.lua_errors(d).items():
             host_errors.setdefault(msg, []).append(d.name)
+    reported = {}
     for d, r in _reports(ctx):
         for e in ((r.get('luaErrors') or {}).get('list') or []):
-            msg = f"{Path(str(e.get('file') or '?')).name}:{e.get('line')}: {e.get('message')}"
-            host_errors.setdefault(msg, []).append(d.name)
+            msg = f"{e.get('context')}: {Path(str(e.get('file') or '?')).name}:{e.get('line')}: {e.get('message')} ({e.get('phase')})"
+            reported.setdefault(msg, []).append(d.name)
     if ctx.real:
         for g in ctx.real.get('games', []):
             if g.get('dir'):
@@ -343,11 +345,24 @@ def health_checks(ctx):
         out.append(check('health.lua-errors', title, 'fail' if only else 'pass',
                          f'{len(only)} Lua error(s) only in the host' if only else
                          f"no host-only Lua errors ({len(rows)} in both)" if rows else 'no Lua errors',
-                         hostOnly=only[:50], both=[r for r in rows if r['message'] in real_errors][:50], realErrors=len(real_errors)))
+                         hostOnly=only[:50], both=[r for r in rows if r['message'] in real_errors][:50], realErrors=len(real_errors),
+                         hostReports=[dict(message=m, runs=sorted(set(v))[:6]) for m, v in sorted(reported.items())][:50]))
     else:
         out.append(check('health.lua-errors', title, 'warn' if rows else 'pass',
                          f'{len(rows)} Lua error message(s) in the host (no real game to tell which are host-only)' if rows else 'no Lua errors in the host',
-                         hostErrors=rows[:50]))
+                         hostErrors=rows[:50], hostReports=[dict(message=m, runs=sorted(set(v))[:6]) for m, v in sorted(reported.items())][:50]))
+    # Civilizations and city-states the host chose (a DLL that leaves them to the exe: the real game chooses others)
+    chose = sorted({d.name for d, r in _reports(ctx) if (r.get('dll') or {}).get('hostChoseCivs')})
+    title = 'Every civilization and city-state named, none chosen by the host'
+    if not _reports(ctx):
+        out.append(check('setup.civ-choice', title, 'n/a', 'no host-report.json (an older civ5headless.exe)'))
+    elif chose:
+        out.append(check('setup.civ-choice', title, 'fail' if ctx.real_mode else 'warn',
+                         f'this DLL leaves random civilizations or city-states to the exe, and the host chose them in {len(chose)} '
+                         'run(s): the real game chooses others, so real and host games differ from the start; name them in the specs',
+                         runs=chose[:20]))
+    else:
+        out.append(check('setup.civ-choice', title, 'pass', 'the DLL or the specs chose every civilization and city-state'))
     # Stubbed engine calls
     reports = _reports(ctx)
     title = 'No stubbed engine calls outside the known-harmless list'
@@ -377,15 +392,15 @@ def health_checks(ctx):
     # UI hazards
     title = 'UI hazard scan clean, or every hazard covered by a profile'
     findings, notes = [], []
-    if ctx.hazards is not None:
+    report_path = next((d / 'host-report.json' for d, _ in reports if d.name == (ctx.job('base') or {}).get('name')),
+                       reports[0][0] / 'host-report.json' if reports else None)
+    if ctx.hazards is not None and report_path is not None:
         try:
-            scan = _hazard_scan(ctx)
-            items = scan if isinstance(scan, list) else (scan or {}).get('hazards') or (scan or {}).get('findings') or []
-            for h in items:
-                h = h if isinstance(h, dict) else {'what': str(h)}
-                if not (h.get('covered') or h.get('profile') or h.get('coveredBy')):
-                    findings.append(h)
-            notes.append(f'hazard scan: {len(items)} finding(s)')
+            hits = _hazard_scan(ctx.hazards, report_path)
+            findings = [dict(file=h.get('file'), line=h.get('line'), call=h.get('call'), kind=h.get('kind'),
+                             function=h.get('function'), why=h.get('why')) for h in hits if not h.get('covered')]
+            notes.append(f'hazard scan of the UI files of {report_path.parent.name}: {len(hits)} call(s), '
+                         f'{sum(1 for h in hits if h.get("covered"))} covered by profiles')
         except Exception as error:  # noqa: BLE001
             notes.append(f'hazard scan failed: {type(error).__name__}: {error}')
     unknown_files = {}
@@ -409,16 +424,17 @@ def health_checks(ctx):
     return out
 
 
-def _hazard_scan(ctx):
-    h = ctx.hazards
-    for name in ('scan', 'scan_config', 'run'):
-        f = getattr(h, name, None)
-        if callable(f):
-            try:
-                return f(ctx.cfg)
-            except TypeError:
-                return f(mods_dir=getattr(ctx.cfg, 'mods_dir', None), mods_db=getattr(ctx.cfg, 'mods_db', None))
-    raise RuntimeError('civ5headless.hazards has no scan()')
+def _hazard_scan(hazards, report_path):
+    """The hits of civ5headless.hazards over the UI files a host run loaded, as `hazards scan --report` finds them
+    (state-writing calls; lazy caches left out), each with covered/profile from the profiles that run selected."""
+    files, selected = hazards.files_from_report(report_path)
+    methods, _, curated = hazards.load_methods(None)
+    methods = {k: [e for e in v if e['kind'] != 'cache'] or v for k, v in methods.items()}
+    methods = {k: v for k, v in methods.items() if any(e['kind'] != 'cache' for e in v)}
+    profiles = hazards.default_profiles_dir()
+    covers = hazards.load_covers(profiles, selected) if profiles else {}
+    _, hits = hazards.scan(files, methods, curated, covers)
+    return hits
 
 
 # ---- statistics ----

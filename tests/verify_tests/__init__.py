@@ -1,7 +1,7 @@
 """Tests of the verification suite (c5h verify): python -m unittest discover -s tests
 
-The package is imported from python/ in this checkout when it is not installed; the fakes (fakegame, fake_session,
-fake_fingerprint) are imported from this folder.
+The package is imported from python/ in this checkout when it is not installed; the fakes (fakegame, fake_session)
+are imported from this folder.
 """
 import sys
 from pathlib import Path

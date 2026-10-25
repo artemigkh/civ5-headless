@@ -12,8 +12,10 @@ The run folder (<runs>/verify-<mode>-<date>-<time>, or --out) holds:
   verify.log       the progress lines
 """
 from __future__ import annotations
+import copy
 import hashlib
 import json
+import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
@@ -60,17 +62,18 @@ class Suite:
         self.db = Path(db)
         specs = self.out / 'specs'
         specs.mkdir(exist_ok=True)
-        self.trajectory = gamespec.resolve(s.trajectory_spec(), self.db)
+        self.trajectory = self.resolve(s.trajectory_spec())
         host_run.write(specs / 'trajectory.json', self.trajectory)
+        seeds = self.trajectory['seeds']
         self.setups = []
         for k, sp in enumerate(s.setups):
             name = sp.get('name') or f'setup{k + 1}'
-            r = gamespec.resolve(sp, self.db)
+            r = self.resolve(sp, seeds)
             host_run.write(specs / f'setup-{name}.json', r)
             self.setups.append((name, r))
         self.standard = None
         if s.standard_turns:
-            self.standard = gamespec.resolve(s.standard_spec, self.db)
+            self.standard = self.resolve(s.standard_spec, seeds)
             host_run.write(specs / 'standard.json', self.standard)
         pdir = self.out / 'probes'
         pdir.mkdir(exist_ok=True)
@@ -86,6 +89,37 @@ class Suite:
         self.trim()
         self.real_games = self.build_real_games() if s.real else []
         self.write_plan()
+
+    def resolve(self, spec, seeds=None):
+        """The resolved spec; seeds when the spec has none; with pin_civs, every random major civilization named
+        (from settings.civs, then any other playable one): the stock DLL leaves them to the exe, which the host cannot
+        reproduce. City-states cannot be named in a spec yet (the stock DLL's are chosen by the host then: the
+        setup.civ-choice check reports it)."""
+        spec = copy.deepcopy(spec)
+        spec.pop('name', None)
+        if seeds and not spec.get('seeds'):
+            spec['seeds'] = dict(seeds)
+        r = gamespec.resolve(spec, self.db)
+        if not self.settings.pin_civs:
+            return r
+        active = [x for x in r['slots'] if x['status'] in ('taken', 'computer')]
+        missing = [x['slot'] for x in active if x['civId'] < 0]
+        if not missing:
+            return r
+        con = sqlite3.connect(self.db.resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            playable = {t for (t,) in con.execute('select Type from Civilizations where Playable = 1')}
+        finally:
+            con.close()
+        taken = {x['civ'] for x in active if x['civId'] >= 0}
+        choice = [c for c in self.settings.civs if c in playable and c not in taken]
+        choice += sorted(playable - taken - set(choice))
+        given = {x['slot']: dict(x) for x in spec.get('slots') or []}
+        for slot, civ in zip(missing, choice):
+            given[slot] = dict(given.get(slot, {}), slot=slot, civ=civ)
+        spec['slots'] = [given[k] for k in sorted(given)]
+        spec['seeds'] = dict(r['seeds'])  # the seeds drawn for a spec without any stay
+        return gamespec.resolve(spec, self.db)
 
     def _job(self, name, kind, spec_file, turns, seeds, role, size, probes=True, **kw):
         return hostside.Job(name=name, kind=kind, spec=spec_file, turns=turns, seeds=seeds, role=role, size=size,
@@ -230,7 +264,13 @@ class Suite:
             games.append(dict(name='trajectory-aa', kind='aa', spec=self.trajectory, turns=s.turns))
         if self.standard is not None:
             games.append(dict(name='standard', kind='standard', spec=self.standard, turns=s.standard_turns))
-        return games
+        # Every seed pair costs the real game a relaunch: the trajectory's seeds first, then each other pair together.
+        order = {}
+        for g in games:
+            order.setdefault((g['spec']['seeds']['map'], g['spec']['seeds']['sync']), len(order))
+        first = (self.trajectory['seeds']['map'], self.trajectory['seeds']['sync'])
+        key = lambda g: (g['spec']['seeds']['map'], g['spec']['seeds']['sync'])
+        return sorted(games, key=lambda g: (key(g) != first, order[key(g)]))
 
     def setup_key(self):
         blob = json.dumps(dict(spec=self.trajectory, turns=self.settings.turns), sort_keys=True).encode()

@@ -1,10 +1,12 @@
 """A fake realgame.session.RealGameSession (plan 9.4) for the verification suite's tests: plays fakegame.Game, so the
 real side of c5h verify runs without the game.
 
-Like the real session, its Lua.log and HeadlessDigest.log grow over the whole session (every game appends), and
-collect_logs copies them as they are. Class attributes configure a test: sync_matters, diverge_at (the "real" game
-differs from that turn on), scale (a biased real game), fail_in (a method that raises), and the extras
-(replay_data, game_database) can be switched off.
+Like the real session: launch(map_seed, sync_seed) pins seeds; a start_game with other seeds relaunches (a new
+process: new logs) and says so; Lua.log and HeadlessDigest.log grow over a process's life (every game appends) and
+collect_logs copies them as they are; autoplay returns turnSeconds (cumulative), endTurn and endReason 'turns';
+process_stats uses the session's key names; replay data comes through call('InGame', lua); game_database exports.
+Class attributes configure a test: sync_matters, diverge_at (the "real" game differs from that turn on),
+transient_at, scale (a biased real game), fail_in (a method that raises), with_extras (call and game_database).
 """
 from pathlib import Path
 import shutil
@@ -21,13 +23,14 @@ class FakeRealGameSession:
     with_extras = True
     instances = []
 
-    def __init__(self, config, run_dir):
-        self.config, self.dir = config, Path(run_dir)
+    def __init__(self, cfg, run_dir):
+        self.config, self.dir = cfg, Path(run_dir)
         self.lua, self.digest, self.calls = [], [], []
         self.game, self.turns = None, 0
+        self.launch_seeds, self.launches = None, 0
         FakeRealGameSession.instances.append(self)
         if not self.with_extras:
-            self.replay_data = None
+            self.call = None
             self.game_database = None
 
     def _call(self, name):
@@ -35,23 +38,30 @@ class FakeRealGameSession:
         if self.fail_in == name:
             raise RuntimeError(f'fake failure in {name}')
 
-    def launch(self):
+    def launch(self, map_seed=None, sync_seed=None):
         self._call('launch')
-        return dict(mainMenuSeconds=1.5)
+        self.launch_seeds, self.launches = (map_seed, sync_seed), self.launches + 1
+        return dict(seconds=1.5, seeds=dict(map=map_seed, sync=sync_seed), launches=self.launches)
 
     def set_mods(self, mod_ids):
         self._call('set_mods')
         self.mods = list(mod_ids)
+        return dict(mods=[dict(id=i) for i in mod_ids])
 
-    def start_game(self, spec, map_seed, sync_seed, lua_probes=()):
+    def start_game(self, spec, map_seed=None, sync_seed=None, lua_probes=()):
         self._call('start_game')
+        relaunched = (map_seed, sync_seed) != self.launch_seeds
+        if relaunched:  # a new process: new logs
+            self.launch_seeds, self.launches = (map_seed, sync_seed), self.launches + 1
+            self.lua, self.digest = [], []
         spec = dict(spec, seeds=dict(map=map_seed, sync=sync_seed))
         self.game = fakegame.Game(spec, sync_matters=self.sync_matters, diverge_at=self.diverge_at,
                                   transient_at=self.transient_at, tag='real', scale=self.scale)
         self.probes = [Path(p).read_text(encoding='utf-8') for p in lua_probes]
+        self.lua.append(f'[1.0] Game started: {map_seed}/{sync_seed}')
         if any('C5HPG' in p for p in self.probes):
             self.lua += self.game.pregame_lines()
-        return dict(seconds=2.0)
+        return dict(seeds=dict(map=map_seed, sync=sync_seed), relaunched=relaunched, probes=len(self.probes))
 
     def autoplay(self, turns, max_seconds=None):
         self._call('autoplay')
@@ -60,12 +70,21 @@ class FakeRealGameSession:
             self.digest.append(self.game.digest_line(t))
             if any('C5HFP' in p for p in self.probes):
                 self.lua += self.game.fingerprint_lines(t)
-        return dict(turnSeconds={t: 4 * self.game.turn_seconds(t) for t in range(1, turns + 1)}, endTurn=turns,
-                    endReason='target')
+        return dict(startTurn=0, endTurn=turns, turns=turns, endReason='turns', victory=None,
+                    turnSeconds={t: 4 * self.game.turn_seconds(t) for t in range(1, turns + 1)},
+                    wallSeconds=4 * self.game.turn_seconds(turns))
+
+    def call(self, context, lua, label=None, timeout=120):
+        self._call('call')
+        if 'GetReplayData' in lua and self.game:
+            # as the tuner returns a Lua table of arrays: lists of [turn, value] pairs
+            return self.game.replay_data(self.turns)
+        return None
 
     def to_main_menu(self):
         self._call('to_main_menu')
         self.game = None
+        return {}
 
     def collect_logs(self, dest):
         self._call('collect_logs')
@@ -73,18 +92,17 @@ class FakeRealGameSession:
         dest.mkdir(parents=True, exist_ok=True)
         (dest / 'Lua.log').write_text(''.join(line + '\n' for line in self.lua), encoding='utf-8')
         (dest / 'HeadlessDigest.log').write_text(''.join(line + '\n' for line in self.digest), encoding='utf-8')
-        return [dest / 'Lua.log', dest / 'HeadlessDigest.log']
+        return ['Lua.log', 'HeadlessDigest.log']
 
     def process_stats(self):
         self._call('process_stats')
-        return dict(PeakWorkingSet=2000 * 2 ** 20, PeakPrivateBytes=2400 * 2 ** 20, CPUSeconds=321.0)
-
-    def replay_data(self):
-        return self.game.replay_data(self.turns) if self.game else None
+        return dict(peakWorkingSet=2000 * 2 ** 20, peakPrivateBytes=2400 * 2 ** 20, cpuSeconds=321.0,
+                    launches=self.launches, alive=True)
 
     def game_database(self, dest):
         shutil.copyfile(self.config.db, dest)
-        return dest
+        return Path(dest)
 
     def quit(self):
         self._call('quit')
+        return {}

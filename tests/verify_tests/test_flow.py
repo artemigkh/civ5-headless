@@ -14,7 +14,6 @@ from unittest import mock
 from civ5headless import config
 from civ5headless.verify import capabilities, settings as settings_mod, suite
 
-import fake_fingerprint
 from fake_session import FakeRealGameSession
 
 HERE = Path(__file__).resolve().parent
@@ -42,7 +41,9 @@ ROWS = {
     'HandicapInfos': [(5, 'HANDICAP_EMPEROR')],
     'Victories': [(0, 'VICTORY_TIME'), (2, 'VICTORY_DOMINATION')],
     'GameOptions': [(0, 'GAMEOPTION_RAGING_BARBARIANS', 1)],
-    'Civilizations': [(0, 'CIVILIZATION_AMERICA', 1)],
+    'Civilizations': [(0, 'CIVILIZATION_AMERICA', 1), (1, 'CIVILIZATION_GREECE', 1), (2, 'CIVILIZATION_EGYPT', 1),
+                      (3, 'CIVILIZATION_JAPAN', 1), (4, 'CIVILIZATION_SWEDEN', 1), (5, 'CIVILIZATION_CHINA', 1),
+                      (6, 'CIVILIZATION_BARBARIAN', 0)],
 }
 
 
@@ -95,8 +96,7 @@ class FlowTest(unittest.TestCase):
 
     def run_suite(self, mode, caps=None, **over):
         s = settings_mod.build(mode, dict(SMALL, **over.pop('table', {})), over)
-        overrides = dict(session_class=FakeRealGameSession, fingerprint=fake_fingerprint,
-                         fingerprint_probe=fake_fingerprint.PROBE, hazards=None)
+        overrides = dict(session_class=FakeRealGameSession, hazards=None)
         overrides.update(caps or {})
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
@@ -128,8 +128,20 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(s.calls.count('launch'), 1)
         self.assertEqual(s.calls.count('start_game'), 3)  # 2 setups and the trajectory game
         seg = (out / 'real/trajectory/Lua.segment.log').read_text(encoding='utf-8')
-        self.assertNotIn('C5HFP|turn=11|p00', (out / 'real/setup-continents/Lua.segment.log').read_text(encoding='utf-8'))
-        self.assertIn('C5HFP|turn=11|', seg)
+        setup = (out / 'real/setup-continents/Lua.segment.log').read_text(encoding='utf-8')
+        self.assertIn('C5HFP|v=1|turn=11|', seg)
+        self.assertNotIn('C5HFP|v=1|turn=11|', setup)
+        self.assertIn('C5HFP|v=1|turn=0|', setup)
+        self.assertEqual(seg.count('C5HFP|v=1|meta'), 1)
+        # the trajectory game first (the launch seeds), then one relaunch per other seed pair
+        self.assertEqual([g['name'] for g in doc['real']['games']], ['trajectory', 'setup-continents', 'setup-earth'])
+        self.assertEqual(s.launches, 3)
+        self.assertEqual(self.checks['trajectory.real']['details']['method'], 'digest')
+        # random major civilizations are named
+        spec = json.loads((out / 'specs/trajectory.json').read_text(encoding='utf-8'))
+        self.assertEqual([x['civ'] for x in spec['slots'][:4]], ['CIVILIZATION_GREECE', 'CIVILIZATION_EGYPT',
+                                                                 'CIVILIZATION_JAPAN', 'CIVILIZATION_SWEDEN'])
+        self.assertEqual(self.status('setup.civ-choice'), 'n/a')  # no host-report.json from this fake host run
         # the ensemble varied the map seed (the fake game ignores the sync seed)
         self.assertEqual(self.checks['statistics.ensemble']['details']['vary'], 'map')
         # history: one line; a second analysis does not add another
@@ -180,7 +192,7 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(self.status('health.victory-games'), 'pass', self.checks['health.victory-games']['summary'])
         self.assertEqual(doc['verdict'], 'pass', [c['summary'] for c in doc['checks'] if c['status'] == 'fail'])
         names = [g['name'] for g in doc['real']['games']]
-        self.assertEqual(names, ['setup-continents', 'setup-earth', 'trajectory', 'trajectory-aa', 'standard'])
+        self.assertEqual(names, ['trajectory', 'trajectory-aa', 'setup-continents', 'setup-earth', 'standard'])  # by seeds
 
     def test_host_only(self):
         os.environ['C5H_FAKE_SYNC_MATTERS'] = '1'
@@ -196,6 +208,21 @@ class FlowTest(unittest.TestCase):
         self.assertEqual(doc['exitCode'], 1)
         tp = {r['workers'] for r in doc['performance']['throughput']}
         self.assertEqual(tp, {1, 2, 4})
+
+    def test_host_chose_civs(self):
+        os.environ['C5H_FAKE_HOST_REPORT'] = '1'
+        os.environ['C5H_FAKE_HOST_CHOSE_CIVS'] = '1'
+        self.run_suite('quick')
+        self.assertEqual(self.status('setup.civ-choice'), 'fail')
+
+    def test_shared_seeds_need_one_launch(self):
+        setups = [dict(x) for x in SMALL['setups']]
+        for x in setups:
+            x.pop('seeds')
+        doc = self.run_suite('quick', table=dict(setups=setups))
+        self.assertEqual(FakeRealGameSession.instances[0].launches, 1)
+        self.assertEqual(self.status('setup.turn0'), 'pass')
+        self.assertEqual(doc['real']['games'][0]['name'], 'setup-continents')
 
     def test_lua_errors_only_in_the_host(self):
         os.environ['C5H_FAKE_LUA_ERROR'] = '1'

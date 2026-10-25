@@ -8,7 +8,8 @@ and, with C5H_FAKE_HOST_REPORT=1, host-report.json.
 Environment: C5H_FAKE_SYNC_MATTERS=1 (the sync seed changes the game), C5H_FAKE_SKEW_DIVERGE=T and
 C5H_FAKE_PERTURB_DIVERGE=T (--frame-skew / --heap-perturb change the game from turn T), C5H_FAKE_PROBE_DIVERGE=T (the
 Lua probes change it), C5H_FAKE_NONDETERMINISTIC=T (every run differs from turn T), C5H_FAKE_VICTORY=T (victory at
-turn T), C5H_FAKE_LUA_ERROR=1 (a Lua error line).
+turn T), C5H_FAKE_LUA_ERROR=1 (a Lua error line), C5H_FAKE_HOST_CHOSE_CIVS=1 (host-report.json says the host chose
+civilizations).
 """
 import json
 import os
@@ -91,6 +92,7 @@ def main(argv):
     if os.environ.get('C5H_FAKE_HOST_REPORT') == '1':
         (out / 'host-report.json').write_text(json.dumps(dict(
             format='civ5headless-host-report/1', status='passed',
+            dll=dict(digestAdditions=True, hostChoseCivs=os.environ.get('C5H_FAKE_HOST_CHOSE_CIVS') == '1'),
             stubCalls=dict(unknownCount=1, calls=[dict(method='ICvEngineUtility1::Harmless', count=5, knownHarmless=True),
                                                   dict(method='ICvEngineUtility1::Unknown', count=2, knownHarmless=False)]),
             luaErrors=dict(failing=0, total=0, list=[]), uiFiles=dict(unknownCount=0, unknown=[]),

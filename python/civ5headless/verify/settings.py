@@ -23,22 +23,29 @@ DEFAULT_SPEC = {'map': {'script': 'Assets/Maps/Continents.lua', 'size': 'WORLDSI
                 'speed': 'GAMESPEED_STANDARD', 'era': 'ERA_ANCIENT', 'difficulty': 'HANDICAP_EMPEROR',
                 'seeds': {'map': 30017, 'sync': 40017}}
 
-# Turn-0 setups (plan 5.1): base-game map scripts that every mod set has, a premade map, two speeds and sizes.
+# Turn-0 setups (plan 5.1): base-game map scripts that every mod set has, a premade map, two speeds and sizes. A
+# setup without seeds takes the trajectory game's: the real game reads its seeds when it loads the DLL, so every
+# other seed pair costs a relaunch.
 DEFAULT_SETUPS = [
-    {'name': 'continents-tiny', 'map': {'script': 'Assets/Maps/Continents.lua', 'size': 'WORLDSIZE_TINY'},
-     'seeds': {'map': 31001, 'sync': 41001}},
+    {'name': 'continents-tiny', 'map': {'script': 'Assets/Maps/Continents.lua', 'size': 'WORLDSIZE_TINY'}},
     {'name': 'pangaea-tiny-quick', 'map': {'script': 'Assets/Maps/Pangaea.lua', 'size': 'WORLDSIZE_TINY'},
-     'speed': 'GAMESPEED_QUICK', 'seeds': {'map': 31002, 'sync': 41002}},
-    {'name': 'archipelago-small', 'map': {'script': 'Assets/Maps/Archipelago.lua', 'size': 'WORLDSIZE_SMALL'},
-     'seeds': {'map': 31003, 'sync': 41003}},
-    {'name': 'earth-small', 'map': {'civ5map': 'Assets/Maps/Earth_Small.Civ5Map'},
-     'seeds': {'map': 31004, 'sync': 41004}},
+     'speed': 'GAMESPEED_QUICK'},
+    {'name': 'archipelago-small', 'map': {'script': 'Assets/Maps/Archipelago.lua', 'size': 'WORLDSIZE_SMALL'}},
+    {'name': 'earth-small', 'map': {'civ5map': 'Assets/Maps/Earth_Small.Civ5Map'}},
 ]
 
-# Full mode's scale game (plan 5.5): Standard Continents, 60 turns.
+# Full mode's scale game (plan 5.5): Standard Continents, 60 turns (the trajectory game's seeds).
 DEFAULT_STANDARD_SPEC = {'map': {'script': 'Assets/Maps/Continents.lua', 'size': 'WORLDSIZE_STANDARD'},
-                         'speed': 'GAMESPEED_STANDARD', 'era': 'ERA_ANCIENT', 'difficulty': 'HANDICAP_EMPEROR',
-                         'seeds': {'map': 1001, 'sync': 2002}}
+                         'speed': 'GAMESPEED_STANDARD', 'era': 'ERA_ANCIENT', 'difficulty': 'HANDICAP_EMPEROR'}
+
+# Civilizations given to the major slots a spec leaves random, in this order (those the database has): the stock DLL
+# leaves random civilizations to the exe, which the host cannot reproduce, so verify names them. Base-game civs.
+DEFAULT_CIVS = ['CIVILIZATION_GREECE', 'CIVILIZATION_EGYPT', 'CIVILIZATION_JAPAN', 'CIVILIZATION_SWEDEN',
+                'CIVILIZATION_CHINA', 'CIVILIZATION_ENGLAND', 'CIVILIZATION_FRANCE', 'CIVILIZATION_GERMANY',
+                'CIVILIZATION_ROME', 'CIVILIZATION_RUSSIA', 'CIVILIZATION_AMERICA', 'CIVILIZATION_ARABIA',
+                'CIVILIZATION_AZTEC', 'CIVILIZATION_INDIA', 'CIVILIZATION_IROQUOIS', 'CIVILIZATION_OTTOMAN',
+                'CIVILIZATION_PERSIA', 'CIVILIZATION_SIAM', 'CIVILIZATION_SONGHAI', 'CIVILIZATION_CARTHAGE',
+                'CIVILIZATION_BYZANTIUM', 'CIVILIZATION_CELTS']
 
 MODE_DEFAULTS = {
     'quick': dict(budget_minutes=25.0, real=True, real_aa=False, standard_turns=0, ensemble=32, victory_games=0),
@@ -73,6 +80,8 @@ class Settings:
     heal_turns: int = 2                 # differences that heal within this many turns are transients
     setups: list = field(default_factory=lambda: copy.deepcopy(DEFAULT_SETUPS))
     setup_turns: int = 1                # turn-0 setups play this many turns (the fingerprint prints at turn 0)
+    pin_civs: bool = True               # name the civilizations of major slots a spec leaves random
+    civs: list = field(default_factory=lambda: list(DEFAULT_CIVS))
     standard_spec: dict = field(default_factory=lambda: copy.deepcopy(DEFAULT_STANDARD_SPEC))
     standard_turns: int = 0             # full: real and host Standard game of this many turns (0: none)
     victory_games: int = 0              # full: host Tiny games to victory

@@ -92,7 +92,7 @@ def real_figures(real, game_name, samples=None, period=5.0):
         return None
     times = {int(k): float(v) for k, v in (game['autoplay'].get('turnSeconds') or {}).items()}
     per = thirds(times, game.get('turns'))
-    proc = real.get('process') or {}
+    proc = game.get('process') or real.get('process') or {}  # the game's own: taken right after its autoplay
     first = next((g for g in real.get('games', []) if g.get('start')), None)
     launch = (real.get('launch') or {}).get('seconds')
     to_first = None

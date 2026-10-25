@@ -66,16 +66,16 @@ class ExactTest(unittest.TestCase):
         self.assertEqual(r['matchedTurns'], 2)
 
     def test_methods_on_run_folders(self):
-        import fake_fingerprint
+        from civ5headless import fingerprint
         a = write_game(self.root / 'a', SPEC, 8)
         b = write_game(self.root / 'b', SPEC, 8, diverge_at=5, tag='x')
-        self.assertEqual(exact.available(a, b, fake_fingerprint), 'digest')
+        self.assertEqual(exact.available(a, b, fingerprint), 'digest')
         for method in ('digest', 'fingerprint', 'checkpoint'):
-            r = exact.compare(a, b, method, 2, fake_fingerprint)
+            r = exact.compare(a, b, method, 2, fingerprint)
             self.assertEqual(r['method'], method)
             self.assertEqual(r['divergence']['turn'], 5, method)
         (a / 'Logs/HeadlessDigest.log').unlink()
-        self.assertEqual(exact.available(a, b, fake_fingerprint), 'fingerprint')
+        self.assertEqual(exact.available(a, b, fingerprint), 'fingerprint')
         self.assertIsNone(exact.available(a, b, None))
         self.assertEqual(exact.available(a, b, None, host_only=True), 'checkpoint')
         self.assertIn('lasting difference from turn 5', exact.summary(exact.compare(a, b, 'checkpoint')))

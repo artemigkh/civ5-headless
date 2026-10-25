@@ -3,7 +3,8 @@
 Sources:
 - replay datasets: replay-data.json of a run folder ({player: {REPLAYDATASET_X: [[turn, value], ...]}}, every major
   civ), or the same structure from the real-game session;
-- fingerprint metrics: the C5HM lines of Lua.log, read with civ5headless.fingerprint (turn -> player -> metric).
+- fingerprint metrics: the C5HM lines of Lua.log, read with civ5headless.fingerprint (turn -> player -> metric; a
+  civ with alive=0 counts only in the alive series).
 
 Players differ between games (random civs, eliminations), so each metric becomes world aggregates over the major
 civs that have a value that turn: the mean and the maximum (the leader). Series names are "<source>:<METRIC>:<agg>",
@@ -63,8 +64,9 @@ def from_metrics(metrics, aggregates=AGGREGATES, exclude=()):
     per = {}
     for t, players in (metrics or {}).items():
         for player, values in (players or {}).items():
+            dead = str((values or {}).get('alive', 1)) in ('0', '0.0', 'False')
             for name, v in (values or {}).items():
-                if name in exclude:
+                if name in exclude or (dead and name != 'alive'):  # a dead civ's zeros are not a game's metrics
                     continue
                 try:
                     per.setdefault(name, {}).setdefault(int(t), []).append(float(v))

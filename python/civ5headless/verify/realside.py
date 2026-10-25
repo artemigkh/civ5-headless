@@ -1,20 +1,21 @@
 """The real-game side of the suite, through realgame.session.RealGameSession (plan 9.4); tests use a fake.
 
-One session, launched once:
-1. launch (timed), activate the configuration's mods, and copy the game's own database once a game has started
-   (the database check);
-2. the turn-0 setups: each started with config.ini seeds and the probes, one turn played (the fingerprint prints at
-   turn 0), logs collected, back to the main menu;
-3. the trajectory game: the Tiny game played to the horizon with the probes; per-turn wall times, replay data,
-   process statistics;
+One session:
+1. launch with the first game's seeds pinned (the game reads them when it loads the DLL; the games are ordered so
+   that each seed pair costs at most one relaunch), activate the configuration's mods;
+2. the turn-0 setups: each started with the probes (the session leaves it paused at turn 0), one turn played (the
+   fingerprint prints at turn 0), logs collected, back to the main menu; after the first game, the database the game
+   holds in memory is exported for the database check;
+3. the trajectory game: the Tiny game played to the horizon with the probes; per-turn wall times, replay data
+   (session.call in InGame, as run.py's final query), process statistics right after its autoplay;
 4. full mode: the same game again (real A/A) and a Standard game for scale and memory.
 
-Each game's logs go to real/<game>/ (Lua.segment.log holds only what that game appended to the session's Lua.log;
-HeadlessDigest.segment.log likewise). The session's optional extras are used when present and skipped otherwise:
-replay_data(), game_database(dest), and the dicts launch(), start_game() and autoplay() may return.
+Each game's logs go to real/<game>/: collect_logs copies the session's logs, and Lua.segment.log (also Logs/Lua.log)
+keeps only what that game appended; HeadlessDigest.log likewise. A relaunch starts new logs, which the segmenting
+notices. Optional session methods (replay_data, call, game_database) are used when present.
 """
 from __future__ import annotations
-import json
+import inspect
 import shutil
 import time
 import traceback
@@ -23,6 +24,20 @@ from pathlib import Path
 from .. import run as host_run
 
 SEGMENTED = ('Lua.log', 'HeadlessDigest.log')
+HEAD = 256  # bytes of a log remembered to notice a new file (a relaunch) of the same name
+
+# Every major's replay data, as run.FINAL collects it in the host.
+REPLAY_LUA = r'''
+local series={}
+for owner=0,63 do local p=Players[owner]
+ if p and p:IsEverAlive() and not p:IsBarbarian() and not p:IsMinorCiv() and not p:IsObserver() then
+  local ok,d=pcall(function() return p:GetReplayData() end)
+  if ok and d then local o={};for k,s in pairs(d) do local a={};for t,x in pairs(s) do a[#a+1]={t,x} end;o[k]=a end;series[tostring(owner)]=o end
+ end
+end
+return series
+'''
+DONE = ('turns', 'victory', 'target', 'target_turn')   # autoplay endReason of a game played to its end
 
 
 class RealSide:
@@ -47,8 +62,12 @@ class RealSide:
         try:
             self.state['phase'] = 'launch'
             session = self.session_class(self.cfg, self.dir)
+            seeds = (self.games[0]['spec'].get('seeds') or {}) if self.games else {}
             t = time.monotonic()
-            info = session.launch()
+            if 'map_seed' in inspect.signature(session.launch).parameters:
+                info = session.launch(map_seed=seeds.get('map'), sync_seed=seeds.get('sync'))
+            else:
+                info = session.launch()
             self.result['launch'] = dict(_as_dict(info), seconds=round(time.monotonic() - t, 2), started=self.now())
             mods = [m.id for m in self.cfg.active_mods]
             t = time.monotonic()
@@ -67,10 +86,7 @@ class RealSide:
                 if game is not self.games[-1]:
                     self.state['phase'] = 'menu'
                     session.to_main_menu()
-            try:
-                self.result['process'] = _as_dict(session.process_stats())
-            except Exception as error:  # noqa: BLE001
-                self.result['errors'].append(f'process_stats: {type(error).__name__}: {error}')
+            self.result['process'] = self.stats(session)
         except Exception as error:  # noqa: BLE001 (the real side reports, the suite goes on)
             self.result['errors'].append(f'{type(error).__name__}: {error}')
             (self.dir / 'error.txt').write_text(traceback.format_exc(), encoding='utf-8')
@@ -87,18 +103,29 @@ class RealSide:
             host_run.write(self.dir / 'real.json', self.result)
         return self.result
 
+    def stats(self, session):
+        try:
+            return _as_dict(session.process_stats())
+        except Exception as error:  # noqa: BLE001
+            self.result['errors'].append(f'process_stats: {type(error).__name__}: {error}')
+            return {}
+
     def play(self, session, game):
         g = dict(name=game['name'], kind=game['kind'], turns=game['turns'], seeds=game['spec'].get('seeds'), state='failed')
         folder = self.dir / game['name']
         folder.mkdir(parents=True, exist_ok=True)
         seeds = game['spec'].get('seeds') or {}
+        replay = None
         try:
             self.state['phase'] = f"start {game['name']}"
             t = time.monotonic()
             g['startedAt'] = self.now()
-            info = session.start_game(game['spec'], seeds.get('map'), seeds.get('sync'), lua_probes=list(self.probes))
-            g['start'] = dict(_as_dict(info), seconds=round(time.monotonic() - t, 2))
+            info = _as_dict(session.start_game(game['spec'], seeds.get('map'), seeds.get('sync'), lua_probes=list(self.probes)))
+            g['start'] = dict({k: v for k, v in info.items() if k in ('seeds', 'relaunched', 'seedsVerified', 'probes', 'seconds')},
+                              seconds=round(time.monotonic() - t, 2))
             g['started'] = True
+            if info.get('relaunched'):
+                self.offsets = {}  # a new process writes new logs
             self.state['phase'] = f"autoplay {game['name']}"
             left = self.deadline - time.monotonic() - self.settings.reserve_seconds
             t = time.monotonic()
@@ -106,19 +133,15 @@ class RealSide:
             info = session.autoplay(game['turns'], max_seconds=max(int(left), 10))
             g['autoplaySeconds'] = round(time.monotonic() - t, 2)
             g['autoplay'] = _autoplay(info, game['turns'])
-            end = g['autoplay'].get('endTurn')
-            g['state'] = 'completed' if end is None or end >= game['turns'] or g['autoplay'].get('endReason') == 'victory' else 'partial'
+            end, reason = g['autoplay'].get('endTurn'), g['autoplay'].get('endReason')
+            g['state'] = 'completed' if reason in DONE or (reason is None and (end is None or end >= game['turns'])) else 'partial'
+            g['process'] = self.stats(session)
+            replay = self.replay(session, g)
         except Exception as error:  # noqa: BLE001
             g['error'] = f'{type(error).__name__}: {error}'
             self.log(f"real game {game['name']}: {g['error']}")
         finally:
             self.collect(session, folder, g)
-        replay = None
-        if callable(getattr(session, 'replay_data', None)) and g.get('started'):
-            try:
-                replay = session.replay_data()
-            except Exception as error:  # noqa: BLE001
-                g['replayError'] = f'{type(error).__name__}: {error}'
         if replay is None and (folder / 'logs/replay-data.json').is_file():
             replay = host_run.read(folder / 'logs/replay-data.json')
         if replay is not None:
@@ -127,8 +150,19 @@ class RealSide:
         host_run.write(folder / 'game.json', g)
         return g
 
+    def replay(self, session, g):
+        """Every major's replay data: session.replay_data(), else the REPLAY_LUA query through session.call."""
+        try:
+            if callable(getattr(session, 'replay_data', None)):
+                return session.replay_data()
+            if callable(getattr(session, 'call', None)):
+                return _replay_shape(session.call('InGame', REPLAY_LUA, 'replay-data'))
+        except Exception as error:  # noqa: BLE001
+            g['replayError'] = f'{type(error).__name__}: {error}'
+        return None
+
     def collect(self, session, folder, g):
-        """collect_logs into folder/logs, then the segments of the session-wide logs this game added."""
+        """collect_logs into folder/logs, then the part of each session-wide log that this game added."""
         dest = folder / 'logs'
         dest.mkdir(parents=True, exist_ok=True)
         try:
@@ -141,35 +175,30 @@ class RealSide:
             if src is None:
                 continue
             data = src.read_bytes()
-            start = self.offsets.get(name, 0)
-            if len(data) < start:
-                start = 0  # the session started a new log
+            size, head = self.offsets.get(name, (0, b''))
+            start = size if len(data) >= size and data[:len(head)] == head else 0  # else a new file
             segment = data[start:]
-            self.offsets[name] = len(data)
+            self.offsets[name] = (len(data), data[:HEAD])
             (folder / name.replace('.log', '.segment.log')).write_bytes(segment)
-            if name == 'Lua.log':
-                (folder / 'Logs').mkdir(exist_ok=True)
-                (folder / 'Logs/Lua.log').write_bytes(segment)
-            elif name == 'HeadlessDigest.log':
-                (folder / 'Logs').mkdir(exist_ok=True)
-                (folder / 'Logs/HeadlessDigest.log').write_bytes(segment)
+            (folder / 'Logs').mkdir(exist_ok=True)
+            (folder / 'Logs' / name).write_bytes(segment)
 
     def capture_database(self, session):
-        """The game's database after the mods loaded: session.game_database(dest), else the cache's
-        Civ5DebugDatabase.db (read only; copied)."""
+        """The game's database after the mods loaded: session.game_database(dest) (exported with CREATE TABLE AS:
+        compared data only), else a copy of the cache's Civ5DebugDatabase.db (read only)."""
         dest = self.dir / 'game-database.db'
         try:
             if callable(getattr(session, 'game_database', None)):
                 got = session.game_database(dest)
-                if got:
-                    dest = Path(got)
+                dest, method = Path(got) if got else dest, 'export'
             elif self.cfg.cache_dir and (Path(self.cfg.cache_dir) / 'Civ5DebugDatabase.db').is_file():
                 shutil.copyfile(Path(self.cfg.cache_dir) / 'Civ5DebugDatabase.db', dest)
+                method = 'cache'
             else:
                 return dict(error='no game database: the session has no game_database() and cache_dir has no Civ5DebugDatabase.db')
         except Exception as error:  # noqa: BLE001
             return dict(error=f'{type(error).__name__}: {error}')
-        return dict(path=str(dest)) if dest.is_file() else dict(error=f'{dest} was not written')
+        return dict(path=str(dest), method=method) if dest.is_file() else dict(error=f'{dest} was not written')
 
 
 def _as_dict(value):
@@ -180,6 +209,28 @@ def _as_dict(value):
     if hasattr(value, '__dict__'):
         return dict(vars(value))
     return dict(value=value)
+
+
+def _replay_shape(data):
+    """{player: {dataset: [[turn, value], ...]}} from what the tuner returns (lists or {index: item} tables)."""
+    if not isinstance(data, dict):
+        return None
+    out = {}
+    for player, sets in data.items():
+        if not isinstance(sets, dict):
+            continue
+        o = {}
+        for name, points in sets.items():
+            items = points.values() if isinstance(points, dict) else points if isinstance(points, list) else []
+            pairs = []
+            for p in items:
+                if isinstance(p, dict):
+                    p = [p.get('1', p.get(1)), p.get('2', p.get(2))]
+                if isinstance(p, (list, tuple)) and len(p) == 2 and p[0] is not None:
+                    pairs.append([p[0], p[1]])
+            o[name] = pairs
+        out[str(player)] = o
+    return out
 
 
 def _autoplay(info, turns):

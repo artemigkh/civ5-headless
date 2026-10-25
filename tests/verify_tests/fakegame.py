@@ -77,10 +77,17 @@ class Game:
         return out
 
     def fingerprint_lines(self, t):
-        s = self.sections(t)
-        out = ['C5HFP|turn=%d|' % t + '|'.join('%s=%s' % (k, v) for k, v in s.items() if k not in ('game', 'pregame', 'savedb'))]
+        """Lines in probes/fingerprint.lua's format (version 1), read by civ5headless.fingerprint."""
+        s = {k: v for k, v in self.sections(t).items() if k not in ('pregame', 'savedb')}
+        s['game'] = h('game', self.map, t)  # the probe's game section holds no seed
+        total = h(*[s[k] for k in sorted(s)])
+        out = []
+        if t == 0:
+            out.append('C5HFP|v=1|meta|turn=0|plots=1056|width=44|height=24|maxMajors=22|maxCivs=63|every=1')
+        out.append('C5HFP|v=1|turn=%d|point=PlayerDoTurn|part=1/1|total=%s|' % (t, total)
+                   + '|'.join('%s=%s' % (k, v) for k, v in s.items()))
         for p in range(PLAYERS):
-            out.append('C5HM|turn=%d|player=%d|' % (t, p) + '|'.join('%s=%s' % (m, self.value(m, p, t)) for m in METRICS))
+            out.append('C5HM|v=1|turn=%d|player=%d|alive=1|' % (t, p) + '|'.join('%s=%s' % (m, self.value(m, p, t)) for m in METRICS))
         return out
 
 
