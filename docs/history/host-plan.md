@@ -333,6 +333,11 @@ Done when: the whole matrix is digest-identical over its compared ranges.
 
 Done when: an A/B batch runs headless end to end and the measurements are documented.
 
+**Status (2026-10-25):** done on branch `hh-tooling`. `work/headless/hhbench.py` (also `vpbench newgame --backend
+headless`), `work/headless/runner.py`, `dbcache.py`, `phase_speed.py`; abcompare/samerun/compare read headless runs
+unchanged. A 250-turn game takes 490 s against about 27 minutes in the real game (3.5x; 6.5x early, 2.6x late),
+uses 330 MB instead of 1.8 GB, and 8 workers scale almost linearly. Guide and measurements: `docs/headless-host.md`.
+
 ### M7: Saves (optional follow-up, 1–2 weeks)
 
 Not part of the goal. Do it only if viewing headless games in the real game, or resuming A/B runs from

@@ -258,7 +258,9 @@ class LoadMeter:
         t0, i0, b0, g0 = self.a
         wall = max(t1 - t0, 1e-6)
         busy = ((b1 - b0) - (i1 - i0)) / 1e7 / wall  # kernel time includes idle
-        game = sum((g1[p] or 0) - (g0.get(p) or 0) for p in g1 if p in g0) / wall
+        # A game started during the window counts in full; one that exited during it is missed (the matrix
+        # recorder relaunches the game per run, so gameBusyCores is a lower bound; otherBusyCores is not).
+        game = sum((g1[p] or 0) - (g0.get(p) or 0) for p in g1) / wall
         return dict(seconds=round(wall, 1), logicalCPUs=os.cpu_count(), systemBusyCores=round(busy, 2),
                     gameRunning=bool(g1), gameBusyCores=round(game, 2))
 
