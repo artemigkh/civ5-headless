@@ -564,6 +564,9 @@ real game, whose control word was not recorded (open question 3).
    relative path). Resolve: have the proxy format the out buffer, or log `CvPreGame::mapScriptName()` after
    `Commit` (the pregame snapshot at `gameInit` already shows it; check a mod map script such as
    Communitu, whose path is absolute in the user setup).
+   **Resolved:** in `hh-m0-communitu` the `gameInit` snapshot shows the absolute mod path exactly as the setup set
+   it (`...\MODS\(2) Vox Populi\Mapscripts/Communitu_79a.lua`, mixed slashes kept), so the engine returns the name
+   unchanged for a mod map script too.
 5. **Which player option is the sixth hash (−304873808)**: order suggests `PLAYEROPTION_SAFE_AUTOMATION`;
    confirm with the `ResponsePlayerOption` → `GetInfoTypeForHash` lines beyond the cap, or by computing the
    engine's hash of the type names.
