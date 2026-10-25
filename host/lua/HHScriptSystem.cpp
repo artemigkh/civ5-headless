@@ -425,13 +425,15 @@ std::string HHScriptSystem::ResolveFile(const char* szFilename) const
 			return rerooted;
 		return HHFileExists(name) ? name : std::string();
 	}
-	// 2. Relative to the game folder (MapScripts.FileName "Assets\Maps\Continents.lua").
+	// 2. VFS name (mods > DLC > base), also for a relative game path: MapScripts.FileName
+	// "Assets\Maps\Highlands.lua" loads the activated mods' VFS Highlands.lua in the real game
+	// (CP/VP ship Highlands, InlandSea and Terra; the base scripts fail with VP's AssignStartingPlots).
+	if(const std::vector<HHVfsEntry>* pFound = kVfs.Find(name))
+		return pFound->front().path;
+	// 3. Relative to the game folder (MapScripts.FileName "Assets\Maps\Continents.lua").
 	const std::string& gameDir = HHGetOptions().gameDir;
 	if(!gameDir.empty() && HHFileExists(gameDir + "\\" + name))
 		return gameDir + "\\" + name;
-	// 3. VFS name (mods > DLC > base).
-	if(const std::vector<HHVfsEntry>* pFound = kVfs.Find(name))
-		return pFound->front().path;
 	// 4. Search folders (boot without a VFS): folder + relative name, then a tree search.
 	const std::vector<std::string>& folders = HHGetOptions().luaSearch;
 	for(size_t i = 0; i < folders.size(); ++i)
