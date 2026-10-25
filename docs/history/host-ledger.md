@@ -111,8 +111,14 @@ commit it with the change it describes.
   the `m_iFreeMoveAcross` init, speed-marathon `--pregame-turn-timer 1` as an old reference). Last fixes: engine
   `ipairs` and per-thread `debug` (Continental Drift), era-start unit selection, CP city-event popup notification,
   great-person reward popup, closed slots of dead city-states, turn-timer pin in gamespec and host.
-- **Deployed now:** fixed field-map DLL `work/msvc-output/Release-fieldmap/20261025-053635` (`89F146A7…BA619A6408B`,
-  DLL source = headless-host 1d70b7db0: logging-neutral AI, uninitialised-member fixes).
+- **Deployed now:** field-map DLL `work/msvc-output/Release-fieldmap/20261025-074750` (`6C73DC9A…527588321`, DLL
+  source = headless-host ce462727b: artifact pick on the seeded game RNG, settle-site logging without GetDanger).
+  Earlier references (`hh-m5`, `hh-m5f`, `hh-m5g`) were recorded with `89F146A7` (headless-host 1d70b7db0) and
+  compare against that DLL.
+- **Archaeology was nondeterministic in the real game too:** `CultureHelpers::GetArtifact` chose the dug-up great
+  work with SQLite `order by Random()`, which SQLite seeds from the OS, so no run (real or host) reproduced past the
+  first dig. Fixed in 6d42ad0c5 (candidates by ID, picked with `urandLimitExclusive` and a plot/class/era seed; a
+  candidate for upstream VP).
 - **Smoke with the fixed DLL** (`hh-m5f`, 11 cases, references recorded with 89F146A7): all 11 identical in the host,
   victory.json included (host 3–91 s against 67–524 s real).
 - **First full game diverges:** `hh-m5g-continents-s1` (Standard, Emperor, 1001/2002) ended at T277 in the real game
@@ -129,13 +135,13 @@ commit it with the change it describes.
     --rolling-dumps 5`: game_probe compares the live digest log, writes `divergence.json`/`live-compare.json`, quits 2
     turns after the first difference and keeps the per-turn DLL dumps from 5 turns before it (`<run>/HeadlessDumps`);
   - short re-records: game_probe `--stop-turn S` (same `--turns` arm count) and `--dump-from/--dump-to`.
-- **Runs in flight:** `hh-m5g-continents-s1-dump` (s1 re-recorded to T128 with dumps at T124–127; also a real-game A/A
-  check of T0–127), then `m5-long.json` (prefix `hh-m5l`: 9 Tiny games to victory, host-first, rolling dumps),
-  chained in one shell once `host_first.py` has written `work/headless-runs/first-hh-m5l.json`. Resume:
-  `python work/headless/record_matrix.py work/headless/matrix/m5-long.json --require-host --host-digest
-  "work/headless-runs/first-{run}/Logs/HeadlessDigest.log" --rolling-dumps 5`. Later: `m5-batch2.json` (prefix
-  `hh-m5b`, 16 short Tiny cases: map options min/max/random, VP scripts 0–100 with default and random options, Quick,
-  Deity, teams).
+- **Runs in flight:** `m5-batch2.json` (16 short Tiny cases): host_first on 6C73DC9A with host exe
+  `work/wt/hh-host/work/headless-output/Release/20261025-074012`, then recorded host-first with rolling dumps
+  (status `work/test-runs/hh-m5b-matrix.json`); then host_first for `m5-long.json`. The m5-long recording waits for the
+  T125 verdict (a DLL fix would mean another deploy). Its status has continents-s1 "failed" (stopped at T81 on
+  89F146A7, identical to the host to T81) and a stop file `work/test-runs/hh-m5l-matrix.stop`: remove it and add
+  `--retry-failed` when recording. s1 dump re-record done: the real game is identical to itself T0–127 (A/A), so the
+  T125 difference is the host's.
 - **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: the s1 T124–127 dumps against the
   host's (and the A/A check); the late-game logging fix (the AI settle log called `GetDanger`, which rebuilds dirty
   danger plots; host logging on/off differed at T154, T209, T252–254, T292–294; the uncommitted fix clears T154 and
