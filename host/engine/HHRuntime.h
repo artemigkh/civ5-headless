@@ -113,3 +113,6 @@ std::vector<HHExportRecord> HHGetExportRecords();
 
 // Engine methods the host only stubs that are known to be harmless (engine/HHStubPolicy.cpp); pWhy gets the reason.
 bool HHIsHarmlessStub(const std::string& strMethod, std::string* pWhy);
+
+// Logs fatal exceptions (HHCRASH lines: code, module+offset, registers, stack) (engine/HHCrash.cpp).
+void HHInstallCrashHandler();

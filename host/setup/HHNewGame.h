@@ -37,6 +37,7 @@ struct HHNewGameResult
 	std::string digestTotal;                                 // Game.GetHeadlessDigest().total, if the DLL has it
 	std::string seedMode;                                    // how the spec seeds reached the game
 	unsigned int uiExeSeed;                                  // pregame seeds before Game.Init (the engine's own)
+	bool hostChoseCivs;                                      // random civilizations or city-states chosen by the host
 	// Autoplay (M3)
 	bool bAutoplayOk;
 	int iTurnsPlayed, iUpdates;
@@ -47,7 +48,7 @@ struct HHNewGameResult
 	std::vector<std::string> probeErrors;                    // --lua-probe files that failed
 	std::map<std::string, int> netMessages;                  // send* counts by kind
 	HHNewGameResult() : bPregameOk(false), bStarted(false), bOutputsOk(false), iWidth(0), iHeight(0), uiExeSeed(0),
-		bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
+		hostChoseCivs(false), bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
 };
 
 // Pregame from the resolved spec (Task 1). Every engine call is appended to kResult.steps.

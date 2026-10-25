@@ -2,7 +2,8 @@
 
   python -m civ5headless.hazards scan [--report RUN/host-report.json] [PATH ...] [--dll-source DIR] [--profiles DIR]
                                       [--json OUT] [--all]
-  python -m civ5headless.hazards methods --dll-source DIR [--json OUT]
+  python -m civ5headless.hazards methods --dll-source DIR [--label TEXT] [--json OUT]
+  python -m civ5headless.hazards known --report RUN/host-report.json --note TEXT [--write]
 
 The host does not run the game's UI. UI code that calls a state-changing method (a setter, a do/change function, a
 getter with a lazy cache, the synchronised random number generator) changes the game in the real game but not in
@@ -591,6 +592,41 @@ def cmd_methods(a):
     return 0
 
 
+def cmd_known(a):
+    """Add a run's unknown UI files to the known list (profiles/known-ui-files.json), each with a note and its
+    hazard scan summary."""
+    doc = json.loads(Path(a.report).read_text(encoding='utf-8'))
+    unknown = [f for f in doc.get('uiFiles', {}).get('unknown', []) if f.get('sha256')]
+    known_path = Path(a.known) if a.known else (default_profiles_dir() or Path('profiles')) / 'known-ui-files.json'
+    known = json.loads(known_path.read_text(encoding='utf-8'))
+    have = {(e['name'].lower(), e['sha256'].upper()) for e in known.get('files', [])}
+    methods, _, curated = load_methods(None)
+    methods = {k: v for k, v in methods.items() if any(e['kind'] != 'cache' for e in v)}
+    added = []
+    for f in unknown:
+        key = (f['name'].lower(), f['sha256'].upper())
+        if key in have:
+            continue
+        have.add(key)
+        summary = 'not a Lua file'
+        if f.get('path', '').lower().endswith('.lua') and Path(f['path']).is_file():
+            _, hits = scan([(f['name'], f['path'], f.get('kind', ''), f.get('source', ''))], methods, curated, {})
+            kinds = defaultdict(int)
+            for h in hits:
+                kinds[h['kind']] += 1
+            summary = ('hazard scan: ' + (f"{len(hits)} calls ({', '.join(f'{k} {v}' for k, v in sorted(kinds.items()))})"
+                                          if hits else 'none'))
+        added.append(dict(name=f['name'], sha256=f['sha256'].upper(), source=f.get('source', ''),
+                          note=f'{a.note}; {summary}'))
+    known['files'] = sorted(known.get('files', []) + added, key=lambda e: (e['name'].lower(), e.get('source', '')))
+    for e in added:
+        print(f"{e['name']:40} {e['source']:45} {e['note']}")
+    print(f'{len(added)} files to add to {known_path}' + ('' if a.write else ' (dry run: --write writes them)'))
+    if a.write:
+        known_path.write_text(json.dumps(known, indent=1) + '\n', encoding='utf-8')
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='python -m civ5headless.hazards', description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -607,8 +643,13 @@ def main(argv=None):
     m.add_argument('--dll-source', required=True, action='append', help='repeatable: the union is written')
     m.add_argument('--label', action='append', help='a label per --dll-source, written into the output')
     m.add_argument('--json', help='output file (default: standard output)')
+    k = sub.add_parser('known', help='add the unknown UI files of a run to the known list (reviewed or verified)')
+    k.add_argument('--report', required=True, help='host-report.json of the run')
+    k.add_argument('--note', required=True, help='why these files need no profile (for example how they were verified)')
+    k.add_argument('--known', help='known list (default: profiles/known-ui-files.json of the repository)')
+    k.add_argument('--write', action='store_true', help='write the list (default: dry run)')
     a = ap.parse_args(argv)
-    return cmd_scan(a) if a.cmd == 'scan' else cmd_methods(a)
+    return {'scan': cmd_scan, 'methods': cmd_methods, 'known': cmd_known}[a.cmd](a)
 
 
 if __name__ == '__main__':

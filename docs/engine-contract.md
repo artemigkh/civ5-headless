@@ -494,8 +494,8 @@ count today.
 | `UnitPromoted` | EUI `UnitFlagManager.lua` | no |
 | `CityConstructed`, `CityBoughtPlot` | EUI `NotificationPanel.lua`, `ImprovedTechTree/TechTree.lua` | no |
 
-The host loads only the two gameplay add-ins (plan M3.2). Dropping the UI listeners changes `handled` for those
-hooks from true to false; `CallHook`'s return value is ignored by the DLL [S], so this is safe.
+The host runs every activated mod's InGameUIAddin (10.6), so these listeners are registered as in the real game.
+`CallHook`'s return value is ignored by the DLL [S], so `handled` does not matter either way.
 
 ### 10.3 `include` and files [M]
 
@@ -534,6 +534,45 @@ UI notifications are the OUT `Gameplay*`/`Publish*` methods). The host may drop 
   probe 2). The boot-time `VP_LUAAPI` thread has it: its chunk reads `debug.getinfo` into a local and logs "Embedded
   script ran without errors!". The host keeps `debug` in `_G` until boot's `CacheGameDatabaseData` is done and then
   removes it (`HHScriptSystem::HideDebugLibrary`; `--no-lua-debug` hides it from the start).
+
+### 10.6 UI contexts in the host (add-ins, profiles, probes)
+
+The host has no UI screens. Lua that the game runs in UI contexts runs in **stub UI contexts**: a Lua thread of the
+InGame state (`CreateLuaThread`) whose environment adds the UI-only globals (`HHLuaGlobals.cpp`, `kUIContextLua`):
+
+- `ContextPtr`: a `LuaContext` control (`CTypeName`); `SetHide`/`IsHidden` keep the hidden flag, `IsHotLoad` is
+  false, `GetID` is the context name, `SetUpdate`, `SetShowHideHandler`, `SetInputHandler` store the handler and the
+  host never calls it, `BuildInstanceForControl` fills the instance table with stub controls; other methods
+  (capitalised names) are stubs, other keys nil.
+- `Controls`, `Mouse`, `Keys`, `KeyEvents`, `MouseEvents`, `PopupPriority`: a chainable stub (any member, any call;
+  arithmetic gives 0, concatenation and `tostring` give '').
+- `UI`, `Network`, `Steam`, `OptionsManager`, `Matchmaking`: every member returns nil (nothing selected, nothing
+  sent), except `UI.RemoveNotification`, the engine's dismiss (`MayUserDismissNotification`, then
+  `DismissNotification`, for a notification shown to the active player). `UI.IsLoadedGame` is false.
+- `UIManager` (1024x768, nothing modal), `ContentManager.IsActive` (true), grid/world conversions (0), `Path`.
+- `Modding.OpenUserData` and `Modding.OpenSaveData`: in-memory stores (`GetValue`/`SetValue`, `Query` gives no
+  rows), empty at the start of every run: user data lives in the user's cache, which a run must not depend on, and
+  save data in the save's embedded database, which the digest leaves out (`savedb`).
+- `Events`, `LuaEvents`, `GameEvents`, `Game`, `Map`, `Players`, `Teams`, `GameInfo`: the shared ones. Listeners
+  are recorded per context (run report `addins.listeners`).
+
+**InGameUIAddins.** After the load screen, the host loads every activated mod's InGameUIAddin entry points in
+activation order, one context each (`setup/HHAddins.cpp`): the entry's `.lua` (or the `.xml`'s `<LuaContext>`
+children first, then its own script; the XML `Hidden` attribute sets the hidden flag), found next to the entry or in
+the VFS. An error is logged with the file and line in the run report (`addins.contexts[].error`,
+`luaErrors.list`) and does not stop the run. `--skip-addin NAME` (repeatable) leaves one out, `--no-addins` all of
+them. Then the host fires `Events.SequenceGameInitComplete`; at CONTINUE (autoplay start) `Events.LoadScreenClose`.
+No other UI event is fired: a listener for `SerialEventGameMessagePopup`, `ActivePlayerTurnStart` and the like
+never runs in the host. Where such UI code changes the game, a UI emulation profile does it (docs/profiles.md).
+
+**Profiles** run in their own hidden contexts at the hooks `load-screen` (after `Game.SetPausePlayer`, before the
+T000 checkpoint), `notification-added` and `ui-frame` (each update frame of the turn loop) and `popup` (the frame
+after the DLL queued a popup); docs/profiles.md.
+
+**Lua probes** (`--lua-probe FILE`, repeatable) run, in order, in one visible context named `InGame` after the T000
+checkpoint and before turn 0 is processed, the point where a tuner can first inject into the real game. They keep
+their listeners for the whole game. `probes/fingerprint.lua` is the per-turn fingerprint (plan 9.3,
+`python/civ5headless/fingerprint.py`).
 
 ## 11. Runtime facts [M]
 
@@ -598,6 +637,65 @@ real game, whose control word was not recorded (open question 3).
 10. **Autosave interval** comes from `UserSettings.ini`; a different user setting changes when `Write` runs. It
     is result-neutral by the side-effect audit, but the digest A/A should include a run with
     `TurnsBetweenAutosave = 1` to prove it.
+11. **InGameUIAddin XML with child contexts:** the host loads the `<LuaContext>` children before the parent's own
+    script (assumed; the game's order was not measured). No add-in of the reference set depends on it.
+
+## 14. The run report (`<run>/host-report.json`)
+
+Every `newgame` writes `host-report.json` (format `civ5headless-host-report/1`, plan 9.2), also when it fails:
+
+| Key | Content |
+|---|---|
+| `status`, `error` | `passed` or `failed`, and why. |
+| `host` | exe path and sha256, the git head and dirty flag of the build. |
+| `command`, `spec`, `gameDir`, `gameDirSource` | what ran; the game folder and how it was found (`--game-dir`, or the Steam registry entries and library folders). |
+| `dll` | path, sha256, version, whether it has the digest additions, the seed mode. |
+| `database` | game and localization databases, mods database, MODS folder. |
+| `options` | turns, `--heap-perturb`, `--frame-skew`, UI frame, logging, idle updates, `--no-mods`, `--no-profiles`, `--no-addins`, `--skip-addin`, `--lua-probe`. |
+| `mods` | the activated mods (id, version, name, folder) in activation order. |
+| `profiles` | folder, load errors, the selected profiles (reason, hook, calls, failures) and the others (reason). |
+| `addins` | contexts run, failed, skipped; per context the mod, entry, parent, status, error, path and sha256; the event listeners each context registered. |
+| `uiFiles` | UI files that are not base game or official DLC: add-ins, overrides of base UI files, other DLC UI (EUI). `known` (in `profiles/known-ui-files.json` or covered by a selected profile) or `unknown`, with path and sha256 (docs/profiles.md). |
+| `stubCalls` | every engine method the host only stubs that the DLL called: count, first phase, and whether it is on the known-harmless list (`host/engine/HHStubPolicy.cpp`); `unknownCount` counts the others. |
+| `luaErrors` | errors that fail the run (`failing`), all errors (`total`) and the first 500 with context, file, line, message and phase. Add-in and probe errors are listed but do not fail the run. |
+| `turns`, `timings`, `wallSeconds`, `memory` | turns played, updates, seconds per turn, phase timings, peak working set and private bytes, CPU seconds. |
+
+**Known-harmless stubs.** The generated stubs answer false, 0 or NULL and do nothing. The list in
+`HHStubPolicy.cpp` names the ones whose stub is the right answer for an autoplay game: renderer and UI
+notifications (`Gameplay*`, `TradeVisuals_*`, `Publish*`, the engine's `DoTurn`), Steam statistics and
+achievements, replays, advisor settings, and the UI side of selection, camera and screens. `Send*` network
+methods are deliberately not on it: in the real game they are DLL calls (6.4). A stub call that is not on the list
+is how a DLL that needs more engine support shows up: implement it in the host or add it to the list with the reason.
+
+**Crashes.** A fatal exception in a game DLL is logged as `HHCRASH` lines (exception, `module+offset`, phase,
+registers, return addresses on the stack) before the host exits; disassemble with `dumpbin /disasm
+/range:<image base + offset>` (needs the toolchain's msdis DLL) or compare with the DLL's source.
+
+## 15. Other DLLs: the stock BNW DLL [M]
+
+Host-only coverage runs with the game's own `Assets\DLC\Expansion2\CvGameCore_Expansion2.dll`, no mods
+(`--no-mods`), the DLC snapshot as the database (the main-menu database, which the stock DLL post-processed;
+`c5h dbbuild` with no mods gives the same, dbdiff identical), Tiny Continents, quick speed, 150 turns:
+three games played to the end, no Lua errors, every engine stub the DLL called on the known-harmless list. What
+differs from VP:
+
+- **`ICvGameContext1::Init` post-processes and caches the database** itself (`CvGlobals::init`), and caching looks
+  text up: localization must be initialised before `Init`. `newgame` does; `builddb` now gives the DLL a
+  localization database too (`--loc-db`, default an empty one with en_US).
+- **Random civilizations and city-states are the exe's job**: the stock `closeInactiveSlots` leaves
+  `NO_CIVILIZATION` and `NO_MINORCIV` (VP chooses them in `CvPreGame::onGameStarted`), and `CvGame::InitPlayers`
+  dereferences the missing info. The host then chooses them (uniform, a DLL random number generator seeded with the
+  engine seed; `ERROR` line, `host-report.json` `dll.hostChoseCivs`). It cannot be the exe's choice: a spec for a
+  real-game comparison with this DLL names its civilizations and city-states.
+- **Info arrays have `MAX(ID) + 1` entries** (IDs with gaps are not renumbered): the boot count check accepts that.
+- **No `Game.GetHeadlessDigest`, no seed pinning** (`seedMode` pregame): comparisons use the Lua fingerprint
+  (`probes/fingerprint.lua`); dense and sparse sampling gave identical fingerprints on all three games.
+- **VP-only Lua methods** (`Plot:GetLandmass`, `Plot:IsNaturalWonder`) are optional in the host's T000 map summary.
+- **Autoplay** kills the active player's units and cities and makes its slot an observer (`CvGame::setAIAutoPlay`);
+  when the autoplay turns run out the game is over (`saveReplay`, `RecordVictoryInformation`, `OpenEndGameMenu`).
+- UI emulation: the base-game profiles select (`base-demographics`; `base-whos-winning` and
+  `base-great-person-reward`, whose popups did not come up), and `eui-civ-ribbon` because EUI is installed as DLC
+  (`UI_bc1`) in this game folder; EUI's other files are reported as unknown UI files.
 
 ## Appendix A: every outbound method seen (generated)
 

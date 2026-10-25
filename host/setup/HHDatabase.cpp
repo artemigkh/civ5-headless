@@ -140,3 +140,14 @@ int HHDatabases::CountRows(const char* szTable)
 		return -1;
 	return kResults.GetInt(0);
 }
+
+int HHDatabases::IdRange(const char* szTable)
+{
+	if(!m_pGame)
+		return -1;
+	Database::Results kResults;
+	std::string sql = HHFormat("SELECT MAX(ID) + 1 FROM \"%s\"", szTable);
+	if(!m_pGame->Execute(kResults, sql.c_str()) || !kResults.Step())
+		return -1;
+	return kResults.GetInt(0);
+}

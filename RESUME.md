@@ -31,8 +31,16 @@ then `... compare runs/baseline runs/NAME` (config and baselines are under the i
   (derived from the VP fork and stock sources), data/lua-hazards.json (curated), tests/anydll_tests/test_hazards.py.
   Reference set: `python -m civ5headless.hazards scan --report runs/step1/speed-quick/host-report.json`
   (112 files, 281 calls, 6 covered by profiles).
-- Next: docs/profiles.md, engine-contract section on the run report, known-ui-files.json filled from the reference
-  set, item 7 (stock DLL, mod-free database, probe_check with it).
+- Milestone 4 (committed): docs/profiles.md, engine-contract 10.6 (UI contexts), 14 (run report), 15 (stock DLL);
+  known-ui-files.json from the reference run (`hazards known`); add-in stubs (LuaContext kind, save data Query);
+  HHCRASH crash logging; stock DLL support (host chooses random civs/city-states, MAX(ID)+1 counts, optional VP
+  Lua in the T000 map, builddb localization, OpenEndGameMenu harmless). Invariant 8 of 8 (runs/step4, exe
+  20261025-200154; 200434 changes only builddb). Stock: runs/stock (config runs/stock/stock.json), probe_check
+  3 games x 150 turns passed (runs/stock/check1). dbbuild with no mods + stock DLL = snapshot (dbdiff identical);
+  VP reference build still identical to its oracle (runs/dbcheck).
+- Next: optional plain VP (vp-det): runs/vpdet (MODS copy, DLL copy, mods.db, vpdet.db built); run probe_check
+  with a config like runs/stock/stock.json (modsDir runs/vpdet/MODS, modsDb runs/vpdet/mods.db). Then the final
+  report.
 
 ## Build and run
 

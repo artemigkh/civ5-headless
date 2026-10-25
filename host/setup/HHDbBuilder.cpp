@@ -36,11 +36,12 @@ namespace
 		"usage: civ5headless.exe builddb --game-dir <path> --plan <plan.txt> --out <built.db> [options]\n"
 		"  --dll <path>   game DLL for the postprocess step (PerformDatabasePostProcessing)\n"
 		"  --run <dir>    folder for Logs\\ and builddb-report.json (default: <out>.build\\)\n"
+		"  --loc-db <db>  localization database for the DLL during postprocess (default: an empty one with en_US)\n"
 		"  The plan is written by work/headless/build_db.py; see Civ5Headless/setup/HHDbBuilder.cpp.\n";
 
 	struct BuildOptions
 	{
-		std::string gameDir, plan, out, run, dll;
+		std::string gameDir, plan, out, run, dll, locDb;
 	};
 
 	struct PlanLine
@@ -145,6 +146,7 @@ namespace
 			else if(a == "--out") o.out = v;
 			else if(a == "--run") o.run = StripSlash(v);
 			else if(a == "--dll") o.dll = v;
+			else if(a == "--loc-db") o.locDb = HHFullPath(v);
 			else { fprintf(stderr, "unknown option %s\n", a.c_str()); return false; }
 		}
 		if(o.gameDir.empty() || o.plan.empty() || o.out.empty())
@@ -628,6 +630,54 @@ namespace
 	// Post-processing: the game DLL's PerformDatabasePostProcessing on the built database
 	// (ID remapping, PostDefines, ResourceUsage, hard-coded defines), as at game start.
 	//--------------------------------------------------------------------------
+	// The localization the DLL's Init may need: the stock DLL caches the game data inside ICvGameContext1::Init, and
+	// that looks text up. --loc-db gives a localization database; without it an empty one (the game's schema, en_US
+	// and no text) in the run folder. Returns the connection to close after the DLL is unloaded, or NULL.
+	Database::Connection* InitBuildLocalization(const BuildOptions& o)
+	{
+		std::string path = o.locDb;
+		if(path.empty())
+		{
+			path = o.run + "\\localization-empty.db";
+			DeleteFileW(HHWiden(path).c_str());
+			Database::Connection kNew;
+			const char* szSchema =
+				"CREATE TABLE Languages(\"ID\" INTEGER PRIMARY KEY AUTOINCREMENT, \"Type\" TEXT NOT NULL UNIQUE, \"Name\" TEXT NOT NULL,"
+				" \"TableName\" TEXT NOT NULL, \"TagColumnName\" TEXT DEFAULT \"Tag\", \"TextColumnName\" TEXT DEFAULT \"Text\","
+				" \"PluralityColumnName\" TEXT DEFAULT \"Plurality\", \"GenderColumnName\" TEXT DEFAULT \"Gender\", \"PluralRule\" INTEGER DEFAULT 1,"
+				" \"UseExtendedFont\" INTEGER DEFAULT 0, \"FontName\" TEXT DEFAULT \"MS PGothic\", \"FontWidthScale\" FLOAT DEFAULT 0.4,"
+				" \"FontHeightScale\" FLOAT DEFAULT 0.8);\n"
+				"CREATE TABLE LocalizedText(\"Language\" TEXT, \"Tag\" TEXT, \"Text\" TEXT, \"Gender\" TEXT, \"Plurality\" TEXT, PRIMARY KEY(Language, Tag));\n"
+				"CREATE TABLE LanguagePriorities(\"LanguageSet\" TEXT, \"Language\" TEXT, \"Priority\" INT, PRIMARY KEY(LanguageSet, Language));\n"
+				"CREATE VIEW Language_en_US AS SELECT Tag, Text, Gender, Plurality FROM LocalizedText WHERE Language = 'en_US';\n"
+				"INSERT INTO Languages VALUES(0, 'en_US', 'English', 'Language_en_US', 'Tag', 'Text', 'Plurality', 'Gender', 2, 0, 'MS PGothic', 0.4, 0.8);\n"
+				"INSERT INTO LanguagePriorities VALUES('en_US', 'en_US', 100);\n";
+			if(!kNew.Open(path.c_str(), Database::OPEN_READWRITE | Database::OPEN_CREATE) || !kNew.ExecuteMultiple(szSchema))
+			{
+				HHLogError("cannot create %s", path.c_str());
+				return NULL;
+			}
+			kNew.Close();
+		}
+		Database::Connection* pLoc = new Database::Connection();
+		if(!pLoc->Open(path.c_str(), Database::OPEN_READWRITE))
+		{
+			HHLogError("cannot open localization database %s", path.c_str());
+			delete pLoc;
+			return NULL;
+		}
+		const std::wstring icu = HHWiden(o.gameDir + "\\Locale\\icudt44l.dat");
+		if(!Localization::Initialize(icu.c_str(), *pLoc, "Languages", "en_US", false))
+		{
+			HHLogError("Localization::Initialize failed (%s)", path.c_str());
+			pLoc->Close();
+			delete pLoc;
+			return NULL;
+		}
+		HHLog("localization: %s", path.c_str());
+		return pLoc;
+	}
+
 	bool RunPostProcessing(const BuildOptions& o, Database::Connection& db, std::string& err)
 	{
 		if(o.dll.empty())
@@ -635,6 +685,7 @@ namespace
 			err = "postprocess needs --dll";
 			return false;
 		}
+		Database::Connection* pLoc = InitBuildLocalization(o);
 		HHScriptSystem* pScripts = new HHScriptSystem();
 		HHEngineUtility* pEngine = new HHEngineUtility(pScripts);
 		HHUserInterface* pUI = new HHUserInterface();
@@ -678,6 +729,12 @@ namespace
 		HHExportsCheck();
 		pContext->SetDLLIFace(NULL);
 		FreeLibrary(hGame);
+		if(pLoc)
+		{
+			Localization::Shutdown();
+			pLoc->Close();
+			delete pLoc;
+		}
 		// pEngine and pUI stay alive, as in boot.
 		UNUSED_VARIABLE(pEngine);
 		UNUSED_VARIABLE(pUI);

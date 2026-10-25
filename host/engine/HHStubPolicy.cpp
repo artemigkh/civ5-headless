@@ -77,6 +77,7 @@ namespace
 		{ "ICvUserInterface1::DebugCityRoutePlots", "debug display" },
 		{ "ICvUserInterface1::exitingToMainMenu", "front end" },
 		{ "ICvUserInterface1::OpenTechTree", "tech tree screen" },
+		{ "ICvUserInterface1::OpenEndGameMenu", "end-of-game screen (the stock DLL ends the game when autoplay ends with the human player dead)" },
 		{ "ICvUserInterface1::PublishRemotePlayerTurnEnd", "UI event" },
 		{ "ICvUserInterface2::PublishRemotePlayerTurnStart", "UI event" },
 	};

@@ -664,7 +664,8 @@ namespace
 		}
 		r += "  \"command\": " + Q(o.command) + ",\n  \"gameDir\": " + Q(o.gameDir) + ",\n  \"gameDirSource\": " + Q(o.gameDirSource) + ",\n";
 		r += "  \"dll\": {\"path\": " + Q(o.dllPath) + ", \"sha256\": " + Q(HHSha256File(o.dllPath)) + ", \"version\": " + Q(s.dllVersion) +
-			", \"digestAdditions\": " + (ng.digestTotal.empty() ? "false" : "true") + ", \"seedMode\": " + Q(ng.seedMode) + "},\n";
+			", \"digestAdditions\": " + (ng.digestTotal.empty() ? "false" : "true") + ", \"seedMode\": " + Q(ng.seedMode) +
+			", \"hostChoseCivs\": " + (ng.hostChoseCivs ? "true" : "false") + "},\n";
 		r += "  \"database\": {\"game\": " + Q(o.dbPath) + ", \"localization\": " + Q(o.locDbPath) + ", \"modsDb\": " + Q(o.noMods ? std::string() : o.modsDbPath) +
 			", \"modsDir\": " + Q(o.modsDir) + "},\n";
 		r += "  \"spec\": " + Q(o.specPath) + ",\n";
@@ -1110,10 +1111,14 @@ namespace
 			r.core = c.bCore;
 			r.dll = (pContext->*c.pfnCount)();
 			r.sql = dbs.CountRows(c.szTable);
-			const bool bMatch = r.dll == r.sql;
+			// A database whose IDs have gaps (the stock DLL does not renumber them; VP's post-processing does)
+			// gives info arrays of MAX(ID) + 1 entries.
+			const bool bExact = r.dll == r.sql;
+			const bool bMatch = bExact || r.dll == dbs.IdRange(c.szTable);
 			if(!bMatch && r.core)
 				s.bCountsOk = false;
-			HHLog("%-20s %-22s %6d %6d %s", c.szWhat, c.szTable, r.dll, r.sql, bMatch ? "" : (r.core ? "MISMATCH" : "differs (not core)"));
+			HHLog("%-20s %-22s %6d %6d %s", c.szWhat, c.szTable, r.dll, r.sql,
+			      bExact ? "" : bMatch ? "(MAX(ID) + 1: IDs with gaps)" : (r.core ? "MISMATCH" : "differs (not core)"));
 			s.counts.push_back(r);
 		}
 		s.iPlayableCivs = pContext->GetNumPlayableCivilizationInfos();
@@ -1312,6 +1317,7 @@ namespace
 
 int wmain(int argc, wchar_t** argv)
 {
+	HHInstallCrashHandler();
 	if(argc >= 2 && wcscmp(argv[1], L"builddb") == 0)
 		return HHBuildDbMain(argc, argv);
 	HHOptions& o = HHGetOptions();

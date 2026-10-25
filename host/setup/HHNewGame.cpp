@@ -369,6 +369,79 @@ namespace
 	}
 }
 
+namespace
+{
+	// Random civilizations and city-states for a DLL that leaves them to the exe (the stock DLL; VP chooses them in
+	// CvPreGame::onGameStarted, inside closeInactiveSlots): every active major slot without a civilization and every
+	// city-state slot (the first numMinorCivs after the majors) without a type. The exe's own choice is not known,
+	// so this one (uniform, without repeats, a DLL random number generator seeded with the engine seed) does not
+	// reproduce a real game: a spec for a real-game comparison names its civilizations and city-states.
+	void ChooseRandomCivs(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+	{
+		ICvPreGame1* pg = kIf.pPreGame;
+		std::vector<PlayerTypes> majors, minors;
+		std::set<int> civsTaken, minorsTaken;
+		for(int i = 0; i < kIf.iMaxMajorCivs; ++i)
+		{
+			const PlayerTypes p = (PlayerTypes)i;
+			if(pg->slotStatus(p) != SS_TAKEN && pg->slotStatus(p) != SS_COMPUTER)
+				continue;
+			if(pg->civilization(p) == NO_CIVILIZATION)
+				majors.push_back(p);
+			else
+				civsTaken.insert((int)pg->civilization(p));
+		}
+		const int nMinors = pg->numMinorCivs();
+		for(int i = kIf.iMaxMajorCivs; i < MAX_CIV_PLAYERS && i < kIf.iMaxMajorCivs + nMinors; ++i)
+		{
+			const PlayerTypes p = (PlayerTypes)i;
+			if(pg->minorCivType(p) == NO_MINORCIV)
+				minors.push_back(p);
+			else
+				minorsTaken.insert((int)pg->minorCivType(p));
+		}
+		if(majors.empty() && minors.empty())
+			return;
+		HHLogError("this DLL leaves %u random civilization(s) and %u city-state(s) to the exe: the host chooses them, "
+		           "a real game would choose others", (unsigned)majors.size(), (unsigned)minors.size());
+		kResult.hostChoseCivs = true;
+		const unsigned int uiRng = kIf.pContext->CreateRandomNumberGenerator();
+		ICvRandom1* pRng = kIf.pContext->GetRandomNumberGenerator(uiRng);
+		if(!pRng)
+			return;
+		pRng->Init(kResult.uiExeSeed);
+		std::vector<int> civs;
+		for(int c = 0; c < kIf.pContext->GetNumCivilizationInfos(); ++c)
+		{
+			ICvCivilizationInfo1* pCiv = kIf.pContext->GetCivilizationInfo((CivilizationTypes)c);
+			if(pCiv && pCiv->IsAIPlayable() && pCiv->IsPlayable() && !civsTaken.count(c))
+				civs.push_back(c);
+			if(pCiv)
+				pCiv->Destroy();
+		}
+		for(size_t i = 0; i < majors.size() && !civs.empty(); ++i)
+		{
+			const size_t k = (size_t)pRng->Get((unsigned short)civs.size(), "Host random civilization");
+			HH_STEP(HHFormat("setCivilization(%d, %d) /* host choice */", (int)majors[i], civs[k]),
+			        pg->setCivilization(majors[i], (CivilizationTypes)civs[k]));
+			civs.erase(civs.begin() + k);
+		}
+		std::vector<int> cityStates;
+		for(int m = 0; m < kIf.pContext->GetNumMinorCivInfos(); ++m)
+			if(!minorsTaken.count(m))
+				cityStates.push_back(m);
+		for(size_t i = 0; i < minors.size() && !cityStates.empty(); ++i)
+		{
+			const size_t k = (size_t)pRng->Get((unsigned short)cityStates.size(), "Host random city-state");
+			HH_STEP(HHFormat("setMinorCivType(%d, %d) /* host choice */", (int)minors[i], cityStates[k]),
+			        pg->setMinorCivType(minors[i], (MinorCivTypes)cityStates[k]));
+			cityStates.erase(cityStates.begin() + k);
+		}
+		pRng->Destroy();
+		kIf.pContext->DestroyRandomNumberGenerator(uiRng);
+	}
+}
+
 size_t HHDeliverNetMessages(HHNewGameInterfaces& kIf)
 {
 	if(!kIf.pEngine || kIf.pEngine->GetPendingNetMessageCount() == 0)
@@ -446,6 +519,7 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	//    the pregame map seed (CvGame::urandLimitExclusive), i.e. the spec's map seed. Then open slots are closed and player
 	//    info is sent (no-op single player).
 	HH_STEP("closeInactiveSlots()", pg->closeInactiveSlots());
+	ChooseRandomCivs(kIf, kResult);
 	kResult.timings.push_back(std::make_pair(std::string("launch"), Now() - t0));
 
 	// 4. ICvGame1::Init(handicap of the active player): reset, RNGs from the pregame seeds,
@@ -585,9 +659,11 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 //------------------------------------------------------------------------------
 namespace
 {
-	// Map summary: everything map generation decided, by type name.
+	// Map summary: everything map generation decided, by type name. M calls a method only some DLLs have (VP's
+	// GetLandmass, IsNaturalWonder).
 	const char* kMapLua =
 		"local function T(tbl, id) if id == nil or id < 0 then return nil end local r = tbl[id] return r and r.Type or id end\n"
+		"local function M(o, name) local f = o[name] if f then return f(o) end end\n"
 		"local w, h = Map.GetGridSize()\n"
 		"local out = {format = 'civ5headless-t000-map/1', width = w, height = h, wrapX = Map.IsWrapX(), wrapY = Map.IsWrapY(),\n"
 		"  numPlots = Map.GetNumPlots(), turn = Game.GetGameTurn(), players = {}, cityStates = {}, plots = {}}\n"
@@ -613,8 +689,8 @@ namespace
 		"    feature = T(GameInfo.Features, pl:GetFeatureType()), resource = T(GameInfo.Resources, res), resourceAmount = res >= 0 and pl:GetNumResource() or 0,\n"
 		"    riverW = pl:IsWOfRiver(), riverNW = pl:IsNWOfRiver(), riverNE = pl:IsNEOfRiver(),\n"
 		"    flowE = pl:GetRiverEFlowDirection(), flowSE = pl:GetRiverSEFlowDirection(), flowSW = pl:GetRiverSWFlowDirection(),\n"
-		"    improvement = T(GameInfo.Improvements, pl:GetImprovementType()), owner = pl:GetOwner(), area = pl:GetArea(), landmass = pl:GetLandmass(),\n"
-		"    continentArt = pl:GetContinentArtType(), naturalWonder = pl:IsNaturalWonder() or nil}\n"
+		"    improvement = T(GameInfo.Improvements, pl:GetImprovementType()), owner = pl:GetOwner(), area = pl:GetArea(),\n"
+		"    landmass = M(pl, 'GetLandmass'), continentArt = M(pl, 'GetContinentArtType'), naturalWonder = M(pl, 'IsNaturalWonder') or nil}\n"
 		"end\n"
 		"return out\n";
 
