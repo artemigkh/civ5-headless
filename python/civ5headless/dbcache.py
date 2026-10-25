@@ -1,9 +1,12 @@
 """Game database cache for host runs: one build per (mods input, game DLL, snapshot, builder exe).
 
-  c5h dbcache [--mods-dir MODS] [--mods-db Civ5ModsDatabase.db] [--dll DLL] [--exe EXE] [--snapshot DB] [--cache DIR]
+  c5h dbcache [--mods-dir MODS] [--mods-db Civ5ModsDatabase.db | --mod ID[:VER]... | --no-mods] [--dll DLL]
+              [--exe EXE] [--snapshot DB] [--cache DIR]
 
 prints the path of the cached database, building it with dbbuild.py on a miss (about 3 s). Every input defaults to
-the configuration (c5h doctor).
+the configuration (c5h doctor). --mod gives the mod set instead of the mods database: its registry is generated from
+the .modinfo files (modsdb.py); --no-mods builds the database without mods (the DLC snapshot post-processed by the
+DLL).
 
 The key hashes the contents of every .modinfo/.xml/.sql/.lua file below the MODS folder (the only files the
 builder reads), the mods database, the DLL (its post-processing runs on the database), the DLC snapshot and
@@ -12,12 +15,12 @@ Entries live in <db_cache>/<key>/built.db with dbbuild.py's report next to it
 (built.db.build/) and an inputs.json; a finished entry has built.db.ok.
 
 database(cfg, ...) is what the run, queue and comparison tools use: a database given explicitly, else the configured
-one (db), else the cached build for the mods and DLL.
+one (db), else the cached build for the mods and DLL (mods=[...]: a mod set, as --mod).
 """
 from pathlib import Path
 import argparse, hashlib, json, os, subprocess, sys, time
 
-from . import config, snapshot
+from . import config, modsdb, snapshot
 
 SOURCE_EXT = {'.modinfo', '.xml', '.sql', '.lua'}
 PACKAGE_PARENT = Path(__file__).resolve().parents[1]
@@ -87,12 +90,15 @@ def get_db(mods_dir, mods_db, dll, exe, snapshot, cache, game_dir, log=print, co
     return db, inputs, key
 
 
-def database(cfg, db=None, mods_dir=None, mods_db=None, dll=None, exe=None, log=print):
-    """(database, info): db if given, else cfg.db, else the cached build for the mods and DLL (built on a miss)."""
+def database(cfg, db=None, mods_dir=None, mods_db=None, dll=None, exe=None, log=print, mods=None):
+    """(database, info): db if given, else cfg.db, else the cached build for the mods and DLL (built on a miss).
+    mods: a mod set ('ID[:VER]' strings, [] for none) built from a generated registry instead of mods_db."""
     if db or cfg.db:
         p = Path(db or cfg.db).resolve()
         return p, dict(db=str(p))
     exe = find_exe(exe, cfg)
+    if mods is not None:
+        mods_dir, mods_db = modsdb.resolve(cfg, mods, mods_dir, mods_db, log=log)
     path, inputs, key = get_db(mods_dir or cfg.require('mods_dir', 'pass --mods-dir'),
                                mods_db or cfg.require('mods_db', 'pass --mods-db'),
                                dll or cfg.require('dll', 'pass --dll'),
@@ -105,16 +111,25 @@ def main(argv=None, cfg=None):
     cfg = cfg or config.load()
     a = argparse.ArgumentParser(prog='c5h dbcache', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     a.add_argument('--mods-dir', default=cfg.mods_dir)
-    a.add_argument('--mods-db', default=cfg.mods_db)
+    a.add_argument('--mods-db', default=None, help='mods database (default: config mods_db)')
+    a.add_argument('--mod', action='append', help='activated mod GUID[:version] (repeatable; a generated registry)')
+    a.add_argument('--no-mods', action='store_true', help='the database without mods')
     a.add_argument('--dll', default=cfg.dll)
     a.add_argument('--exe', default=cfg.exe)
     a.add_argument('--snapshot', default=cfg.snapshot)
     a.add_argument('--cache', default=cfg.db_cache)
     args = a.parse_args(argv)
+    if (args.mod or args.no_mods) and args.mods_db:
+        a.error('--mod and --no-mods exclude --mods-db')
+    log = lambda m: print(m, file=sys.stderr)
+    try:
+        args.mods_dir, args.mods_db = modsdb.resolve(cfg, [] if args.no_mods else args.mod, args.mods_dir, args.mods_db, log=log)
+    except config.ConfigError as error:
+        print(f'c5h dbcache: {error}', file=sys.stderr)
+        return 1
     missing = [k for k in ('mods_dir', 'mods_db', 'dll', 'exe', 'cache') if getattr(args, k) is None]
     if missing:
         a.error('not set: ' + ', '.join('--' + k.replace('_', '-') for k in missing) + ' (or set them in civ5headless.toml)')
-    log = lambda m: print(m, file=sys.stderr)
     try:
         snap = snapshot.resolve(cfg, args.snapshot, exe=args.exe, log=log)
     except (config.ConfigError, snapshot.SnapshotError, RuntimeError) as error:
