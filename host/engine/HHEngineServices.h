@@ -115,6 +115,11 @@ public:
 	// is normalised in the digest, so the host writes nothing (contract 6.5).
 	void AutoSave(bool bInitial, bool bPostTurn);
 
+	// Turn slices per second and per minute (Civ4 values). CvGame::getMinutesPlayed divides by
+	// getTurnsPerMinute when the game ends (GAMESTATE_OVER), so the stubs' 0 crashed at a time victory.
+	int getTurnsPerSecond() { return 4; }
+	int getTurnsPerMinute() { return 240; }
+
 	// Net messages with a Response* (queued, see DeliverNetMessages)
 	void sendMinorPledgeProtection(PlayerTypes eMajor, PlayerTypes eMinor, bool bProtect, bool bPledgeNowBroken);
 	void sendMinorGiftGold(PlayerTypes eMinor, int iGold);
