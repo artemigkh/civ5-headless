@@ -26,6 +26,7 @@ the last one unless read(path, game=N) says otherwise.
     {turn: [sections]}, runs [{turn, point, until, sections}], transients, divergence, lastPointIdentical, healTurns,
     errors {A: [turns], B: [turns]}
   summary(result) -> one line
+  probe_path() -> Path of fingerprint.lua (the repository's probes/, else the package's data/)
 """
 import argparse
 import json
@@ -82,6 +83,17 @@ def _fields(text):
         elif part:
             flags.append(part)
     return parts[0], fields, flags, order
+
+
+def probe_path():
+    """The fingerprint probe (fingerprint.lua): probes/ of the repository this module runs from, else the package's
+    data/ (an installed package). Raises FileNotFoundError when neither has it."""
+    here = Path(__file__).resolve().parent
+    candidates = (here.parents[1] / 'probes' / 'fingerprint.lua', here / 'data' / 'fingerprint.lua')
+    for p in candidates:
+        if p.is_file():
+            return p
+    raise FileNotFoundError('fingerprint.lua not found in ' + ' or '.join(str(p.parent) for p in candidates))
 
 
 def log_path(run):

@@ -804,12 +804,13 @@ def _methods_for(dll_source=None, include_cache=False):
 def scan_report(report_path, unknown_only=False, profiles_dir=None, include_cache=False, dll_source=None):
     """The hits over the UI Lua a host run loaded (host-report.json), as `scan --report` finds them: state-writing
     calls (lazy caches only with include_cache), each with reach, covered, coveredBy and reason from the profiles
-    that run selected (profiles_dir, default the repository's profiles/), the curated reviews, the run's DLL and the
-    add-ins the host ran. One entry point for other tools (c5h verify)."""
+    that run selected (from profiles_dir, else the folder the run used, else the repository's profiles/), the curated
+    reviews, the run's DLL and the add-ins the host ran. One entry point for other tools (c5h verify)."""
     doc = json.loads(Path(report_path).read_text(encoding='utf-8'))
     files, selected = files_from_report(report_path, unknown_only)
     methods, _, curated = _methods_for(dll_source, include_cache)
-    profiles = Path(profiles_dir) if profiles_dir else default_profiles_dir()
+    used = (doc.get('profiles') or {}).get('dir')
+    profiles = Path(profiles_dir) if profiles_dir else Path(used) if used and Path(used).is_dir() else default_profiles_dir()
     covers = load_covers(profiles, selected) if profiles else {}
     return scan(files, methods, curated, covers, report=doc)[1]
 

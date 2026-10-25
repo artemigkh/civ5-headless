@@ -113,6 +113,9 @@ class FingerprintTest(unittest.TestCase):
             self.assertIn(head, text)
         self.assertIn('local VERSION = %d' % fingerprint.VERSION, text)
 
+    def test_probe_path(self):
+        self.assertEqual(fingerprint.probe_path(), (REPO / 'probes' / 'fingerprint.lua').resolve())
+
 
 if __name__ == '__main__':
     unittest.main()

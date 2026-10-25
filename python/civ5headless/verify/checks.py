@@ -399,10 +399,11 @@ def health_checks(ctx):
             hits = _hazard_scan(ctx.hazards, report_path)
             findings = [dict(file=h.get('file'), line=h.get('line'), call=h.get('call'), kind=h.get('kind'),
                              function=h.get('function'), why=h.get('why'), triggers=h.get('triggers') or [],
-                             reach=hazard_reach(h.get('triggers'))) for h in hits if not h.get('covered')]
+                             reach=h.get('reach') or hazard_reach(h.get('triggers')),
+                             review=(h.get('review') or {}).get('why')) for h in hits if not h.get('covered')]
             findings.sort(key=lambda f: f['reach'] == 'input')
             notes.append(f'hazard scan of the UI files of {report_path.parent.name}: {len(hits)} call(s), '
-                         f'{sum(1 for h in hits if h.get("covered"))} covered by profiles')
+                         f'{sum(1 for h in hits if h.get("covered"))} covered (profiles, reviews, the DLL, add-ins the host runs)')
         except Exception as error:  # noqa: BLE001
             notes.append(f'hazard scan failed: {type(error).__name__}: {error}')
     unknown_files = {}
@@ -449,15 +450,8 @@ def hazard_reach(triggers):
 
 def _hazard_scan(hazards, report_path):
     """The hits of civ5headless.hazards over the UI files a host run loaded, as `hazards scan --report` finds them
-    (state-writing calls; lazy caches left out), each with covered/profile from the profiles that run selected."""
-    files, selected = hazards.files_from_report(report_path)
-    methods, _, curated = hazards.load_methods(None)
-    methods = {k: [e for e in v if e['kind'] != 'cache'] or v for k, v in methods.items()}
-    methods = {k: v for k, v in methods.items() if any(e['kind'] != 'cache' for e in v)}
-    profiles = hazards.default_profiles_dir()
-    covers = hazards.load_covers(profiles, selected) if profiles else {}
-    _, hits = hazards.scan(files, methods, curated, covers)
-    return hits
+    (state-writing calls; lazy caches left out), each with reach and covered/coveredBy/reason (hazards.scan_report)."""
+    return hazards.scan_report(report_path)
 
 
 # ---- statistics ----
