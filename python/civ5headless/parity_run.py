@@ -123,7 +123,9 @@ def run_case(ref, a, quiet=False):
     else:
         result['digest'] = compare_digests(ref / 'HeadlessDigest.log', host_log)
         result['dumpT000'] = compare_dump(ref / f'dump-t{first_turn:03d}', run / 'dump-t000')
-        final = f'dump-t{first_turn + turns:03d}'
+        # the reference's last dump: the target turn, or the turn a game to victory ended (the host stops there
+        # too and names its final dump by that turn)
+        final = f'dump-t{last_turn:03d}'
         result['dumpFinal'] = compare_dump(ref / final, run / final) if turns else result['dumpT000']
         d = result['digest']
         # a reference without digest points (0 turns: load-screen dump only) is judged on its dumps
@@ -162,7 +164,7 @@ def main():
     ap.add_argument('--mods-db')
     ap.add_argument('--loc-db')
     ap.add_argument('--exe', help='civ5headless.exe (default: work/latest-headless-build-path.txt)')
-    ap.add_argument('--turns', type=int, help='default: the reference\'s last dump turn')
+    ap.add_argument('--turns', type=int, help='autoplay turns to arm (default: last dump turn minus first; for a game to victory pass the count the reference armed)')
     ap.add_argument('--name', help='run folder name (default parity-<ref>[-TAG])')
     ap.add_argument('--tag', help='suffix for the run folder names and the summary file (variants of a matrix run)')
     ap.add_argument('--host-arg', action='append', help='extra host argument (repeatable; use --host-arg=--x)')
