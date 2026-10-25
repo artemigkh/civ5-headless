@@ -8,8 +8,7 @@ commit it with the change it describes.
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
-- **Phase:** M3 done; M6 done (d0711220f); M5 (breadth parity) in progress. M0, M1, M4 done; M2 done except
-  Continental Drift (an M5 item).
+- **Phase:** M0–M6 done; **M5 closed 2026-10-25** by the final Standard game (plan section 9.6). M7 (saves) optional.
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
   game is free for this work. Before handing back, restore the AI program's deployed DLL
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
@@ -126,6 +125,15 @@ commit it with the change it describes.
   attempt 1 identical T0–T143 with the new host, host A/A, and the batch-1/smoke cases that close slots. Attempt 1's
   runs kept as `*-attempt1`. Attempt 2 running (same DLL CB6B0BED, host exe
   `work/wt/hh-host/work/headless-output/Release/20261025-164925`).
+- **Final game, attempt 2: pass (M5 closed).** `hh-m5z-continents-s1` (Standard Emperor 1001/2002, DLL CB6B0BED, host
+  exe 20261025-164925): same result (game over T302, team 1, victory type 3, state 2); 300 of 302 per-turn digests
+  identical; two one-turn transients (T276 p00; T284 p00–p04), both only `tacticalAI.m_tacticalMap` (an AI scratch
+  cache rebuilt each turn; its build stamp differs by one), identical again the next turn and to the end. The final dump
+  differs (p01) because the real game keeps processing in GAMESTATE_EXTENDED for the seconds before its end probe while
+  the host stops at once; the T301 digests match. Timing: real autoplay 2,358 s (5.1 / 7.9 / 10.3 s per turn for
+  T1–100 / 100–200 / 200–300), host 692 s (0.72 / 2.11 / 3.95): 3.4x overall (7.0x early, 2.6x late). Memory: real peak
+  working set 2,025 MB, peak private 2,423 MB, about 2.7 cores; host 424 MB / 480 MB, one core (681 s CPU).
+  Optional follow-up: normalise the tactical map's build stamp in the digest if it never affects decisions.
 - **Seeding with a stock DLL works (2026-10-25):** `config.ini` `MapRandSeed`/`SyncRandSeed` (Firaxis
   `CvPreGame::loadFromIni`) pin a menu-started game's seeds before the random civs are drawn. Two real Tiny launches
   without our seeds file (`game_probe --engine-seeds`, runs `hh-seedtest-a/-b`) were identical (civs, all 33 turn-0
@@ -200,16 +208,13 @@ commit it with the change it describes.
   with no gameplay reader (keep anything gameplay reads, e.g. end-turn blocking notifications), and lists them in
   `docs/headless-dll-additions.md`. The real game and the host use the same DLL, so new references and the host agree;
   references recorded with older DLLs keep comparing against their own DLL.
-- **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: the s1 T124–127 dumps against the
-  host's (and the A/A check); the late-game logging fix (the AI settle log called `GetDanger`, which rebuilds dirty
-  danger plots; host logging on/off differed at T154, T209, T252–254, T292–294; the uncommitted fix clears T154 and
-  T209); each m5-long divergence from its rolling dumps; host-only checks wherever they answer the question.
-- **Next steps:**
-  1. Review and merge the host agent's fixes; re-run the Tiny long games host-first until none diverges; then the
-     one larger-map check.
-  2. Re-measure parallel scaling on an idle machine (`work/headless/m6/queues/scale-w<W>.json`, see
-     `docs/headless-host.md`).
-  3. Restore the AI build and mods before handing back.
+- **Host agent** (`a4cb41447b56da966`, `work/wt/hh-host`, branch `hh-host`, all merged through 2cc045925): idle.
+- **Next steps (none scheduled):**
+  1. Restore the AI program's DLL and mods before handing the real game back (see "AI program" above).
+  2. Optional: re-measure parallel scaling on an idle machine (`work/headless/m6/queues/scale-w<W>.json`).
+  3. Optional: normalise the tactical map build stamp in the digest; M7 saves.
+  4. Later, user's call: the test suite design (config.ini seeding works with stock DLLs), the repository migration
+     ([headless-repo-migration.md](headless-repo-migration.md)), upstream VP PRs for the determinism fixes.
 - **Uncommitted files:** none besides this ledger.
 
 ## Milestones
@@ -218,10 +223,10 @@ commit it with the change it describes.
 |---|---|---|---|---|
 | M0 | Record the engine contract | done | f96b1be30 | trace recordings, reference A/A, DB check, DLC snapshot |
 | M1 | Host boots the DLL | done | fc197fd34 | go: boot passes; small-block allocator disabled (all DLL memory from the MSVCR90 heap) |
-| M2 | New-game generation | nearly done (cdrift open) | | T000 digest parity, incl. Communitu and Continental Drift |
+| M2 | New-game generation | done | 1d70b7db0 | T000 digest parity, incl. Communitu and Continental Drift (engine ipairs) |
 | M3 | Turn loop and autoplay | done | 73d4f1932 | per-turn digest parity, 100 turns |
 | M4 | Database builder | done | 0c240f6bb | can run alongside M3; `dbdiff.py` oracle |
-| M5 | Breadth parity | in progress | | matrix in plan section 6 |
+| M5 | Breadth parity | done (2026-10-25) | 42871835a | batch 1 (58), smoke (11), map options (9), frame-skew sweep (18, host), final Standard game to victory (plan 9.6) |
 | M6 | Tooling and throughput | done | d0711220f | vpbench backend, parallel runner |
 | M7 | Saves | not planned | | optional follow-up |
 
