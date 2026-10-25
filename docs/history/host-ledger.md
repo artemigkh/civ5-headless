@@ -103,6 +103,11 @@ commit it with the change it describes.
 - **Continental Drift probe** (`work/test-runs/hh-m5-cdrift-probe`, probe script swapped into MODS for one launch and
   restored byte-identical; source and `.orig` in `hh-m5-cdrift-probe-src`): the first differing value is the
   very first height-map sample, tile (0,0), height(2.2,0) real -0.2492 vs host 0.0656, with identical RNG draws.
+- **Continental Drift cause found** (probe 2, `work/test-runs/hh-m5-cdrift-probe2`; ipairs probes
+  `hh-m5-ipairs-probe`, `-probe2`): the engine's `ipairs(t)` starts at index 0 when `t[0] ~= nil` (initial
+  control -1, else 0; stock iterator). The map script keeps its height grids from `maps[0]`, so the real game adds
+  grid 0 and the stock-Lua host did not. `debug` is nil in the real front end and unusable in the map-script
+  thread. The host agent is matching both.
 - **Runs in flight:** none.
 - **Next steps:**
   1. Review and merge the host agent's work (cdrift, then M3 milestones).
