@@ -184,6 +184,7 @@ substitution needs `HHDigest::g_bWriting` on the current thread.
 | `CvPlayerTraits::m_bHasYieldFromTileCultureBomb`, `m_bHasYieldFromTileEarn`, `m_bHasYieldFromTilePurchase` | never initialised (only ever set to true in `InitPlayerTraits`) | none: the getters have no callers |
 | `CvGameTrade::m_aaiTechDifference`, `m_aaiPolicyDifference`, while `getElapsedGameTurns() == 0` | uninitialised until the first `CvGameTrade::DoTurn` (in `CvGame::doTurn`, end of the first turn) | read only through trade-route values, which need a trade route or a trade unit: unreachable before the first `doTurn` in an ancient start. **Risk** in later-era starts (a trade unit is buildable on turn 0; see below) |
 | `CvPlayerCulture::m_eOpinion`, `m_ePreferredIdeology`, `m_eOpinionBiggestInfluence`, while the player has no ideology (`GetLateGamePolicyTree() == NO_POLICY_BRANCH_TYPE`) | never initialised; first written by `DoPublicOpinion`, which returns early without an ideology | **real nondeterminism risk**, see below |
+| `CvReligion::m_iHolyCityX`, `m_iHolyCityY` of pantheons (`m_bPantheon`) | `CvReligion(RELIGION_PANTHEON, ePlayer, NULL, true)` leaves them uninitialised (AA100b: the `game` section's 2-byte runs at a 507-byte stride from turn 14, one per pantheon) | **risk**, see below |
 
 Real nondeterminism risks found with the digest (gameplay can read the uninitialised value; not changed, since a fix
 changes gameplay; normalised so that the digest stays usable):
@@ -201,6 +202,10 @@ changes gameplay; normalised so that the digest stays usable):
   (`Reset`) does not call `ResetTechDifference`/`ResetPolicyDifference`. In a later-era start a city founded on
   turn 0 can evaluate trade units (`GetTradeConnectionValueTimes100` → `GetTechDifference`) before the tables are
   built. Proposed fix: call both resets in `CvGameTrade::Reset`.
+- Pantheon holy-city coordinates: `CvGameReligions::GetHolyCityReligion` compares every current religion's
+  `m_iHolyCityX/Y` with the city's coordinates, pantheons included, so a pantheon whose garbage happens to equal a
+  city's coordinates makes that city a pantheon holy city. Unlikely (the garbage seen was 0x572E3C1B for X), but
+  run-dependent. Proposed fix: set both to −1 when the constructor gets no holy city.
 
 How these were found: `tools/headless/fieldmap_transform.py` builds a DLL whose dumps also write
 `<section>.fields.txt` (the offset of every `visitor(...)` call while the digest writes, with its file, line and
