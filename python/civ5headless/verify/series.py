@@ -7,14 +7,15 @@ Sources:
   civ with alive=0 counts only in the alive series).
 
 Players differ between games (random civs, eliminations), so each metric becomes world aggregates over the major
-civs that have a value that turn: the mean and the maximum (the leader). Series names are "<source>:<METRIC>:<agg>",
+civs that have a value that turn: the mean, the maximum (the leader) and the sum (the world total, which also sees
+how many civs there are and live). Series names are "<source>:<METRIC>:<agg>",
 for example "replay:SCORE:mean" or "lua:cities:max".
 """
 from __future__ import annotations
 import json
 from pathlib import Path
 
-AGGREGATES = ('mean', 'max')
+AGGREGATES = ('mean', 'max', 'sum')
 PREFIX = 'REPLAYDATASET_'
 
 

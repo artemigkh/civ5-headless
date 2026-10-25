@@ -398,7 +398,9 @@ def health_checks(ctx):
         try:
             hits = _hazard_scan(ctx.hazards, report_path)
             findings = [dict(file=h.get('file'), line=h.get('line'), call=h.get('call'), kind=h.get('kind'),
-                             function=h.get('function'), why=h.get('why')) for h in hits if not h.get('covered')]
+                             function=h.get('function'), why=h.get('why'), triggers=h.get('triggers') or [],
+                             reach=hazard_reach(h.get('triggers'))) for h in hits if not h.get('covered')]
+            findings.sort(key=lambda f: f['reach'] == 'input')
             notes.append(f'hazard scan of the UI files of {report_path.parent.name}: {len(hits)} call(s), '
                          f'{sum(1 for h in hits if h.get("covered"))} covered by profiles')
         except Exception as error:  # noqa: BLE001
@@ -412,16 +414,37 @@ def health_checks(ctx):
     if ctx.hazards is None and not reports:
         out.append(check('health.ui-hazards', title, 'n/a', 'no hazard scan (civ5headless.hazards) and no host-report.json'))
     else:
-        status = 'warn' if findings or unknown_files else 'pass'
+        game = [f for f in findings if f['reach'] != 'input']
+        status = 'warn' if game or unknown_files else 'pass'
         summary = []
-        if findings:
-            summary.append(f'{len(findings)} state-changing UI call(s) without a profile')
+        if game:
+            summary.append(f'{len(game)} state-changing UI call(s) without a profile that a game can reach')
+        if len(findings) > len(game):
+            summary.append(f'{len(findings) - len(game)} more reached only through player input (clicks, buttons), '
+                           'which an autoplayed game does not send')
         if unknown_files:
             summary.append(f'{len(unknown_files)} UI file(s) not known to any profile')
-        out.append(check('health.ui-hazards', title, status, '; '.join(summary) or 'clean', findings=findings[:60],
+        out.append(check('health.ui-hazards', title, status, '; '.join(summary) or 'clean', findings=findings[:80],
+                         gameReachable=len(game), inputOnly=len(findings) - len(game),
                          unknownUiFiles=list(unknown_files.values())[:60], notes=notes,
                          scanned=ctx.hazards is not None))
     return out
+
+
+# Triggers of a hazard (civ5headless.hazards) that only player input fires: a hazard whose every trigger is one of
+# these cannot run in an autoplayed game. Anything else (load, GameEvents, Events, LuaEvents, per-frame updates,
+# show/hide, no trigger found) counts as reachable.
+INPUT_TRIGGERS = ('Mouse.', 'MouseEvents.', 'AddButton', 'RegisterCallback', 'RegisterCheckHandler',
+                  'RegisterSelectionCallback', 'RegisterSliderCallback', 'SetInputHandler', 'CommitConfirm',
+                  'InterfaceModeMessageHandler', 'ToolTip', 'LEFT_CLICK', 'RIGHT_CLICK')
+
+
+def hazard_reach(triggers):
+    """'input' when every trigger of a hazard is player input, else 'game'."""
+    triggers = [t for t in (triggers or []) if t]
+    if triggers and all(any(k in t for k in INPUT_TRIGGERS) for t in triggers):
+        return 'input'
+    return 'game'
 
 
 def _hazard_scan(hazards, report_path):

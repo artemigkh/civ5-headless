@@ -126,8 +126,9 @@ phase plays two short games to find out; if they are identical, the ensemble var
 of the same script and size), and the report says so. `ensemble_vary = "sync"` or `"map"` sets it.
 
 **Series.** Per turn, for each replay dataset (score, land, population, gold, culture, ...) and each fingerprint
-metric (cities, population, techs, policies, units, wars, ...), the mean and the maximum over the major civs (the
-civs differ between games, the aggregates do not). Turns before `stats_from_turn` are left out.
+metric (cities, population, techs, policies, units, wars, ...), the mean, the maximum and the sum over the living
+major civs (the civs differ between games, the aggregates do not; the sum also sees how many civs there are and
+live). Turns before `stats_from_turn` are left out.
 
 **Envelope test** (`statistics.envelope`). For each series and turn, the 2.5-97.5% band of the ensemble; coverage is
 the fraction of the real game's points inside. A finite ensemble's band holds fewer than 95% of a new game's points
@@ -224,7 +225,7 @@ ensemble = 24
 | `standard_spec`, `standard_turns`, `victory_games`, `victory_max_turns` | Standard Continents, 0 / 60, 0 / 4, 500 | full mode |
 | `envelope_band`, `envelope_target`, `envelope_alpha`, `envelope_margin` | [0.025, 0.975], 0.95, 0.05, 0.02 | envelope test |
 | `bias_alpha`, `bias_one_sided`, `bias_z_cap`, `bias_min_members` | 0.05, 0.9, 5, 16 | bias check |
-| `min_members`, `stats_from_turn`, `aggregates`, `exclude_metrics` | 8, 2, [mean, max], [] | series |
+| `min_members`, `stats_from_turn`, `aggregates`, `exclude_metrics` | 8, 2, [mean, max, sum], [] | series |
 | `ui_sections`, `pregame_ignore` | [savedb], [GetNickName, GetActivePlayer] | listed apart / ignored |
 | `host_args`, `max_memory_mb`, `reserve_seconds`, `regression_threshold`, `strict` | [], 3500, 15, 0.15, false | other |
 

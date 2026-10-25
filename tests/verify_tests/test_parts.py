@@ -7,7 +7,7 @@ import re
 import tempfile
 import unittest
 
-from civ5headless.verify import exact, hostside, perf, realside, report, series, settings as settings_mod
+from civ5headless.verify import checks, exact, hostside, perf, realside, report, series, settings as settings_mod
 
 import fakegame
 
@@ -236,6 +236,18 @@ class ReportTest(unittest.TestCase):
         self.assertIn('<svg', html)
         self.assertIn('turn 5: p01', html)
         self.assertNotIn('<script', html)
+
+
+class HazardReachTest(unittest.TestCase):
+    def test_reach(self):
+        self.assertEqual(checks.hazard_reach(['callback Mouse.eLClick']), 'input')
+        self.assertEqual(checks.hazard_reach(['via callback Mouse.eLClick', 'passed to AddButton']), 'input')
+        self.assertEqual(checks.hazard_reach(['via ContextPtr:SetInputHandler']), 'input')
+        self.assertEqual(checks.hazard_reach(['Events.SequenceGameInitComplete', 'via callback Mouse.eLClick']), 'game')
+        self.assertEqual(checks.hazard_reach(['GameEvents.PlayerCityFounded']), 'game')
+        self.assertEqual(checks.hazard_reach(['via ContextPtr:SetUpdate']), 'game')
+        self.assertEqual(checks.hazard_reach([]), 'game')   # no trigger found: may run at load
+        self.assertEqual(checks.hazard_reach(None), 'game')
 
 
 class NoMachinePathsTest(unittest.TestCase):

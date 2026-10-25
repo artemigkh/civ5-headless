@@ -96,7 +96,7 @@ class Settings:
     bias_min_members: int = 16          # fewer ensemble games: the bias check reports (info) but gives no verdict
     min_members: int = 8                # ensemble games needed at a turn for it to count
     stats_from_turn: int = 2            # statistics ignore earlier turns (every game is the same there)
-    aggregates: list = field(default_factory=lambda: ['mean', 'max'])
+    aggregates: list = field(default_factory=lambda: ['mean', 'max', 'sum'])
     exclude_metrics: list = field(default_factory=list)   # e.g. ["GOLDENAGETURNS"]
     ui_sections: list = field(default_factory=lambda: ['savedb'])
     pregame_ignore: list = field(default_factory=lambda: ['GetNickName', 'GetActivePlayer'])
