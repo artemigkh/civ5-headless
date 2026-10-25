@@ -5,10 +5,12 @@
 --config names the civ5headless.toml to read (default: C5H_CONFIG, ./civ5headless.toml, then the one in the
 workspace); c5h doctor shows what it and discovery give.
 
-Each command is a module's main(argv, cfg) -> exit code; cfg is the loaded config.Config. The verification suite
-plugs in the same way: c5h verify calls civ5headless.verify.main(argv, cfg) when that package is present.
+Each command is a module's main(argv, cfg) -> exit code; cfg is the loaded config.Config. A main(argv) that takes no
+configuration is called with the arguments only. The verification suite plugs in the same way: c5h verify calls
+civ5headless.verify.main(argv, cfg) when that package is present.
 """
 import importlib
+import inspect
 import sys
 
 from . import __version__, config
@@ -24,13 +26,29 @@ COMMANDS = [
     ('dbbuild', 'civ5headless.dbbuild', 'main', 'build the game database for a mod set'),
     ('dbcache', 'civ5headless.dbcache', 'main', 'the cached game database for the configured mods and DLL'),
     ('snapshot', 'civ5headless.snapshot', 'main', "build the DLC snapshot (base game, expansions, DLC) from the game's files"),
+    ('modsdb', 'civ5headless.modsdb', 'main', 'generate the mods registry (Civ5ModsDatabase.db) for a mod set'),
     ('dbdiff', 'civ5headless.dbdiff', 'main', 'compare two game databases'),
     ('dumps', 'civ5headless.compare.dumps', 'main', 'compare two state dumps section by section'),
     ('parity', 'civ5headless.compare.parity', 'main', 'replay a real-game reference in the host and compare'),
     ('host-first', 'civ5headless.compare.parity', 'first_main', 'run the host on every case of a matrix first'),
     ('skew', 'civ5headless.compare.skew', 'main', 'frame-count independence sweep'),
     ('digest', 'civ5headless.compare.digest', 'main', 'digest helpers: verify a dump, hash files'),
+    ('fingerprint', 'civ5headless.fingerprint', 'main', 'Lua fingerprints (probes/fingerprint.lua): compare, show'),
+    ('hazards', 'civ5headless.cli', 'hazards_main', 'UI hazard scan: scan, methods, known'),
 ]
+
+
+def hazards_main(argv, cfg):
+    """c5h hazards: civ5headless.hazards.main with the configured profiles folder as its default."""
+    from . import hazards
+    argv = list(argv)
+    given = lambda opt: any(x == opt or x.startswith(opt + '=') for x in argv)
+    profiles = getattr(cfg, 'profiles', None)
+    if profiles and argv[:1] == ['scan'] and not given('--profiles'):
+        argv += ['--profiles', str(profiles)]
+    elif profiles and argv[:1] == ['known'] and not given('--known'):
+        argv += ['--known', str(profiles / 'known-ui-files.json')]
+    return hazards.main(argv)
 
 
 def usage():
@@ -81,8 +99,10 @@ def main(argv=None):
             print(f'c5h: configuration error: {error}', file=sys.stderr)
             return 2
         cfg = error  # doctor reports it
+    entry_point = getattr(mod, function)
+    takes_config = len(inspect.signature(entry_point).parameters) > 1
     try:
-        return getattr(mod, function)(rest, cfg) or 0
+        return (entry_point(rest, cfg) if takes_config else entry_point(rest)) or 0
     except config.ConfigError as error:
         print(f'c5h {name}: {error}', file=sys.stderr)
         return 2

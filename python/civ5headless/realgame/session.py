@@ -3,7 +3,7 @@
     s = RealGameSession(cfg, run_dir)
     s.launch()                                  # start the game, wait for the main menu       -> dict
     s.set_mods(mod_ids)                         # enable exactly these mods, activate them      -> dict
-    s.start_game(spec, map_seed, sync_seed, lua_probes=[...])   # setup, start, load, probes   -> dict
+    s.start_game(spec, map_seed, sync_seed, lua_probes=[...], fingerprint=True)   # setup, start, load, probes -> dict
     s.autoplay(turns, max_seconds=None)         # observer autoplay; per-turn wall times        -> dict
     s.to_main_menu()                            # for the next setup in the same session        -> dict
     s.collect_logs(dest)                        # the game's logs written this session          -> [names]
@@ -34,7 +34,7 @@ from pathlib import Path
 import shutil
 import time
 
-from .. import spec as specmod, winproc
+from .. import probes as probes_mod, spec as specmod, winproc
 from ..run import utc, write
 from . import launch as launchmod, mods as modsmod, seeds, tuner
 
@@ -95,9 +95,10 @@ def as_list(value):
 
 
 def hhseeds(log_path, since):
-    """The HHSEEDS lines (as dicts) of a HeadlessDigest.log written after since (epoch seconds), else []."""
+    """The HHSEEDS lines (as dicts) of a HeadlessDigest.log written after since (epoch seconds), else []. File times
+    are coarser than time.time() (a write right after since can carry an earlier time), hence the second of slack."""
     p = Path(log_path)
-    if not p.is_file() or p.stat().st_mtime < since:
+    if not p.is_file() or p.stat().st_mtime < since - 1:
         return []
     lines = [l for l in p.read_text(encoding='utf-8', errors='replace').splitlines() if l.startswith('HHSEEDS|')]
     return [dict(f.partition('=')[::2] for f in l.split('|')[1:]) for l in lines]
@@ -274,9 +275,15 @@ class RealGameSession:
             spec = specmod.resolve(spec, dbcache.database(self.cfg, log=self.log)[0])
         return spec
 
-    def start_game(self, spec, map_seed=None, sync_seed=None, lua_probes=()):
+    def start_game(self, spec, map_seed=None, sync_seed=None, lua_probes=(), fingerprint=None):
         """Set up and start a game from a spec (resolved, or resolved here against the configured database) and
-        leave it loaded and paused at turn 0. The seeds default to the spec's; None for both means the clock."""
+        leave it loaded and paused at turn 0. The seeds default to the spec's; None for both means the clock.
+        lua_probes run in order in InGame, where and when the host runs its --lua-probe files; fingerprint (True,
+        or dict(every=K, turns=[...], split=N)) runs the fingerprint probe first, with the files a host run uses
+        (probes.fingerprint_probes)."""
+        if fingerprint:
+            options = probes_mod.fingerprint_options(fingerprint)
+            lua_probes = probes_mod.fingerprint_probes(self.cfg, self.dir, **options) + list(lua_probes)
         if self.game is None:
             raise SessionError('launch() first')
         if not self.alive():

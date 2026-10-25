@@ -237,6 +237,28 @@ class DiscoveryTest(unittest.TestCase):
         self.same(cfg.dll, pinned / 'MODS/(1) Community Patch/CvGameCore_Expansion2.dll')
         self.same(cfg.mods_db, self.m.user / 'cache/Civ5ModsDatabase.db')
 
+    def test_profiles_and_probes(self):
+        cfg = config.load(system=self.m.system())
+        for key in ('profiles', 'probes'):
+            self.assertIsNone(getattr(cfg, key), key)
+            self.assertEqual(cfg.sources[key].kind, 'unset')
+        (self.m.repo / 'profiles').mkdir()
+        (self.m.repo / 'probes').mkdir()
+        cfg = config.load(system=self.m.system())  # the workspace is the repository
+        self.same(cfg.profiles, self.m.repo / 'profiles')
+        self.assertEqual(cfg.sources['profiles'].kind, 'default')
+        ws = self.m.root / 'ws'
+        (ws / 'probes').mkdir(parents=True)
+        p = self.write_toml(f'workspace = "{ws.as_posix()}"\nprofiles = "my-profiles"')
+        cfg = config.load(p, system=self.m.system())
+        self.same(cfg.profiles, self.m.cwd / 'my-profiles')
+        self.assertEqual(cfg.sources['profiles'].kind, 'file')
+        self.same(cfg.probes, ws / 'probes')  # the workspace's first
+        (ws / 'probes').rmdir()
+        cfg = config.load(p, system=self.m.system())
+        self.same(cfg.probes, self.m.repo / 'probes')  # then the repository's
+        self.assertEqual(cfg.sources['probes'].kind, 'discovery')
+
     def test_toolchain_from_environment(self):
         cfg = config.load(system=self.m.system(environ={'C5H_TOOLCHAIN': str(self.m.root / 'tc')}))
         self.same(cfg.toolchain, self.m.root / 'tc')

@@ -26,4 +26,5 @@ package-dir = {"" = "python"}
 where = ["python"]
 
 [tool.setuptools.package-data]
+"civ5headless" = ["data/*.json"]
 "civ5headless.realgame" = ["*.lua"]

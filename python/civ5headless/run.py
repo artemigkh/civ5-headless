@@ -1,8 +1,11 @@
 """One host game: play a new game from a spec in civ5headless.exe and write a vpbench-style run folder.
 
   c5h run SPEC.json --turns N [--run NAME | --run-dir DIR] [--seeds MAP SYNC]
-          [--dll DLL] [--db DB | --mods-dir MODS --mods-db Civ5ModsDatabase.db] [--loc-db DB] [--game-dir DIR]
-          [--exe EXE] [--lua-probe FILE]... [--heap-perturb N] [--frame-skew K]
+          [--dll DLL] [--db DB] [--mods-dir MODS] [--mods-db Civ5ModsDatabase.db | --mod ID[:VER]... | --no-mods]
+          [--loc-db DB] [--game-dir DIR] [--exe EXE]
+          [--profiles DIR | --no-profiles] [--skip-addin NAME]... [--no-addins]
+          [--fingerprint] [--fingerprint-every K] [--fingerprint-turns T,T,...] [--fingerprint-split N]
+          [--lua-probe FILE]... [--heap-perturb N] [--frame-skew K]
           [--diagnostics 1] [--improved-mask N | --ab-role baseline|test] [--checkpoint-every 1]
           [--maximum-seconds S] [--stall-seconds S] [--max-memory-mb MB] [--affinity MASK] [--low-priority]
           [--prune] [--host-arg ARG]...
@@ -10,14 +13,24 @@
 From Python: run.play(spec, turns, ...) -> Result (see play).
 
 Inputs left out come from the configuration (civ5headless.toml or discovery; c5h doctor): the game folder, the DLL,
-the MODS folder, the mods and localization databases, the host exe and the runs folder (run folder <runs>/NAME;
-without --run or --run-dir, NAME is <spec stem>-<date>-<time>). The game database is --db, else the configured db,
-else the cached build for the mods and DLL (dbcache.py).
+the MODS folder, the mods and localization databases, the profiles folder, the host exe and the runs folder (run
+folder <runs>/NAME; without --run or --run-dir, NAME is <spec stem>-<date>-<time>). The game database is --db, else
+the configured db, else the cached build for the mods and DLL (dbcache.py).
+
+Mods: the activated mods are those of the mods database (--mods-db, default the game's registry). --mod gives the
+mod set instead: a registry is generated from the .modinfo files (modsdb.py), so the game need not have activated
+them. --no-mods plays without mods (the database is the DLC snapshot post-processed by the DLL).
+
+UI: the host runs the activated mods' InGameUIAddins (--skip-addin NAME leaves one out, --no-addins all) and the UI
+emulation profiles from --profiles (default: config profiles; --no-profiles: none). --fingerprint runs the Lua
+fingerprint probe (probes/fingerprint.lua; c5h fingerprint compares two runs), every turn or every K-th
+(--fingerprint-every) plus --fingerprint-turns, before the --lua-probe files.
 
 The run folder has the files vpbench writes and its readers use (compare.py, abcompare.py, samerun.py):
 events.jsonl, setup.json, spec-resolved.json, status.json, turn-times.jsonl, turn-seen.json,
 checkpoints/turn-NNNN.json (+ turn-NNNN-final.json), replay-messages.json, replay-data.json; plus the host's
-own outputs (newgame-report.json, Logs/ with HeadlessDigest.log, t000-*.json, dump-t000/, dump-tN/).
+own outputs (host-report.json, newgame-report.json, Logs/ with HeadlessDigest.log and Lua.log, t000-*.json,
+dump-t000/, dump-tN/).
 
 Differences from a real-game run (docs/user-guide.md, "Run folders"):
 - checkpoints are taken exactly when the game turn advances (every --checkpoint-every turns), not by a
@@ -36,7 +49,7 @@ import argparse, hashlib, json, os, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from . import config, dbcache, winproc
+from . import config, dbcache, modsdb, probes, winproc
 from . import spec as gamespec
 
 # vpbench.SETUP (the real-game benchmark of the Vox Populi fork this came from), as a function. Keep in sync.
@@ -210,6 +223,13 @@ def run_folder(a, cfg):
     return (cfg.require('runs') / name).resolve()
 
 
+def fingerprint_options(a):
+    """dict(every, turns, split) when the run takes Lua fingerprints, else None. a.fingerprint is a flag or a dict
+    with those keys; a.fingerprint_every, _turns and _split (each implies the flag) fill what it leaves out."""
+    return probes.fingerprint_options(getattr(a, 'fingerprint', None),
+                                      *(getattr(a, f'fingerprint_{k}', None) for k in ('every', 'turns', 'split')))
+
+
 def newgame(a, quiet=False, cfg=None):
     """Play one game; returns 0 when completed. a: argparse namespace (see add_arguments) or an equivalent object;
     cfg: the configuration that supplies whatever a leaves out (default config.load())."""
@@ -221,12 +241,20 @@ def newgame(a, quiet=False, cfg=None):
     status = dict(state='failed', backend='headless')
     job = None
     try:
-        mods_dir = getattr(a, 'mods_dir', None) or cfg.mods_dir
-        mods_db = getattr(a, 'mods_db', None) or cfg.mods_db
+        no_mods = bool(getattr(a, 'no_mods', False))
+        mods_dir, mods_db = modsdb.resolve(cfg, [] if no_mods else getattr(a, 'mod', None), getattr(a, 'mods_dir', None),
+                                           getattr(a, 'mods_db', None),
+                                           log=lambda m: run.log('mods_registry', quiet=quiet, message=m))
         loc_db = getattr(a, 'loc_db', None) or cfg.loc_db
         game_dir = getattr(a, 'game_dir', None) or cfg.require('game_dir', 'pass --game-dir')
         dll = Path(a.dll or cfg.require('dll', 'pass --dll')).resolve()
         exe = dbcache.find_exe(a.exe, cfg)
+        profiles = None
+        if not getattr(a, 'no_profiles', False):
+            profiles = Path(getattr(a, 'profiles', None) or cfg.require('profiles', 'pass --profiles (or --no-profiles)')).resolve()
+        fingerprint = fingerprint_options(a)
+        lua_probes = probes.fingerprint_probes(cfg, run.dir, **fingerprint) if fingerprint else []
+        lua_probes += [Path(p).resolve() for p in getattr(a, 'lua_probe', None) or []]
         db, dbinfo = dbcache.database(cfg, db=a.db, mods_dir=mods_dir, mods_db=mods_db, dll=dll, exe=exe,
                                       log=lambda m: run.log('database_built', quiet=quiet, message=m))
         resolved = resolve_spec(a.spec, db, getattr(a, 'seeds', None))
@@ -243,17 +271,26 @@ def newgame(a, quiet=False, cfg=None):
                '--lua-before-arm', str(run.dir / 'hh-before-arm.lua'),
                '--checkpoint-lua', str(run.dir / 'hh-checkpoint.lua'), '--checkpoint-every', str(a.checkpoint_every),
                '--lua-before-dump', str(run.dir / 'hh-final.lua')]
-        if mods_dir: cmd += ['--mods-dir', str(Path(mods_dir).resolve())]
-        if mods_db: cmd += ['--mods-db', str(Path(mods_db).resolve())]
+        if no_mods:
+            cmd += ['--no-mods']
+        else:
+            if mods_dir: cmd += ['--mods-dir', str(Path(mods_dir).resolve())]
+            if mods_db: cmd += ['--mods-db', str(Path(mods_db).resolve())]
         if loc_db: cmd += ['--loc-db', str(Path(loc_db).resolve())]
         cmd += ['--game-dir', str(game_dir)]
-        for probe in getattr(a, 'lua_probe', None) or []:
-            cmd += ['--lua-probe', str(Path(probe).resolve())]
+        cmd += ['--profiles', str(profiles)] if profiles else ['--no-profiles']
+        if getattr(a, 'no_addins', False): cmd += ['--no-addins']
+        for name in getattr(a, 'skip_addin', None) or []:
+            cmd += ['--skip-addin', name]
+        for probe in lua_probes:
+            cmd += ['--lua-probe', str(probe)]
         if getattr(a, 'heap_perturb', None): cmd += ['--heap-perturb', str(a.heap_perturb)]
         if getattr(a, 'frame_skew', None): cmd += ['--frame-skew', str(a.frame_skew)]
         cmd += list(a.host_arg or [])
         write(run.dir / 'hh-command.json', dict(command=cmd, exe=str(exe), exeSHA256=dbcache.sha256_file(exe), dll=str(dll),
-                                                dllSHA256=dll_sha, database=dbinfo))
+                                                dllSHA256=dll_sha, database=dbinfo, modsDb=str(mods_db) if mods_db else None,
+                                                noMods=no_mods, profiles=str(profiles) if profiles else None,
+                                                fingerprint=fingerprint))
         affinity = int(a.affinity, 0) if isinstance(a.affinity, str) else a.affinity
         job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity)
         meter = winproc.LoadMeter().start()  # what else ran (the real game) during this run
@@ -390,7 +427,8 @@ class Result:
 
 
 def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None, db=None, mods_dir=None,
-         mods_db=None, loc_db=None, game_dir=None, exe=None, lua_probes=(), heap_perturb=None, frame_skew=None,
+         mods_db=None, mods=None, no_mods=False, loc_db=None, game_dir=None, exe=None, profiles=None, no_profiles=False,
+         skip_addins=(), no_addins=False, fingerprint=False, lua_probes=(), heap_perturb=None, frame_skew=None,
          diagnostics=0, improved_mask=None, ab_role=None, checkpoint_every=1, max_seconds=21600, stall_seconds=900,
          max_memory_mb=3500, affinity=None, low_priority=False, prune=False, host_args=(), poll=1.0, quiet=True):
     """Play one game in civ5headless.exe and return its Result.
@@ -398,6 +436,9 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
     spec: a spec file (resolved or not) or a spec dict (written to the run folder as spec.json); turns: autoplay to
     this turn; run / run_dir: the run folder (<runs>/run, or run_dir; default <runs>/<spec stem>-<date>-<time>);
     cfg: a config.Config (default config.load()); seeds: {'map': M, 'sync': S} over the spec's;
+    mods: the mod set as 'ID[:VER]' strings (a registry is generated; instead of mods_db); no_mods: play without mods;
+    profiles / no_profiles, skip_addins / no_addins: the host's UI emulation profiles and InGameUIAddins;
+    fingerprint: True, or dict(every=K, turns=[...], split=N), runs the Lua fingerprint probe before lua_probes;
     lua_probes: files for the host's --lua-probe; heap_perturb, frame_skew: the host options of the same name;
     host_args: further host arguments. The other keywords are the c5h run options of the same name; anything left
     None comes from the configuration. Raises FileExistsError when the run folder already holds a game."""
@@ -409,7 +450,10 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
         spec, run_dir = folder / 'spec.json', folder
     a = SimpleNamespace(run=run, run_dir=str(run_dir) if run_dir else None, spec=str(spec), target_turn=int(turns),
                         seeds=dict(seeds) if seeds else None, dll=dll, db=db, mods_dir=mods_dir, mods_db=mods_db,
-                        loc_db=loc_db, game_dir=game_dir, exe=exe, lua_probe=list(lua_probes or []),
+                        mod=list(mods) if mods is not None else None, no_mods=no_mods, loc_db=loc_db,
+                        game_dir=game_dir, exe=exe, profiles=profiles, no_profiles=no_profiles,
+                        skip_addin=list(skip_addins or []), no_addins=no_addins, fingerprint=fingerprint,
+                        lua_probe=list(lua_probes or []),
                         heap_perturb=heap_perturb, frame_skew=frame_skew, diagnostics=int(diagnostics or 0),
                         improved_mask=improved_mask, ab_role=ab_role, checkpoint_every=int(checkpoint_every or 1),
                         maximum_seconds=max_seconds, stall_seconds=stall_seconds, max_memory_mb=max_memory_mb or None,
@@ -433,9 +477,20 @@ def add_arguments(n):
     n.add_argument('--db', help='built game database (default: config db, else the cached build from the mods and DLL)')
     n.add_argument('--mods-dir', help='MODS folder or pinned copy, read only (default: config mods_dir)')
     n.add_argument('--mods-db', help='Civ5ModsDatabase.db with the activated mods (default: config mods_db)')
+    n.add_argument('--mod', action='append', help='activated mod GUID[:version] (repeatable): the mod set, from a '
+                   'generated registry instead of --mods-db')
+    n.add_argument('--no-mods', action='store_true', help='play without mods')
     n.add_argument('--loc-db', help='Localization-Merged.db (default: config loc_db)')
     n.add_argument('--game-dir', help='game folder (default: config game_dir)')
     n.add_argument('--exe', help='civ5headless.exe (default: config exe)')
+    n.add_argument('--profiles', help='UI emulation profiles folder (default: config profiles)')
+    n.add_argument('--no-profiles', action='store_true', help='run no UI emulation profile')
+    n.add_argument('--skip-addin', action='append', help="leave out this InGameUIAddin (entry file name; repeatable)")
+    n.add_argument('--no-addins', action='store_true', help="run none of the mods' InGameUIAddins")
+    n.add_argument('--fingerprint', action='store_true', help='run the Lua fingerprint probe (probes/fingerprint.lua)')
+    n.add_argument('--fingerprint-every', type=int, help='fingerprint every K-th turn (default every turn; implies --fingerprint)')
+    n.add_argument('--fingerprint-turns', help='fingerprint these turns too, e.g. 1,50,100 (implies --fingerprint)')
+    n.add_argument('--fingerprint-split', type=int, help='fingerprint sections per Lua.log line (default 12)')
     n.add_argument('--lua-probe', action='append', help='Lua file the host runs once the game has started (repeatable)')
     n.add_argument('--heap-perturb', type=int, help='host heap layout perturbation seed (0: off)')
     n.add_argument('--frame-skew', type=int, help='an extra engine update before every K-th one')
@@ -456,6 +511,13 @@ def add_arguments(n):
 def check_args(a, error):
     if a.target_turn <= 0: error('--turns N (> 0) is required')
     if a.improved_mask is not None and a.ab_role: error('--improved-mask and --ab-role exclude each other')
+    if a.mod and a.no_mods: error('--mod and --no-mods exclude each other')
+    if (a.mod or a.no_mods) and a.mods_db: error('--mod and --no-mods exclude --mods-db (the registry is generated)')
+    if a.profiles and a.no_profiles: error('--profiles and --no-profiles exclude each other')
+    try:
+        fingerprint_options(a)
+    except ValueError:
+        error('--fingerprint-turns takes turn numbers, e.g. 1,50,100')
     if a.max_memory_mb == 0: a.max_memory_mb = None
     a.seeds = dict(map=a.seeds[0], sync=a.seeds[1]) if a.seeds else None
 

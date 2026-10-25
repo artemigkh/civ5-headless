@@ -490,6 +490,9 @@ class FakeGame:
         if 'C5H_TEST_PROBE' in source:
             self.log.append(('probe', 'running' if self.running else 'paused'))
             return ['probe ran']
+        if 'C5HFP_EVERY' in source:
+            self.log.append(('fingerprint settings', source.splitlines()[1:]))
+            return [True]
         if 'Game.SetAIAutoPlay(' in source and 'QUICK_COMBAT' in source:
             self.autoplay = int(re.search(r'SetAIAutoPlay\((\d+),0\)', source).group(1))
             self.log.append(('arm', self.autoplay, 'running' if self.running else 'paused'))
@@ -618,6 +621,18 @@ class SessionTest(SessionCase):
         self.assertEqual(events[0], 'launched')
         self.assertEqual(events[-1], 'quit')
         self.assertEqual(s.quit()['exited'], True)  # twice is harmless
+
+    def test_fingerprint_probe_files(self):
+        self.cfg.probes = Path(self.tmp.name) / 'probes'
+        self.cfg.probes.mkdir()
+        (self.cfg.probes / 'fingerprint.lua').write_text('-- C5H_TEST_PROBE fingerprint\n', encoding='utf-8')
+        with self.session() as s:
+            s.launch(101, 202)
+            s.set_mods([])
+            started = s.start_game(self.spec, lua_probes=[self.probe], fingerprint=dict(every=5, turns=[1, 2]))
+        self.assertEqual([Path(p['file']).name for p in started['probes']], ['fingerprint-settings.lua', 'fingerprint.lua', 'probe.lua'])
+        self.assertTrue(all(p['ok'] for p in started['probes']), started['probes'])
+        self.assertIn(('fingerprint settings', ['C5HFP_EVERY = 5', 'C5HFP_TURNS = {1, 2}']), self.game.log)
 
     def test_first_game_relaunches_without_launch_seeds(self):
         with self.session() as s:
