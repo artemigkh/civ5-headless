@@ -8,8 +8,8 @@ commit it with the change it describes.
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
-- **Phase:** M0 nearly done (A/A and VP-map references being re-recorded); M1 done; M2 in progress (agent,
-  load-screen T000 parity); M4 done (game check of test edits open).
+- **Phase:** M0 done except digest normalisation of garbage bytes (with M2); M1 done; M2 in progress (agent,
+  load-screen T000 parity); M4 done and accepted.
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
   game is free for this work. Before handing back, restore the AI program's deployed DLL
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
@@ -49,19 +49,25 @@ commit it with the change it describes.
     is forced false; one `Update` per alive player per turn.
   - Database: `work/headless/db/` (README there): DLC snapshot; oracle pairs for the AI package
     (`mods-reference-08D19878`) and this branch's package (`mods-headless-host-0ed40de35`).
-- **Runs in flight:** chain with trace DLL 008A4227 (script in the session scratchpad, `m0-chain2.sh`):
+- **Re-recorded references** (trace DLL 008A4227, early pin; every run logs `HHSEEDS point=gameStarted`):
   `hh-m0-s1b-continents` (vpbench order, to T5), `hh-m0-s3b-earth`, `hh-m0-communitu`, `hh-m0-cdrift`
-  (load-screen dump and after 2–3 turns), `hh-m0-aa100b-{a,b,c}` (100-turn A/A, c without digest). Each
-  `<run>.out` ends with a `quit` line when complete.
+  (game_probe order: load-screen `dump-t000` and a dump after 2–3 turns).
+- **Real-game A/A** (`hh-m0-aa100b-a`, `-b` with digest, `-c` without; Continents spec, 100 turns): same civs;
+  pregame, map and support digests identical every turn; every T100 dump section has the same size in all
+  three runs, and the differences are short byte runs (2 bytes at a 507-byte stride in `game` from T14, 3
+  bytes per player, padding-like runs in teams). Conclusion: the real game is deterministic, digest on or
+  off; the digest still hashes uninitialised bytes, which the host agent is mapping to fields for
+  normalisation.
+- **M4 accepted** (`hh-m4-testedits`): the four test edits in a real launch gave the builder's values, the
+  engine also stops an SQL file at its first error, and the built database equals the game's (dbdiff).
+- **Runs in flight:** none.
 - **Next steps:**
-  1. When the chain ends: `python tools/headless/hhdigest.py compare` on the aa100b-a/b
-     `HeadlessDigest.log`; compare the aa100b-c T100 dump with a and b (digest on vs off); check the
-     `HHPREGAME slot` lines match across runs (early pin).
-  2. Check the four M4 test edits against game launches (`work/headless/dbbuild_test_edits.py`, steps in
-     `docs/headless-dbbuild.md`).
-  3. Review and merge the host agent's M2 parity work; then M3 (turn loop: threads, locks, net loopback,
-     autoplay order per the contract).
-  4. Restore the AI build and mods before handing back.
+  1. Review and merge the host agent's M2 parity work (T000 load-screen state byte-identical for the four
+     references; digest normalisation). If the normalisation lands in the DLL, re-record a short A/A to
+     confirm identical digests.
+  2. M3: turn loop (threads and locks, net loopback, autoplay order, autosave) per the contract; first
+     target `hh-m0-aa100b-a` per-turn digests.
+  3. Restore the AI build and mods before handing back.
 - **Uncommitted files:** none besides this ledger.
 
 ## Milestones
@@ -72,7 +78,7 @@ commit it with the change it describes.
 | M1 | Host boots the DLL | done | fc197fd34 | go: boot passes; small-block allocator disabled (all DLL memory from the MSVCR90 heap) |
 | M2 | New-game generation | in progress | | T000 digest parity, incl. Communitu and Continental Drift |
 | M3 | Turn loop and autoplay | todo | | per-turn digest parity |
-| M4 | Database builder | done (game check of test edits open) | 0c240f6bb | can run alongside M3; `dbdiff.py` oracle |
+| M4 | Database builder | done | 0c240f6bb | can run alongside M3; `dbdiff.py` oracle |
 | M5 | Breadth parity | todo | | matrix in plan section 6 |
 | M6 | Tooling and throughput | todo | | vpbench backend, parallel runner |
 | M7 | Saves | not planned | | optional follow-up |
@@ -91,3 +97,5 @@ commit it with the change it describes.
 - 2026-10-25: M2 first part and the engine contract merged. Found that the clock seed chose the random civs;
   fixed with the early seed pin (255e26ba2), redeployed the trace build and started re-recording the
   references and the A/A pair.
+- 2026-10-25: references re-recorded with the early pin; real-game A/A over 100 turns shows identical games
+  (digest differences are uninitialised bytes only); M4 test edits checked against a game launch: identical.
