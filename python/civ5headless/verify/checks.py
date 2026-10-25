@@ -455,7 +455,11 @@ def statistics_checks(ctx):
         ref_dir = ctx.job_dir('base')
         ref_name = 'the host trajectory game (self-test: same seeds as the real game would have)'
     ref = series.game_series(ref_dir, ctx.fingerprint, s.aggregates, s.exclude_metrics) if ref_dir else {}
-    ctx.statistics.update(reference=ref, ensemble=ens, referenceName=ref_name)
+    # The host twin: the host's trajectory game, same seeds as the real game. A game can be atypical for its seeds
+    # (a conquest on this map); the twin shows that, so the real game is judged against the ensemble and its twin.
+    twin_dir = ctx.job_dir('base') if ctx.real_mode else None
+    twin = series.game_series(twin_dir, ctx.fingerprint, s.aggregates, s.exclude_metrics) if twin_dir else {}
+    ctx.statistics.update(reference=ref, twin=twin, ensemble=ens, referenceName=ref_name)
     title_e = 'Envelope: the real game inside the host ensemble' if ctx.real_mode else 'Envelope self-test: a host game inside the ensemble'
     title_b = 'Bias: no metric on one side of the ensemble median' if ctx.real_mode else 'Bias self-test: no metric on one side of the median'
     if not ref:
@@ -463,34 +467,60 @@ def statistics_checks(ctx):
         out.append(check('statistics.envelope', title_e, 'skipped' if not ref_dir else 'n/a', why))
         out.append(check('statistics.bias', title_b, 'skipped' if not ref_dir else 'n/a', why))
         return out
+    selftest_note = ('host-only mode: the host trajectory game against host games is a self-test of the ensemble and '
+                     'the statistics, no verdict on fidelity (an atypical seed shows here); ')
     lo, hi = s.envelope_band
-    env = stats.envelope(ref, ens, lo, hi, s.envelope_target, s.envelope_alpha, s.envelope_margin, s.min_members,
-                         s.stats_from_turn, s.turns)
+    em = stats.envelope_model(ens, lo, hi, s.min_members, s.stats_from_turn, s.turns)
+    env = stats.envelope_score(em, ref, s.envelope_target, s.envelope_alpha, s.envelope_margin)
+    env_twin = stats.envelope_score(em, twin, s.envelope_target, s.envelope_alpha, s.envelope_margin) if twin else None
     ctx.statistics['envelope'] = env
+    ctx.statistics['envelopeTwin'] = env_twin
     if env['status'] == 'n/a':
         out.append(check('statistics.envelope', title_e, 'n/a', env['reason']))
     else:
         worst = sorted(((n, v) for n, v in env['series'].items() if v['coverage'] is not None), key=lambda x: x[1]['coverage'])[:6]
         summary = (f"{env['coverage']:.1%} of {env['points']} points inside the {lo:.1%}-{hi:.1%} band "
                    f"(threshold {env['threshold']:.1%}; ensemble games get {env['expected']:.1%} on average, {env['members']} games)")
-        out.append(check('statistics.envelope', title_e, env['status'], summary, coverage=env['coverage'], threshold=env['threshold'],
+        status = env['status']
+        twin_cov = (env_twin or {}).get('coverage')
+        if twin_cov is not None:
+            summary += f'; the host game with the same seeds: {twin_cov:.1%}'
+            if status != 'pass' and env['coverage'] >= twin_cov - s.envelope_margin:
+                status = 'pass'
+                summary += ' (an atypical game for these seeds, on both sides: no difference between host and real game)'
+        if not ctx.real_mode:
+            status, summary = 'info', selftest_note + f"would be {env['status']}: " + summary
+        out.append(check('statistics.envelope', title_e, status, summary, coverage=env['coverage'], threshold=env['threshold'],
                          expected=env['expected'], pValue=env['pValue'], members=env['members'], points=env['points'],
+                         twinCoverage=twin_cov, selfTestStatus=None if ctx.real_mode else env['status'],
                          worst=[dict(series=n, label=series.label(n), coverage=v['coverage'], outsideTurns=v['outsideTurns'][:20]) for n, v in worst]))
-    b = stats.bias(ref, ens, s.bias_alpha, s.bias_one_sided, s.bias_z_cap, s.min_members, s.stats_from_turn, s.turns)
+    bm = stats.bias_model(ens, s.bias_alpha, s.bias_z_cap, s.min_members, s.stats_from_turn, s.turns)
+    b = stats.bias_score(bm, ref, s.bias_one_sided)
+    b_twin = stats.bias_score(bm, twin, s.bias_one_sided) if twin else None
     ctx.statistics['bias'] = b
+    ctx.statistics['biasTwin'] = b_twin
     if b['status'] == 'n/a':
         out.append(check('statistics.bias', title_b, 'n/a', b['reason']))
     else:
+        twin_series = (b_twin or {}).get('series') or {}
+        both = [n for n in b['flagged'] if twin_series.get(n, {}).get('flagged') and twin_series[n]['side'] == b['series'][n]['side']]
+        real_only = [n for n in b['flagged'] if n not in both]
         flagged = [dict(series=n, label=series.label(n), side=b['series'][n]['side'], signFraction=b['series'][n]['signFraction'],
-                        T=b['series'][n]['T']) for n in b['flagged']]
+                        T=b['series'][n]['T'], alsoTwin=n in both) for n in b['flagged']]
         shifts = sorted((v['detectableShift'], n) for n, v in b['series'].items() if v['detectableShift'] is not None)
         median_shift = shifts[len(shifts) // 2][0] if shifts else None
-        summary = (f"{len(flagged)} series flagged: " + ', '.join(f"{f['label']} ({f['side']} the median on {f['signFraction']:.0%} of turns)" for f in flagged[:4])
-                   if flagged else f"no series flagged ({len(b['series'])} series; global p = {b['pValue']:.2f})")
+        shown = [f for f in flagged if not f['alsoTwin']]
+        summary = (f"{len(shown)} series flagged: " + ', '.join(f"{f['label']} ({f['side']} the median on {f['signFraction']:.0%} of turns)" for f in shown[:4])
+                   if shown else f"no series flagged ({len(b['series'])} series; global p = {b['pValue']:.2f})")
+        if both:
+            summary += (f"; {len(both)} more flagged for the host game with the same seeds too (atypical for these seeds, not a "
+                        f"host difference): {', '.join(series.label(n) for n in both[:4])}")
         if median_shift is not None:
             summary += f'; detects shifts of about {median_shift:.0%} in a typical series'
-        status = b['status']
-        if b['members'] < s.bias_min_members:
+        status = 'warn' if real_only else 'pass'
+        if not ctx.real_mode:
+            status, summary = 'info', selftest_note + summary
+        elif b['members'] < s.bias_min_members:
             status = 'info'
             summary = (f"{b['members']} ensemble games are too few for a calibrated verdict (at least {s.bias_min_members}): "
                        + summary)

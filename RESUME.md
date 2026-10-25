@@ -17,10 +17,13 @@ Done and committed:
 - ensemble seed choice: a short sync-seed probe; Vox Populi ignores the sync seed, so the ensemble varies the map;
 - tests: `python -m unittest discover -s tests` (96 tests, about 40 s): fakes in tests/verify_tests.
 
+- host-only mode at full size measured: 4.2 min (runs/host-only-1), verdict pass apart from the bias self-test;
+- docs/verification.md written.
+
 In progress / next:
-1. Host-only mode at full size with real host runs; measure the wall time against 5 minutes:
-   `PYTHONPATH=python python -m civ5headless verify --host-only` (config: civ5headless.toml in this worktree).
-2. Statistics self-test on a real ensemble: `c5h verify --analyse <run> --self-test --foreign <other-map run>`.
-3. docs/verification.md; final report.
+1. 32-game host-only ensemble: `runs/host-only-e32` (`--host-only --ensemble 32 --budget 14`), then foreign games
+   (`c5h queue run <scratchpad>/foreign/foreign.json`: Pangaea Tiny and Small Continents, 150 turns) and
+   `c5h verify --analyse runs/host-only-e32 --self-test --foreign runs/foreign/<game>...`.
+2. Final report to the orchestrator.
 
 Uncommitted: civ5headless.toml (gitignored, local paths), runs/ (gitignored).

@@ -403,17 +403,19 @@ def history_entry(plan, execution, ctx):
 
 def _statistics_doc(ctx):
     env, b = ctx.statistics.get('envelope') or {}, ctx.statistics.get('bias') or {}
-    ref = ctx.statistics.get('reference') or {}
+    ref, twin = ctx.statistics.get('reference') or {}, ctx.statistics.get('twin') or {}
     charts = []
     for name, v in sorted((env.get('series') or {}).items()):
         turns = sorted(v['bands'])
         charts.append(dict(series=name, label=series.label(name), coverage=v['coverage'], turns=turns,
                            lo=[v['bands'][t][0] for t in turns], median=[v['bands'][t][1] for t in turns],
                            hi=[v['bands'][t][2] for t in turns], reference=[ref.get(name, {}).get(t) for t in turns],
+                           twin=[twin.get(name, {}).get(t) for t in turns] if twin else None,
                            bias=(b.get('series') or {}).get(name)))
+    twin_env = ctx.statistics.get('envelopeTwin') or {}
     return dict(reference=ctx.statistics.get('referenceName'), members=len(ctx.statistics.get('ensemble') or []),
                 vary=ctx.statistics.get('ensembleVary'),
-                envelope={k: v for k, v in env.items() if k != 'series'},
+                envelope={k: v for k, v in env.items() if k != 'series'}, twinCoverage=twin_env.get('coverage'),
                 bias={k: v for k, v in b.items() if k != 'series'}, charts=charts)
 
 

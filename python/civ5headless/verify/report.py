@@ -103,6 +103,7 @@ def envelope_svg(c, width=300, height=150):
     band = [(X(t), Y(v)) for t, v in zip(turns, c['hi'])] + [(X(t), Y(v)) for t, v in reversed(list(zip(turns, c['lo'])))]
     med = [(X(t), Y(v)) for t, v in zip(turns, c['median'])]
     ref = [(X(t), Y(v)) for t, v in zip(turns, c['reference']) if v is not None]
+    twin = [(X(t), Y(v)) for t, v in zip(turns, c.get('twin') or []) if v is not None]
     out_pts = [(X(t), Y(v)) for t, v, a, b in zip(turns, c['reference'], c['lo'], c['hi'])
                if v is not None and not (a - 1e-9 <= v <= b + 1e-9)]
     ticks = ''.join(f'<text x="{left - 4}" y="{Y(v) + 3:.1f}" text-anchor="end" font-size="9" fill="var(--muted)">{_short(v)}</text>'
@@ -114,7 +115,8 @@ def envelope_svg(c, width=300, height=150):
     return (f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{h(c["label"])}">{ticks}{xt}'
             f'<path d="{_path(band)}Z" fill="var(--band)" opacity="0.55"/>'
             f'<path d="{_path(med)}" fill="none" stroke="var(--median)" stroke-width="1" stroke-dasharray="3 2"/>'
-            f'<path d="{_path(ref)}" fill="none" stroke="var(--ref)" stroke-width="1.4"/>{dots}</svg>')
+            + (f'<path d="{_path(twin)}" fill="none" stroke="var(--info)" stroke-width="1.2" stroke-dasharray="1 2"/>' if twin else '')
+            + f'<path d="{_path(ref)}" fill="none" stroke="var(--ref)" stroke-width="1.4"/>{dots}</svg>')
 
 
 def _short(v):
@@ -280,7 +282,9 @@ def html(doc):
                      f'(max-T threshold {fmt(b.get("threshold"))}).</p>')
         parts.append('<div class="legend"><span><i class="sw" style="background:var(--band)"></i>ensemble band</span>'
                      '<span><i class="sw" style="background:var(--median)"></i>ensemble median</span>'
-                     '<span><i class="sw" style="background:var(--ref)"></i>reference (dots: outside the band)</span></div>')
+                     '<span><i class="sw" style="background:var(--ref)"></i>reference (dots: outside the band)</span>'
+                     + ('<span><i class="sw" style="background:var(--info)"></i>host game with the same seeds</span>'
+                        if st.get('twinCoverage') is not None else '') + '</div>')
         flagged = set(b.get('flagged') or [])
         ordered = sorted(charts, key=lambda c: (c['series'] not in flagged, c['coverage'] if c['coverage'] is not None else 2, c['series']))
         parts.append('<div class="grid">')
