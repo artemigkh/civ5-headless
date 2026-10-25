@@ -13,3 +13,4 @@
 *.dll       binary
 *.exe       binary
 *.db        binary
+*.cmd       eol=crlf
