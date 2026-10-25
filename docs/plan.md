@@ -251,8 +251,9 @@ default), so `c5h doctor` can print where everything came from.
 
 - `--lua-probe FILE` (repeatable): runs FILE in the in-game Lua context once the game has started and before turn 0
   is processed, as the real-game session injects it through FireTuner.
-- `--heap-perturb N`: shifts the host's heap layout (allocations of seeded random sizes before the DLL loads), for the
-  verification suite's address-dependence check. N = 0 is off; the same N gives the same layout.
+- `--heap-perturb SEED` and `--frame-skew K` exist already (M5): the first rebases the game DLL and adds random heap
+  spacers, the second adds an Update before every K-th one. The verification suite uses both for its
+  address-dependence and frame-count checks.
 - `--profiles DIR`: the UI emulation profiles folder (default: `profiles/` next to the repository root or the exe).
 - Every run writes `<run>/host-report.json`: host version, DLL path and hash, active mods, profiles selected (and why),
   UI add-ins run, failed or skipped, unknown UI files, stubbed engine calls with counts (and whether each is on the
