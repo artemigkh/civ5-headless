@@ -121,7 +121,11 @@ commit it with the change it describes.
   Continents Standard Emperor seeds 1001/2002, 3101/4202, 5201/6302, maxTurns 400; Pangaea Small 7301/8402, maxTurns
   350; game_probe stops on a winner or game over, 900 s stall watchdog, 3 h cap, `victory.json`), queued in the same
   shell. If it stops: `python work/headless/record_matrix.py work/headless/matrix/m5-fullgames.json` resumes from the
-  status file.
+  status file. Then matrix batch 2 (`m5-batch2.json`, prefix `hh-m5b`, 42 cases, 4,327 turns: 0-100 ranges for sizes,
+  speeds, difficulties, players and options; eras 0-50; Communitu and Continental Drift 0-100 with default and random
+  options; map options of three scripts at min, max and random; time victory at 150; cultural and diplomatic disabled
+  on Small; Communitu and Continental Drift Standard to victory), chained after the full games. All M5 references
+  use 89F146A7; the late-game logging fix gets its own smoke re-record afterwards.
 - **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: build and commit the
   late-game logging fix (the AI log line called `GetDanger`, which rebuilds dirty danger plots: a host full game
   with logging on vs off differs from T154); compare the remaining smoke cases; compare each full game on 89F146A7
