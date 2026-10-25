@@ -8,8 +8,9 @@ commit it with the change it describes.
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
-- **Phase:** M2 nearly done (load-screen T000 parity on continents, earth, communitu; Continental Drift's map
-  differs, cause open); M3 next (same agent); M0, M1, M4 done.
+- **Phase:** M3 done (73d4f1932): the host matches the real game turn by turn (hh-m2-aa100-a, 100 turns, every
+  digest total and every section but `savedb`), 77 s against about 9 min. M5 (breadth parity) and M6 (tooling)
+  in progress. M0, M1, M4 done; M2 done except Continental Drift (now an M5 item).
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
   game is free for this work. Before handing back, restore the AI program's deployed DLL
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
@@ -19,12 +20,15 @@ commit it with the change it describes.
   headless-host 98d7661bf with `tools/headless/fieldmap_transform.py` applied: dumps also write
   `<section>.fields.txt`; otherwise identical to the normal build `work/msvc-output/Release/20261025-015258`).
 - **Agents in flight** (Opus, high effort; own worktree and branch; `RESUME.md` in the worktree on pause):
-  - host: worktree `work/wt/hh-host`, branch `hh-host`. Work order: merge headless-host; re-verify T000 parity
-    on the `hh-m2-*` references; find the Continental Drift difference from `hh-m2-cdrift`'s `Lua.log`; check
-    the `hh-m2-aa100` A/A pair with `hhdigest.py compare` and `parity_t000.py`; then M3 (turn loop, autoplay
-    in game_probe order, net loopback, hooks, autosaves; targets: `hh-m2-continents` T0–T5, then
-    `hh-m2-aa100-a` over 100 turns).
-  On resume after a pause: read the worktree's `RESUME.md` and relaunch the agent with its work order (above)
+  - host: M5, worktree `work/wt/hh-host`, branch `hh-host`. Work order: Continental Drift (first divergent map
+    RNG call 189922 from `work/test-runs/hh-m3-cdrift-randlog/RandCalls.csv`: the real game makes one more
+    `Random float` draw; suspected iteration order in the script); address-perturbation self-test; find why the
+    game's logging profile changes AI results and make it result-neutral; matrix comparisons against the
+    `hh-m5-*` references (`work/headless/parity_run.py`).
+  - tooling: M6, worktree `work/wt/hh-tooling`, branch `hh-tooling` from 73d4f1932. `vpbench --backend headless`
+    (run folders readable by compare.py and the ai-improvements abcompare/samerun), parallel runner
+    `work/headless/runner.py`, speed and scaling measurements, `docs/headless-host.md`. No game, no tuner.
+  On resume after a pause: read each worktree's `RESUME.md` and relaunch the agent with its work order (above)
   plus the checkpoint.
 - **Merged into headless-host:**
   - D1 recorder (021ba53f4), D2–D5 digest (92caccb78), M4 database builder (0c240f6bb).
@@ -37,6 +41,10 @@ commit it with the change it describes.
   - M2 parity (b687e42bf): load-screen state byte-identical to the real game for continents, earth and communitu;
     host runs deterministic; digest normalisation of the uninitialised bytes the save writes;
     `tools/headless/parity_t000.py`, `tools/headless/fieldmap_transform.py`.
+  - M3 (73d4f1932): `civ5headless.exe newgame --turns N` (autoplay in game_probe order, net loopback, UI frame emulation:
+    EUI civ ribbon gold rate, VP observer notification aging, human-turn engine frame, WhosWinning popup RNG;
+    autosaves shown not to matter). Independently reproduced end to end with a `build_db.py` database. The host
+    copies the reference profile's DLL logging, because logging changes AI results (under investigation).
 - **Fixes on headless-host:**
   - 393b7ceb7: DLL crash at unload (static destruction order); trace end line from `DllMain`; host log
     paths.
@@ -72,7 +80,11 @@ commit it with the change it describes.
 - **Real-game A/A is exact:** `hh-m2-aa100-a` vs `-b`: per-turn digests identical at all 100 points
   (`hhdigest.py compare`), and all 57 sections of the T100 dumps byte-identical (`parity_t000.py`). With the
   digest normalisation and the three fixes, the real game is a reproducible oracle for M3.
-- **Runs in flight:** none.
+- **Runs in flight:** `work/headless/record_matrix.py work/headless/matrix/m5-batch1.json` (58 cases, about
+  2.5 h; status `work/test-runs/hh-m5-matrix.json`, log `work/test-runs/hh-m5-matrix.log`). Stop it cleanly
+  between cases by creating `work/test-runs/hh-m5-matrix.stop`; rerunning the same command resumes.
+  The real-game config.ini is unchanged (`RandLog` was 5 for the cdrift run only; backup in
+  `work/test-runs/hh-m3-cdrift-randlog-config/`).
 - **Next steps:**
   1. Review and merge the host agent's work (cdrift, then M3 milestones).
   2. M5 breadth parity and M6 tooling after M3.
@@ -86,10 +98,10 @@ commit it with the change it describes.
 | M0 | Record the engine contract | nearly done | f96b1be30 | trace recordings, reference A/A, DB check, DLC snapshot |
 | M1 | Host boots the DLL | done | fc197fd34 | go: boot passes; small-block allocator disabled (all DLL memory from the MSVCR90 heap) |
 | M2 | New-game generation | nearly done (cdrift open) | | T000 digest parity, incl. Communitu and Continental Drift |
-| M3 | Turn loop and autoplay | todo | | per-turn digest parity |
+| M3 | Turn loop and autoplay | done | 73d4f1932 | | per-turn digest parity |
 | M4 | Database builder | done | 0c240f6bb | can run alongside M3; `dbdiff.py` oracle |
-| M5 | Breadth parity | todo | | matrix in plan section 6 |
-| M6 | Tooling and throughput | todo | | vpbench backend, parallel runner |
+| M5 | Breadth parity | in progress | | matrix in plan section 6 |
+| M6 | Tooling and throughput | in progress | | vpbench backend, parallel runner |
 | M7 | Saves | not planned | | optional follow-up |
 
 ## Log
@@ -115,3 +127,4 @@ commit it with the change it describes.
 - 2026-10-25: paused for an app restart (host agent at WIP 6e587ab57, chain stopped after hh-m2-aa100-a);
   resumed: hh-m2-aa100-b started, host agent continues M3 from its RESUME.md.
 - 2026-10-25: real-game A/A with the normalisation and fixes is byte-exact over 100 turns (hh-m2-aa100-a/-b).
+- 2026-10-25: M3 done and merged (73d4f1932); M5 (host agent) and M6 (tooling agent) started; matrix batch 1 recording.
