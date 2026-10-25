@@ -373,12 +373,61 @@ namespace
 
 namespace
 {
+	int MinorCivId(HHNewGameInterfaces& kIf, const std::string& strType)
+	{
+		Database::Results r;
+		if(kIf.pDb && !strType.empty() && kIf.pDb->Execute(r, "SELECT ID FROM MinorCivilizations WHERE Type = ?") &&
+		   r.Bind(1, strType.c_str()) && r.Step())
+			return r.GetInt(0);
+		return -1;
+	}
+
+	std::string MinorCivType(HHNewGameInterfaces& kIf, int iId)
+	{
+		Database::Results r;
+		if(kIf.pDb && iId >= 0 && kIf.pDb->Execute(r, "SELECT Type FROM MinorCivilizations WHERE ID = ?") && r.Bind(1, iId) &&
+		   r.Step() && r.GetText(0))
+			return r.GetText(0);
+		return std::string();
+	}
+
+	// The resolved spec's city-state pins (minorCivs: [{index, slot, type, id}], slot MAX_MAJOR_CIVS + index):
+	// slot -> minor civ ID, the type looked up in the game database (the spec's id when the database lacks it).
+	std::map<int, int> MinorCivPins(const HHJson& kSpec, HHNewGameInterfaces& kIf)
+	{
+		std::map<int, int> pins;
+		const HHJson& kPins = kSpec["minorCivs"];
+		for(size_t i = 0; kPins.IsArray() && i < kPins.Size(); ++i)
+		{
+			const HHJson& e = kPins.At(i);
+			const std::string strType = e["type"].AsString();
+			const int iIndex = e["index"].AsInt((int)i);
+			const int iSlot = e["slot"].AsInt(kIf.iMaxMajorCivs + iIndex);
+			int iId = MinorCivId(kIf, strType);
+			if(iId < 0)
+				iId = e["id"].AsInt(-1);
+			else if(e.Has("id") && e["id"].AsInt(-1) != iId)
+				HHLogError("spec minorCivs[%u]: %s has ID %d in the game database, not %d", (unsigned)i, strType.c_str(), iId, e["id"].AsInt(-1));
+			if(iSlot < kIf.iMaxMajorCivs || iSlot >= MAX_CIV_PLAYERS || iId < 0)
+			{
+				HHLogError("spec minorCivs[%u]: slot %d, %s (%d) cannot be used", (unsigned)i, iSlot, strType.c_str(), iId);
+				continue;
+			}
+			if(iSlot != kIf.iMaxMajorCivs + iIndex)
+				HHLogError("spec minorCivs[%u]: slot %d is not MAX_MAJOR_CIVS (%d) + index %d", (unsigned)i, iSlot, kIf.iMaxMajorCivs, iIndex);
+			pins[iSlot] = iId;
+		}
+		return pins;
+	}
+
 	// Random civilizations and city-states for a DLL that leaves them to the exe (the stock DLL; VP chooses them in
 	// CvPreGame::onGameStarted, inside closeInactiveSlots): every active major slot without a civilization and every
-	// city-state slot (the first numMinorCivs after the majors) without a type. The exe's own choice is not known,
-	// so this one (uniform, without repeats, a DLL random number generator seeded with the engine seed) does not
-	// reproduce a real game: a spec for a real-game comparison names its civilizations and city-states.
-	void ChooseRandomCivs(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+	// city-state slot (the first numMinorCivs after the majors) without a type. A city-state slot the spec pins
+	// (minorCivs) gets that city-state; the others are drawn. The exe's own choice is not known, so a draw (uniform,
+	// without repeats, a DLL random number generator seeded with the engine seed) does not reproduce a real game: a
+	// spec for a real-game comparison names its civilizations and city-states. A DLL that chooses by itself keeps
+	// its choice (the run report compares it with the pins).
+	void ChooseRandomCivs(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, const std::map<int, int>& pins)
 	{
 		ICvPreGame1* pg = kIf.pPreGame;
 		std::vector<PlayerTypes> majors, minors;
@@ -402,6 +451,26 @@ namespace
 			else
 				minorsTaken.insert((int)pg->minorCivType(p));
 		}
+		if(majors.empty() && minors.empty())
+			return;
+		kResult.hostChoseMinors = !minors.empty();
+		// Pinned city-states first: they leave the pool before any draw.
+		std::vector<PlayerTypes> drawn;
+		for(size_t i = 0; i < minors.size(); ++i)
+		{
+			const std::map<int, int>::const_iterator it = pins.find((int)minors[i]);
+			if(it == pins.end() || minorsTaken.count(it->second))
+			{
+				if(it != pins.end())
+					HHLogError("spec minorCivs: slot %d pins %d, which another slot already has", it->first, it->second);
+				drawn.push_back(minors[i]);
+				continue;
+			}
+			HH_STEP(HHFormat("setMinorCivType(%d, %d) /* spec minorCivs */", (int)minors[i], it->second),
+			        pg->setMinorCivType(minors[i], (MinorCivTypes)it->second));
+			minorsTaken.insert(it->second);
+		}
+		minors.swap(drawn);
 		if(majors.empty() && minors.empty())
 			return;
 		HHLogError("this DLL leaves %u random civilization(s) and %u city-state(s) to the exe: the host chooses them, "
@@ -430,7 +499,7 @@ namespace
 		}
 		std::vector<int> cityStates;
 		for(int m = 0; m < kIf.pContext->GetNumMinorCivInfos(); ++m)
-			if(!minorsTaken.count(m))
+			if(!minorsTaken.count(m) && (!kIf.pDb || !MinorCivType(kIf, m).empty()))  // info arrays may have ID gaps
 				cityStates.push_back(m);
 		for(size_t i = 0; i < minors.size() && !cityStates.empty(); ++i)
 		{
@@ -441,6 +510,30 @@ namespace
 		}
 		pRng->Destroy();
 		kIf.pContext->DestroyRandomNumberGenerator(uiRng);
+	}
+
+	// Every city-state slot once the game has started: its city-state, the spec's pin and who chose it.
+	void RecordMinorCivs(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, const std::map<int, int>& pins)
+	{
+		ICvPreGame1* pg = kIf.pPreGame;
+		const int nMinors = pg->numMinorCivs();
+		for(int i = kIf.iMaxMajorCivs; i < MAX_CIV_PLAYERS && i < kIf.iMaxMajorCivs + nMinors; ++i)
+		{
+			HHMinorCivSlot s;
+			s.slot = i;
+			s.id = (int)pg->minorCivType((PlayerTypes)i);
+			s.type = MinorCivType(kIf, s.id);
+			const std::map<int, int>::const_iterator it = pins.find(i);
+			if(it != pins.end())
+			{
+				s.pinnedId = it->second;
+				s.pinnedType = MinorCivType(kIf, it->second);
+			}
+			kResult.minorCivs.push_back(s);
+			if(s.pinnedId >= 0 && s.pinnedId != s.id)
+				HHLog("city-state slot %d: %s (%d), the spec pins %s (%d)%s", i, s.type.c_str(), s.id, s.pinnedType.c_str(), s.pinnedId,
+				      kResult.hostChoseMinors ? "" : "; the DLL chose it");
+		}
 	}
 }
 
@@ -520,8 +613,10 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	//    random civilizations for slots without one and the city-state selection, drawn with
 	//    the pregame map seed (CvGame::urandLimitExclusive), i.e. the spec's map seed. Then open slots are closed and player
 	//    info is sent (no-op single player).
+	//    A DLL that leaves them to the exe gets the host's choice, with the spec's city-state pins (minorCivs).
 	HH_STEP("closeInactiveSlots()", pg->closeInactiveSlots());
-	ChooseRandomCivs(kIf, kResult);
+	const std::map<int, int> minorPins = MinorCivPins(kSpec, kIf);
+	ChooseRandomCivs(kIf, kResult, minorPins);
 	kResult.timings.push_back(std::make_pair(std::string("launch"), Now() - t0));
 
 	// 4. ICvGame1::Init(handicap of the active player): reset, RNGs from the pregame seeds,
@@ -555,6 +650,7 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 		kResult.error = "ICvGame1::Init2 returned false";
 		return false;
 	}
+	RecordMinorCivs(kIf, kResult, minorPins);
 
 	// 6. After Init2 (trace S1): LaterInit for every player slot, InitTacticalAnalysisMap
 	//    (a no-op in VP), the in-game UI's SetGameOption calls, then DoGameStarted (and

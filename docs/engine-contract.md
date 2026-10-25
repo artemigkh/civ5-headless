@@ -560,7 +560,8 @@ InGame state (`CreateLuaThread`) whose environment adds the UI-only globals (`HH
 activation order, one context each (`setup/HHAddins.cpp`): the entry's `.lua` (or the `.xml`'s `<LuaContext>`
 children first, then its own script; the XML `Hidden` attribute sets the hidden flag), found next to the entry or in
 the VFS. An error is logged with the file and line in the run report (`addins.contexts[].error`,
-`luaErrors.list`) and does not stop the run. `--skip-addin NAME` (repeatable) leaves one out, `--no-addins` all of
+`luaErrors.list`) and does not stop the run. `--skip-addin NAME` (repeatable; the context's file name with or
+without `.lua`/`.xml`, case-insensitive, a boot self-test check) leaves one out, `--no-addins` all of
 them. Then the host fires `Events.SequenceGameInitComplete`; at CONTINUE (autoplay start) `Events.LoadScreenClose`.
 No other UI event is fired: a listener for `SerialEventGameMessagePopup`, `ActivePlayerTurnStart` and the like
 never runs in the host. Where such UI code changes the game, a UI emulation profile does it (docs/profiles.md).
@@ -649,7 +650,8 @@ Every `newgame` writes `host-report.json` (format `civ5headless-host-report/1`, 
 | `status`, `error` | `passed` or `failed`, and why. |
 | `host` | exe path and sha256, the git head and dirty flag of the build. |
 | `command`, `spec`, `gameDir`, `gameDirSource` | what ran; the game folder and how it was found (`--game-dir`, or the Steam registry entries and library folders). |
-| `dll` | path, sha256, version, whether it has the digest additions, the seed mode. |
+| `dll` | path, sha256, version, whether it has the digest additions, the seed mode, `hostChoseCivs` (the host drew civilizations or city-states at random, section 15). |
+| `minorCivs` | every city-state slot after `Init2`: slot, `id` and `type` (MinorCivilizations), `chosenBy` (`dll`: the DLL chose, VP; `spec`: the host applied the spec's pin; `host`: the host drew it) and, for a slot the spec pins (`minorCivs`), `pinnedId`, `pinnedType`, `match`; with `chosenBy`, `pinned`, `matching` and `allMatch` (null without pins) over all slots. |
 | `database` | game and localization databases, mods database, MODS folder. |
 | `options` | turns, `--heap-perturb`, `--frame-skew`, UI frame, logging, idle updates, `--no-mods`, `--no-profiles`, `--no-addins`, `--skip-addin`, `--lua-probe`. |
 | `mods` | the activated mods (id, version, name, folder) in activation order. |
@@ -684,9 +686,14 @@ differs from VP:
   localization database too (`--loc-db`, default an empty one with en_US).
 - **Random civilizations and city-states are the exe's job**: the stock `closeInactiveSlots` leaves
   `NO_CIVILIZATION` and `NO_MINORCIV` (VP chooses them in `CvPreGame::onGameStarted`), and `CvGame::InitPlayers`
-  dereferences the missing info. The host then chooses them (uniform, a DLL random number generator seeded with the
-  engine seed; `ERROR` line, `host-report.json` `dll.hostChoseCivs`). It cannot be the exe's choice: a spec for a
-  real-game comparison with this DLL names its civilizations and city-states.
+  dereferences the missing info. The host then chooses them: a city-state slot the resolved spec pins
+  (`minorCivs`: `[{index, slot, type, id}]`, slot `MAX_MAJOR_CIVS + index`; the type looked up in the game
+  database) gets that city-state, a major slot with a `civId` already has its civilization, and the rest are drawn
+  (uniform, without repeats, among the IDs the database has, a DLL random number generator seeded with the engine
+  seed; `ERROR` line, `host-report.json` `dll.hostChoseCivs`). A draw cannot be the exe's choice: a spec for a
+  real-game comparison with this DLL names its civilizations and pins its city-states (the real game's, from the
+  fingerprint's turn-0 `player` lines, `minor=` per slot). A DLL that chooses by itself (VP) keeps its choice;
+  `host-report.json` `minorCivs` compares it with the pins slot by slot.
 - **Info arrays have `MAX(ID) + 1` entries** (IDs with gaps are not renumbered): the boot count check accepts that.
 - **No `Game.GetHeadlessDigest`, no seed pinning** (`seedMode` pregame): comparisons use the Lua fingerprint
   (`probes/fingerprint.lua`); dense and sparse sampling gave identical fingerprints on all three games.

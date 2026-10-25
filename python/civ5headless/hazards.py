@@ -21,9 +21,12 @@ Without it, python/civ5headless/data/lua-state-methods.json (the same derivation
 Both are merged with the curated python/civ5headless/data/lua-hazards.json: getters known to write state, and engine
 calls (Network.Send*) that the real game turns into DLL calls.
 
-Output (JSON, --json): {format, methods: {source, writes, cache, curated}, files: [...], hits: [{file, path, line,
-method, classes, kind, why, call, function, triggers, covered, profile}], summary}. covered names the profile that
-emulates the call (its manifest's covers: file and methods); with --report, only profiles selected in that run.
+Output (JSON, --json): {format, methods: {source, cacheIncluded}, profiles, files: [...], hits: [{file, path, sha256,
+line, method, classes, kind, why, call, function, triggers, reach, covered, coveredBy, reason, profile, review?}],
+summary}. reach: load, game or input (reach()). covered: a profile emulates the call (its manifest's covers: file
+and methods; with --report, only profiles selected in that run), a curated review covers it, or with --report the
+run's DLL does not change state there or the host runs the add-in (scan()). The text output lists the uncovered
+calls a game can reach; -v adds the others. Other tools: scan_report(report_path) returns the hits.
 Standard library only.
 """
 import argparse

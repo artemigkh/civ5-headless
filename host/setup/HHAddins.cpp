@@ -113,13 +113,20 @@ namespace
 		return tags;
 	}
 
-	bool Skipped(const std::vector<std::string>& skip, const std::string& file)
+	// Whether --skip-addin names the context at basePath (its path without extension): the file name, with or
+	// without .lua or .xml, any folder in front ignored, case-insensitive.
+	bool Skipped(const std::vector<std::string>& skip, const std::string& basePath)
 	{
-		const std::string base = BaseName(file);
-		const std::string stem = StripExtension(base);
+		const std::string stem = BaseName(basePath);
 		for(size_t i = 0; i < skip.size(); ++i)
-			if(_stricmp(skip[i].c_str(), base.c_str()) == 0 || _stricmp(skip[i].c_str(), stem.c_str()) == 0)
+		{
+			std::string name = BaseName(skip[i]);
+			if(name.size() > 4 && (_stricmp(name.c_str() + name.size() - 4, ".lua") == 0 ||
+			                       _stricmp(name.c_str() + name.size() - 4, ".xml") == 0))
+				name.erase(name.size() - 4);
+			if(_stricmp(name.c_str(), stem.c_str()) == 0)
 				return true;
+		}
 		return false;
 	}
 
@@ -147,7 +154,7 @@ namespace
 		c.hidden = bHiddenAttr;
 		const std::string luaPath = FindSibling(basePath, ".lua");
 		const std::string xmlPath = FindSibling(basePath, ".xml");
-		if(Skipped(skip, BaseName(basePath)))
+		if(Skipped(skip, basePath))
 		{
 			c.status = "skipped";
 			c.error = "--skip-addin";
@@ -222,6 +229,33 @@ void HHRegisterUIBindings(HHScriptSystem& kScripts, ICvGame1* pGame, ICvPreGame1
 	lua_State* L = kScripts.GetMainState();
 	lua_pushcfunction(L, HHLuaUIRemoveNotification);
 	lua_setglobal(L, "__HHUIRemoveNotification");
+}
+
+bool HHAddinsSelfTest(std::vector<std::string>& checks)
+{
+	struct Case { const char* szSkip; bool bSkipped; };
+	static const Case kCases[] = {
+		{ "SmallResourceIcons", true }, { "SmallResourceIcons.lua", true }, { "smallresourceicons.XML", true },
+		{ "LUA\\SmallResourceIcons.lua", true }, { "LUA/SmallResourceIcons", true },
+		{ "SmallResourceIcons2.lua", false }, { "Small", false }, { "SmallResourceIcons.txt", false },
+	};
+	const std::string basePath = "C:\\MODS\\Some Mod\\LUA\\SmallResourceIcons";
+	bool bOk = true;
+	std::string failed;
+	for(size_t i = 0; i < sizeof(kCases) / sizeof(kCases[0]); ++i)
+	{
+		const std::vector<std::string> skip(1, kCases[i].szSkip);
+		if(Skipped(skip, basePath) != kCases[i].bSkipped)
+		{
+			bOk = false;
+			failed += std::string(failed.empty() ? "" : ", ") + kCases[i].szSkip;
+		}
+	}
+	const std::string line = std::string("--skip-addin matches a context by file name with or without extension")
+		+ (bOk ? "" : " (wrong for " + failed + ")");
+	checks.push_back(std::string(bOk ? "ok: " : "FAIL: ") + line);
+	HHLog("  self-test %s %s", bOk ? "ok  " : "FAIL", line.c_str());
+	return bOk;
 }
 
 std::vector<HHAddinContext> HHLoadUIAddins(HHScriptSystem& kScripts, const std::vector<std::string>& skip)

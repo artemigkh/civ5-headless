@@ -33,6 +33,9 @@ void HHRegisterUIBindings(HHScriptSystem& kScripts, ICvGame1* pGame, ICvPreGame1
 // extension, case-insensitive) not to run. Returns the contexts in load order.
 std::vector<HHAddinContext> HHLoadUIAddins(HHScriptSystem& kScripts, const std::vector<std::string>& skip);
 
+// Boot self-test of the --skip-addin name matching: appends "ok: ..." or "FAIL: ..." to checks.
+bool HHAddinsSelfTest(std::vector<std::string>& checks);
+
 // The Lua file of the activated mods' InGameUIAddin entry points named strName (with or without ".lua"; the
 // entry's file or its .lua sibling); strMod gets the mod's name. Empty when no entry point has it.
 std::string HHFindAddinScript(const std::string& strName, std::string& strMod);

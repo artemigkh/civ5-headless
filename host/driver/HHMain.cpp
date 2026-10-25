@@ -666,6 +666,26 @@ namespace
 		r += "  \"dll\": {\"path\": " + Q(o.dllPath) + ", \"sha256\": " + Q(HHSha256File(o.dllPath)) + ", \"version\": " + Q(s.dllVersion) +
 			", \"digestAdditions\": " + (ng.digestTotal.empty() ? "false" : "true") + ", \"seedMode\": " + Q(ng.seedMode) +
 			", \"hostChoseCivs\": " + (ng.hostChoseCivs ? "true" : "false") + "},\n";
+		// City-states: every city-state slot after Init2 against the spec's pins (minorCivs). chosenBy: dll (the DLL
+		// chose, pins only compared), spec (the host applied the pin), host (the host drew it).
+		{
+			std::string slots;
+			int nPinned = 0, nMatching = 0;
+			for(size_t i = 0; i < ng.minorCivs.size(); ++i)
+			{
+				const HHMinorCivSlot& m = ng.minorCivs[i];
+				const bool bPinned = m.pinnedId >= 0, bMatch = bPinned && m.pinnedId == m.id;
+				nPinned += bPinned ? 1 : 0;
+				nMatching += bMatch ? 1 : 0;
+				const char* szBy = !ng.hostChoseMinors ? "dll" : bMatch ? "spec" : "host";
+				slots += std::string(i ? "," : "") + HHFormat("\n    {\"slot\": %d, \"id\": %d, \"type\": ", m.slot, m.id) + Q(m.type) +
+					", \"chosenBy\": " + Q(szBy) + (bPinned ? HHFormat(", \"pinnedId\": %d, \"pinnedType\": ", m.pinnedId) + Q(m.pinnedType) +
+					", \"match\": " + (bMatch ? "true" : "false") : std::string()) + "}";
+			}
+			r += "  \"minorCivs\": {\"chosenBy\": " + Q(ng.minorCivs.empty() ? "" : ng.hostChoseMinors ? "host" : "dll") +
+				HHFormat(", \"pinned\": %d, \"matching\": %d, \"allMatch\": %s, \"slots\": [", nPinned, nMatching,
+				         nPinned ? (nPinned == nMatching ? "true" : "false") : "null") + slots + (slots.empty() ? "]},\n" : "\n  ]},\n");
+		}
 		r += "  \"database\": {\"game\": " + Q(o.dbPath) + ", \"localization\": " + Q(o.locDbPath) + ", \"modsDb\": " + Q(o.noMods ? std::string() : o.modsDbPath) +
 			", \"modsDir\": " + Q(o.modsDir) + "},\n";
 		r += "  \"spec\": " + Q(o.specPath) + ",\n";
@@ -1161,6 +1181,8 @@ namespace
 				s.selfTest.bPassed = false;
 			HHLog("  self-test %s %s", bOk ? "ok  " : "FAIL", line.c_str());
 		}
+		if(!HHAddinsSelfTest(s.selfTest.checks))
+			s.selfTest.bPassed = false;
 		HHLog("Lua self-test: %s", s.selfTest.bPassed ? "passed" : "FAILED");
 		HH_TIMING("lua");
 
