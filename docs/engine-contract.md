@@ -49,6 +49,11 @@ Limits of the traces (read before trusting a "never seen"):
    values replace `timeGetTime()`). The host must in any case call `setMapRandomSeed/setSyncRandomSeed` with the
    same values the reference had at `closeInactiveSlots` (its `HHSEEDS exeMap/exeSync`), then let `CvGame::init`
    pin the spec seeds.
+   **Resolved (255e26ba2, option b):** `setGameStarted(true)` now applies `HeadlessSeeds.txt` (without consuming it)
+   just before `onGameStarted`, logging `HHSEEDS|point=gameStarted` with the engine's own seeds. The civs and
+   city-states then follow the spec's map seed in the real game and in the host. References recorded before it
+   (S1, S3, the first AA100) still have clock-seed civs; the `hh-m0-*b`, `hh-m0-communitu` and `hh-m0-cdrift` runs
+   have the fix.
 2. **The real game runs the new game on the UI thread and the turn loop on a separate game-core thread** [M].
    `IsGameCoreThread` answers false during boot and new game (map generation, `Init2`, `setInitialItems`) and
    true inside `Update`; the DLL selects the pathfinder (`GC.GetPathFinder()`: core vs interface instance) and the
@@ -546,8 +551,8 @@ real game, whose control word was not recorded (open question 3).
 1. **Late front-end setters and turn-0 hooks are capped** (4.2). Resolve: record with a higher cap for
    `CvDllPreGame::*` and `ICvEngineScriptSystem1::Call*`, or reset the per-method cap at `CvDllGame::Init` and at
    the first `Update` (a small `HHTrace` change), then rerun S1.
-2. **Random civs/CS** (finding 1): decide between explicit civs in resolved specs, `config.ini` seeds, or pinning
-   in `onGameStarted`; then verify with two runs that `HHPREGAME slot` lines match.
+2. **Random civs/CS** (finding 1): decided, the seeds file pins at `setGameStarted` (255e26ba2). Still to verify
+   with two runs that the `HHPREGAME slot` lines match (the second AA100 pair does this).
 3. **x87/MXCSR of the UI thread during `Init2`** (map generation runs there): extend D4 to log the control word
    at `CvGame::init` too.
 4. **`GetEvaluatedMapScriptPath` output** is not recorded; inferred from the pregame snapshot (unchanged
