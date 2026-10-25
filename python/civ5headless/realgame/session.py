@@ -255,7 +255,7 @@ class RealGameSession:
         return out
 
     def _relaunch(self):
-        self.earlier.append(self.process_stats())
+        self.earlier.append({k: v for k, v in self.process_stats().items() if k != 'earlier'})
         self._end_game()
         self._launch()
 

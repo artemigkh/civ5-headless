@@ -478,6 +478,7 @@ class FakeGame:
             f.remove('ModsSinglePlayer')
             f.add('InGame')
             f.add('LoadScreen')
+            self.turn, self.autoplay, self.running, self.winner = 0, 0, False, -1
             with (self.cfg.user_dir / 'Logs/HeadlessDigest.log').open('a', encoding='utf-8') as log:
                 log.write(f'HHSEEDS|point=gameInit|source=file|exeMap={self.exe_seeds[0]}|exeSync={self.exe_seeds[1]}\n')
             self.log.append(('start',))
