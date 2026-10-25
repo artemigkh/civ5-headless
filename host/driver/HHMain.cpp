@@ -65,6 +65,14 @@ namespace
 		"  --mod <guid[:ver]>   activated mod for IsModActivated (repeatable)\n"
 		"  --dlc <guid>         valid DLC for IsDLCValid (repeatable; default: every DLC valid)\n"
 		"  --game-logging       ICvGameContext1::SetLogging(true) (the DLL's own logs)\n"
+		"  --no-game-logging    newgame: no DLL logs (default: the reference profile's logging, which changes AI results)\n"
+		"  --turns <n>          newgame: autoplay n turns after T000 (ARM + CONTINUE as game_probe), then dump-t<n>\n"
+		"  --idle-updates <k>   newgame: Updates after autoplay ends, in the human turn (default 10)\n"
+		"  --dump-turns <a:b>   newgame: the DLL dumps the state at doTurnBegin of turns a..b (Logs\\HeadlessDumps)\n"
+		"  --no-ui-frame        newgame: no UI frame emulation after each Update (civ ribbon, notification aging,\n"
+		"                       popups, human-turn unit cycle)\n"
+		"  --lua-before-dump <file>  newgame (experiment): run a Lua file after autoplay, before the final dump\n"
+		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
 		"  --strict             abort on the first unimplemented engine call\n"
 		"  --verbose            log the first call of every implemented engine method too\n"
 		"  --keep-dll-loaded    skip FreeLibrary of the game DLL at shutdown\n";
@@ -743,6 +751,7 @@ namespace
 		nif.pDbUtil = pDbUtil;
 		nif.pEngine = pEngine;
 		nif.pUI = pUI;
+		pUI->SetGame(nif.pGame);
 		pEngine->SetPreGame(nif.pPreGame);
 		const int iLuaErrorsBefore = pScripts->GetErrorCount();
 		if(bNewGame && s.bPostOk && s.bCacheOk)

@@ -862,6 +862,125 @@ namespace
 		"end\n"
 		"return table.concat(t, ' ')\n";
 
+	// The engine's frame for a human active player (trace hh-m0-s1c-continents after autoplay ends):
+	// on the active player's turn start EndTurnTimerReset, UpdateSelectionList (auto unit cycle: selects
+	// a unit, CvUnit::m_iEverSelectedCount), RebroadcastNotifications and SetBusyUnitUpdatesRemaining(600);
+	// then every frame UpdateTestEndTurn (CvPlayer::m_eEndTurnBlockingType).
+	void HumanTurnFrame(HHNewGameInterfaces& kIf)
+	{
+		// A popup that is up (WhosWinning) keeps the engine from cycling units and testing the end of
+		// turn (hh-m2-aa100-a T100: m_eEndTurnBlockingType -1, no unit ever selected).
+		if(kIf.pUI->IsPopupShown())
+			return;
+		const bool bTurnStart = kIf.pUI->TakeActivePlayerTurnStart();
+		const PlayerTypes eActive = kIf.pPreGame->activePlayer();
+		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(eActive);
+		if(!pPlayer)
+			return;
+		if(pPlayer->IsHuman() && pPlayer->IsAlive() && pPlayer->IsTurnActive())
+		{
+			if(bTurnStart)
+			{
+				kIf.pGame->EndTurnTimerReset();
+				kIf.pGame->UpdateSelectionList();
+				pPlayer->RebroadcastNotifications();
+				pPlayer->SetBusyUnitUpdatesRemaining(600);
+			}
+			kIf.pGame->UpdateTestEndTurn();
+		}
+		pPlayer->Destroy();
+	}
+
+	// VP's WhosWinningPopup.lua (MODS\(2) Vox Populi\Core Files\Overrides) OnPopup: it rolls the synced
+	// RNG (Game.Rand: the presenter, then list modes until a new allowed one) and reads the scores of the
+	// mode (GetMilitaryMight is a lazy cache; RefreshTourism changes cities). CvGame::doTurn queues it every
+	// PROGRESS_POPUP_TURN_FREQUENCY turns when the active player is alive: the turn autoplay hands the
+	// game back (hh-m2-aa100-a T100: 2 more sync RNG calls, no unit selected).
+	const char* kWhosWinningLua =
+		"local Food, Production, Gold, Science, Culture, Happiness, Wonders, Power, Influence, Tourism = 0,1,2,3,4,5,6,7,8,9\n"
+		"local function industrial()\n"
+		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"    if p:IsAlive() and p:GetCurrentEra() >= GameInfo.Eras['ERA_INDUSTRIAL'].ID then return true end end\n"
+		"  return false\n"
+		"end\n"
+		"local function allowed(m)\n"
+		"  if m == Culture then\n"
+		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"      if p:IsAlive() and p:GetNumPolicies() < 2 then return false end end\n"
+		"    if industrial() then return false end\n"
+		"  elseif m == Influence then\n"
+		"    local use = false\n"
+		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"      if p:IsAlive() and p:GetNumCivsInfluentialOn() > 0 then use = true end end\n"
+		"    if not use then return false end\n"
+		"  elseif m == Tourism then\n"
+		"    local none = true\n"
+		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"      if p:IsAlive() and p:GetTourism() / 100 > 0 then none = false end end\n"
+		"    if none then return false end\n"
+		"  elseif m == Food or m == Production then\n"
+		"    if industrial() then return false end\n"
+		"  elseif m == Wonders then\n"
+		"    if Game.GetNumWorldWonders() < 2 then return false end\n"
+		"  elseif m == Happiness then\n"
+		"    if Game.IsOption(GameOptionTypes.GAMEOPTION_NO_HAPPINESS) then return false end\n"
+		"  elseif m == Science then\n"
+		"    if Game.IsOption(GameOptionTypes.GAMEOPTION_NO_SCIENCE) then return false end\n"
+		"  end\n"
+		"  return true\n"
+		"end\n"
+		"local function score(p, m)\n"
+		"  if m == Food or m == Production then\n"
+		"    local y = m == Food and YieldTypes.YIELD_FOOD or YieldTypes.YIELD_PRODUCTION\n"
+		"    for c in p:Cities() do c:GetYieldRateTimes100(y) end\n"
+		"  elseif m == Gold then p:GetGold()\n"
+		"  elseif m == Science then Teams[p:GetTeam()]:GetTeamTechs():GetNumTechsKnown()\n"
+		"  elseif m == Culture then p:GetNumPolicies()\n"
+		"  elseif m == Happiness then p:GetExcessHappiness()\n"
+		"  elseif m == Wonders then p:GetNumWorldWonders()\n"
+		"  elseif m == Power then p:GetMilitaryMight()\n"
+		"  elseif m == Influence then p:GetNumCivsInfluentialOn()\n"
+		"  end\n"
+		"end\n"
+		"Game.Rand(25, 'Rolling to determine Progress Screen dude.')\n"
+		"local last = __HHWhosWinningMode or -1\n"
+		"local r, bad = last, false\n"
+		"while r == last or bad do\n"
+		"  bad = false\n"
+		"  r = Game.Rand(10, 'Rolling to determine Progress Screen list type.')\n"
+		"  if not allowed(r) then bad = true end\n"
+		"end\n"
+		"__HHWhosWinningMode = r\n"
+		"if r == Tourism then\n"
+		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"    if p:IsAlive() then for ci = 0, p:GetNumCities() - 1 do local c = p:GetCityByID(ci)\n"
+		"      if c ~= nil then c:RefreshTourism(); c:GetYieldRateTimes100(YieldTypes.YIELD_TOURISM) end end end end\n"
+		"else\n"
+		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"    if p:IsAlive() then score(p, r) end end\n"
+		"end\n"
+		"return r\n";
+
+	// SerialEventGameMessagePopup on the UI frame after AddPopup. Only the popups whose Lua has game
+	// state effects are emulated; every popup is logged.
+	void ShowQueuedPopups(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+	{
+		std::vector<CvPopupInfo> popups = kIf.pUI->TakeQueuedPopups();
+		for(size_t i = 0; i < popups.size(); ++i)
+		{
+			const int eType = (int)popups[i].eButtonPopupType;
+			std::string what = HHFormat("popup %d (data %d,%d,%d) at turn %d", eType, popups[i].iData1, popups[i].iData2,
+			                            popups[i].iData3, kIf.pGame->GetGameTurn());
+			if(eType == BUTTONPOPUP_WHOS_WINNING)
+			{
+				what += HHFormat(": WhosWinning list mode %d", LuaInt(*kIf.pScripts, kWhosWinningLua, -1));
+				kIf.pUI->SetPopupUp(true);
+			}
+			HHLog("%s", what.c_str());
+			kResult.steps.push_back(what);
+		}
+	}
+
 	void ObserverNotificationAging(HHNewGameInterfaces& kIf)
 	{
 		if(!kIf.pUI->TakeNotificationAdded())
@@ -978,6 +1097,8 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	kResult.steps.push_back(HHFormat("NetMessageHandler.Response* x%u", (unsigned)HHDeliverNetMessages(kIf)));
 	kIf.pUI->ClearShownNotifications();   // NotificationPanel OnSetActivePlayer: RemoveNotificationID for all
 	kIf.pUI->TakeNotificationAdded();
+	kIf.pUI->ClearSelection();            // the engine drops the selection when the active player changes
+	kIf.pUI->TakeActivePlayerTurnStart();
 	if(iArmed != nTurns)
 	{
 		kResult.error = "SetAIAutoPlay did not arm autoplay";
@@ -1006,6 +1127,8 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		{
 			ObserverNotificationAging(kIf);
 			LuaInt(kScripts, kUiFrameLua, 0);
+			ShowQueuedPopups(kIf, kResult);
+			HumanTurnFrame(kIf);
 		}
 		++kResult.iUpdates;
 		++iTurnUpdates;

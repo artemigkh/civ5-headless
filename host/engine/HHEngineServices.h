@@ -205,7 +205,30 @@ public:
 	// True once per NotificationAdded since the last call (the panel's handlers run on the next UI frame).
 	bool TakeNotificationAdded() { const bool b = m_bNotificationAdded; m_bNotificationAdded = false; return b; }
 
+	// The unit selection list (head unit only) and the engine's auto unit cycle (option on in the
+	// reference profile): the human turn after autoplay selects a unit (CvGame::updateSelectionList).
+	void SetGame(ICvGame1* pGame) { m_pGame = pGame; }
+	bool DoAutoUnitCycle();
+	int getOriginalPlotIndex();
+	int getOriginalPlotCount();
+	void ClearSelection() { m_eSelOwner = NO_PLAYER; m_iSelUnit = -1; }
+	// True once per PublishActivePlayerTurnStart since the last call.
+	bool TakeActivePlayerTurnStart() { const bool b = m_bActivePlayerTurnStart; m_bActivePlayerTurnStart = false; return b; }
+
+	// Popups: AddPopup queues (SerialEventGameMessagePopup on the next UI frame); a shown popup stays up
+	// (nobody closes it in an autoplay run).
+	void AddPopup(const CvPopupInfo& kPopup);
+	std::vector<CvPopupInfo> TakeQueuedPopups() { std::vector<CvPopupInfo> v; v.swap(m_queuedPopups); return v; }
+	void SetPopupUp(bool bUp) { m_bPopupUp = bUp; }
+	bool IsPopupShown() const { return m_bPopupUp; }
+
 private:
 	std::map<int, PlayerTypes> m_shownNotifications;
 	bool m_bNotificationAdded;
+	ICvGame1* m_pGame;
+	PlayerTypes m_eSelOwner;
+	int m_iSelUnit;
+	bool m_bActivePlayerTurnStart;
+	std::vector<CvPopupInfo> m_queuedPopups;
+	bool m_bPopupUp;
 };

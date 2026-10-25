@@ -376,7 +376,18 @@ void HHEngineUtility::EndSendBundle() { HH_IMPL_CALL("ICvEngineUtility3::EndSend
 //------------------------------------------------------------------------------
 // HHUserInterface
 //------------------------------------------------------------------------------
-HHUserInterface::HHUserInterface() : m_bNotificationAdded(false) {}
+HHUserInterface::HHUserInterface() : m_bNotificationAdded(false), m_pGame(NULL), m_eSelOwner(NO_PLAYER), m_iSelUnit(-1),
+	m_bActivePlayerTurnStart(false), m_bPopupUp(false) {}
+
+void HHUserInterface::AddPopup(const CvPopupInfo& kPopup)
+{
+	HH_IMPL_CALL("ICvUserInterface1::AddPopup");
+	m_queuedPopups.push_back(kPopup);
+}
+
+bool HHUserInterface::DoAutoUnitCycle() { HH_IMPL_CALL("ICvUserInterface1::DoAutoUnitCycle"); return true; }
+int HHUserInterface::getOriginalPlotIndex() { HH_IMPL_CALL("ICvUserInterface1::getOriginalPlotIndex"); return -1; }
+int HHUserInterface::getOriginalPlotCount() { HH_IMPL_CALL("ICvUserInterface1::getOriginalPlotCount"); return 0; }
 
 void HHUserInterface::AddNotification(int iID, NotificationTypes, const char*, const char*, int, int, PlayerTypes ePlayer, int, int)
 {
@@ -407,16 +418,28 @@ void* HHUserInterface::QueryInterface(GUID guidInterface)
 void HHUserInterface::Destroy() { HH_IMPL_CALL("ICvUnknown::Destroy"); }
 
 ICvPlot1* HHUserInterface::getSelectionPlot() { HH_IMPL_CALL("ICvUserInterface1::getSelectionPlot"); return NULL; }
-ICvUnit1* HHUserInterface::GetHeadSelectedUnit() { HH_IMPL_CALL("ICvUserInterface1::GetHeadSelectedUnit"); return NULL; }
+ICvUnit1* HHUserInterface::GetHeadSelectedUnit()
+{
+	HH_IMPL_CALL("ICvUserInterface1::GetHeadSelectedUnit");
+	if(m_eSelOwner == NO_PLAYER || !m_pGame)
+		return NULL;
+	ICvPlayer1* pPlayer = m_pGame->GetPlayer(m_eSelOwner);
+	ICvUnit1* pUnit = pPlayer ? pPlayer->GetUnit(m_iSelUnit) : NULL;   // the caller releases it
+	if(pPlayer)
+		pPlayer->Destroy();
+	if(!pUnit)
+		ClearSelection();   // the unit is gone
+	return pUnit;
+}
 ICvCity1* HHUserInterface::getHeadSelectedCity() { HH_IMPL_CALL("ICvUserInterface1::getHeadSelectedCity"); return NULL; }
-bool HHUserInterface::isPopupUp() { HH_IMPL_CALL("ICvUserInterface1::isPopupUp"); return false; }
+bool HHUserInterface::isPopupUp() { HH_IMPL_CALL("ICvUserInterface1::isPopupUp"); return m_bPopupUp; }
 bool HHUserInterface::isPopupQueued() { HH_IMPL_CALL("ICvUserInterface1::isPopupQueued"); return false; }
 bool HHUserInterface::isDiploOrPopupWaiting() { HH_IMPL_CALL("ICvUserInterface1::isDiploOrPopupWaiting"); return false; }
 bool HHUserInterface::isDiploActive() { HH_IMPL_CALL("ICvUserInterface1::isDiploActive"); return false; }
-bool HHUserInterface::IsUnitSelected(PlayerTypes, int) { HH_IMPL_CALL("ICvUserInterface1::IsUnitSelected"); return false; }
+bool HHUserInterface::IsUnitSelected(PlayerTypes playerID, int unitID) { HH_IMPL_CALL("ICvUserInterface1::IsUnitSelected"); return playerID == m_eSelOwner && unitID == m_iSelUnit; }
 bool HHUserInterface::isCitySelection() { HH_IMPL_CALL("ICvUserInterface1::isCitySelection"); return false; }
 bool HHUserInterface::isCitySelected(ICvCity1*) { HH_IMPL_CALL("ICvUserInterface1::isCitySelected"); return false; }
-int HHUserInterface::GetLengthSelectionList() { HH_IMPL_CALL("ICvUserInterface1::GetLengthSelectionList"); return 0; }
+int HHUserInterface::GetLengthSelectionList() { HH_IMPL_CALL("ICvUserInterface1::GetLengthSelectionList"); return m_eSelOwner != NO_PLAYER ? 1 : 0; }
 bool HHUserInterface::isCityScreenUp() { HH_IMPL_CALL("ICvUserInterface1::isCityScreenUp"); return false; }
 bool HHUserInterface::isFocused() { HH_IMPL_CALL("ICvUserInterface1::isFocused"); return false; }
 bool HHUserInterface::isFocusedWidget() { HH_IMPL_CALL("ICvUserInterface1::isFocusedWidget"); return false; }
@@ -453,13 +476,21 @@ void HHEngineUtility::GameplayUnitVisibility(_In_ ICvUnit1*, bool, bool, const f
 void HHEngineUtility::GameplayMinimapUnitSelect(int, int) { HH_IMPL_CALL("ICvEngineUtility1::GameplayMinimapUnitSelect"); }
 void HHEngineUtility::TradeVisuals_DeactivatePopupRoute() { HH_IMPL_CALL("ICvEngineUtility3::TradeVisuals_DeactivatePopupRoute"); }
 void HHUserInterface::makeSelectionListDirty() { HH_IMPL_CALL("ICvUserInterface1::makeSelectionListDirty"); }
-void HHUserInterface::ClearSelectionList() { HH_IMPL_CALL("ICvUserInterface1::ClearSelectionList"); }
-void HHUserInterface::InsertIntoSelectionList(ICvUnit1*, bool, bool, bool, bool, bool) { HH_IMPL_CALL("ICvUserInterface1::InsertIntoSelectionList"); }
+void HHUserInterface::ClearSelectionList() { HH_IMPL_CALL("ICvUserInterface1::ClearSelectionList"); ClearSelection(); }
+void HHUserInterface::InsertIntoSelectionList(ICvUnit1* pUnit, bool, bool, bool, bool, bool)
+{
+	HH_IMPL_CALL("ICvUserInterface1::InsertIntoSelectionList");
+	if(pUnit)
+	{
+		m_eSelOwner = pUnit->GetOwner();
+		m_iSelUnit = pUnit->GetID();
+	}
+}
 void HHUserInterface::clearSelectedCities() { HH_IMPL_CALL("ICvUserInterface1::clearSelectedCities"); }
 void HHUserInterface::PublishEndTurnDirty() const { HH_IMPL_CALL("ICvUserInterface1::PublishEndTurnDirty"); }
 void HHUserInterface::PublishPlayerTurnStatus(CvDLLInterfaceIFaceBase::TURN_STATUS_TYPE eStatus, PlayerTypes ePlayer, const char* pszTag) { HH_IMPL_CALL("ICvUserInterface1::PublishPlayerTurnStatus"); }
 void HHUserInterface::setCycleSelectionCounter(int iNewValue) { HH_IMPL_CALL("ICvUserInterface1::setCycleSelectionCounter"); }
-void HHUserInterface::PublishActivePlayerTurnStart() { HH_IMPL_CALL("ICvUserInterface1::PublishActivePlayerTurnStart"); }
+void HHUserInterface::PublishActivePlayerTurnStart() { HH_IMPL_CALL("ICvUserInterface1::PublishActivePlayerTurnStart"); m_bActivePlayerTurnStart = true; }
 void HHUserInterface::PublishActivePlayerTurnEnd() { HH_IMPL_CALL("ICvUserInterface1::PublishActivePlayerTurnEnd"); }
 void HHUserInterface::SetDontShowPopups(bool bValue) { HH_IMPL_CALL("ICvUserInterface1::SetDontShowPopups"); }
 void HHUserInterface::SetEndTurnBlockingChanged(EndTurnBlockingTypes ePrevBlockingType, EndTurnBlockingTypes eNewBlockingType) { HH_IMPL_CALL("ICvUserInterface1::SetEndTurnBlockingChanged"); }

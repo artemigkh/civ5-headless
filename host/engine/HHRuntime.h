@@ -44,7 +44,7 @@ struct HHOptions
 	int fpuPrecision;        // x87 precision bits for the new game (24, 53, 64; 0: untouched)
 	__int64 crtSrand;        // srand() on the main thread before the new game (-1: untouched, CRT default 1)
 	HHOptions() : language("en_US"), strict(false), verbose(false), gameLogging(false), noGameLogging(false), freeLibrary(true),
-		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1), turns(0), noUiFrame(false), idleUpdates(0), dumpFrom(-1), dumpTo(-1) {}
+		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1), turns(0), noUiFrame(false), idleUpdates(10), dumpFrom(-1), dumpTo(-1) {}
 };
 
 struct HHPaths
