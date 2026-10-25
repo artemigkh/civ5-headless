@@ -23,6 +23,8 @@ sys.path.insert(0, str(ROOT / 'tools/headless'))
 import gamespec, hhdigest  # noqa: E402
 
 DEFAULT_DB = ROOT / 'work/headless/db/mods-reference-08D19878.db'
+if not DEFAULT_DB.exists():  # a worktree: the databases live in the main checkout
+    DEFAULT_DB = Path(r'E:/Projects/Civ5StackMod/work/headless/db/mods-reference-08D19878.db')
 META = hhdigest.META
 
 
@@ -75,6 +77,8 @@ def main():
     ap.add_argument('--tag', default='sweep')
     ap.add_argument('--case', action='append', default=[], help='NAME=RESOLVED_SPEC.json:TURNS (already resolved)')
     ap.add_argument('--host-arg', action='append', default=[])
+    ap.add_argument('--resolved-from', help='Folder with first-<prefix>-<case>.resolved.json (host_first.py) to reuse, '
+                    'so the seeds are those of the recorded games')
     a = ap.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     cases = []
@@ -84,7 +88,11 @@ def main():
         for c in matrix['cases']:
             name = f'{prefix}-{c["name"]}'
             spec = OUT / f'skew-{a.tag}-{name}.resolved.json'
-            spec.write_text(json.dumps(gamespec.resolve(c['spec']), indent=1) + '\n', encoding='utf-8')
+            known = Path(a.resolved_from) / f'first-{name}.resolved.json' if a.resolved_from else None
+            if known and known.exists():
+                spec.write_text(known.read_text(encoding='utf-8'), encoding='utf-8')
+            else:
+                spec.write_text(json.dumps(gamespec.resolve(c['spec'], DEFAULT_DB), indent=1) + '\n', encoding='utf-8')
             cases.append(dict(name=name, specPath=spec, turns=c['turns']))
     for c in a.case:
         name, rest = c.split('=', 1)
