@@ -73,6 +73,7 @@ namespace
 		"                       popups, human-turn unit cycle)\n"
 		"  --lua-before-dump <file>  newgame (experiment): run a Lua file after autoplay, before the final dump\n"
 		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
+		"  --rand-log <flags>   config.ini RandLog: 5 = every synced RNG call incl. map generation (Logs\\RandCalls.csv)\n"
 		"  --strict             abort on the first unimplemented engine call\n"
 		"  --verbose            log the first call of every implemented engine method too\n"
 		"  --keep-dll-loaded    skip FreeLibrary of the game DLL at shutdown\n";
@@ -200,6 +201,7 @@ namespace
 			}
 			else if(a == "--turns") { o.turns = atoi(v.c_str()); ++i; }
 			else if(a == "--lua-before-dump") { o.luaBeforeDump = v; ++i; }
+			else if(a == "--rand-log") { o.randLog = atoi(v.c_str()); ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
@@ -603,6 +605,9 @@ namespace
 			pContext->SetBuilderAILogging(true);
 			pContext->SetPlayerAndCityAILogSplit(true);
 		}
+		// config.ini RandLog (bit 0 on, 1 callstacks, 2 pregame calls, 3 async): Logs\RandCalls.csv
+		if(o.randLog > 0)
+			pContext->SetRandLogging(o.randLog);
 
 		HHSetPhase("database");
 		HHDatabases dbs;
