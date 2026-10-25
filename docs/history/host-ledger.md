@@ -150,10 +150,20 @@ commit it with the change it describes.
 - **Map options identical** (`hh-m5b-mapopt-*`, DLL 6C73DC9A, Tiny): Continents, Communitu_79a and Continental_Drift
   with every option at min, max and random: 9/9 identical (digests T0–T2 and both dumps; `parity_run.py --matrix
   work/test-runs/hh-m5b-matrix.json --tag b`). About 75 s of real time per case.
-- **Runs in flight:** none in the real game. The host agent runs the frame-skew sweep. Then: field-map build of the
-  merged DLL, deploy, host_first for m5-long and the rest of m5-batch2 (7 cases of 100 turns), record host-first with
-  rolling dumps (remove the stop files `work/test-runs/hh-m5b-matrix.stop` and `hh-m5l-matrix.stop`; m5-long also
-  `--retry-failed`).
+- **PAUSED 2026-10-25 (user):** no real-game runs in flight (the real game is idle; deployed DLL 6C73DC9A). The host
+  agent (`a4cb41447b56da966`, worktree `work/wt/hh-host`, branch `hh-host`) was told to let its running sweep pairs
+  finish, start nothing new, WIP-commit and update `work/wt/hh-host/RESUME.md` with the sweep table so far and the
+  commands for the remaining cases. Merged into headless-host so far: through hh-host 8c4406842 (23bb05ebf).
+  Not merged yet: hh-host 3241633ea (unit maintenance computed on each call), a91e6a4ec (trade connections version
+  bumped only on load), 960ed22f9 (`work/headless/skew_sweep.py`), plus whatever the sweep adds.
+- **On resume:** read `work/wt/hh-host/RESUME.md`, check `git -C work/wt/hh-host status` and its log, then relaunch the
+  agent with its work order (the frame-skew sweep at K=0/2/7 over the 7 batch-2 100-turn cases, the 9 m5-long games
+  and Standard s1/s2; each persistent dependence fixed as its own DLL commit) plus the checkpoint. When the sweep is
+  clean: merge hh-host, build the field-map DLL from the merge (`tools/headless/fieldmap_transform.py apply`,
+  `work/build-vp-msvc.py --no-ltcg --pch-memory 400`, `git checkout -- CvGameCoreDLL_Expansion2`), deploy
+  (`work/stage_vp.py --dll/--pdb`, `--verify`, `work/deploy-vp.ps1`), host_first for m5-long and the 7 remaining
+  m5-batch2 cases, then record host-first with rolling dumps (remove `work/test-runs/hh-m5b-matrix.stop` and
+  `hh-m5l-matrix.stop`; m5-long with `--retry-failed`).
 - **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: the s1 T124–127 dumps against the
   host's (and the A/A check); the late-game logging fix (the AI settle log called `GetDanger`, which rebuilds dirty
   danger plots; host logging on/off differed at T154, T209, T252–254, T292–294; the uncommitted fix clears T154 and
