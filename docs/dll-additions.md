@@ -270,7 +270,10 @@ At the start of `CvGame::init`, before anything consumes the seeds, and only whe
    ```
 
    All keys are optional: `map`/`sync` pin that seed; `digest=1` turns per-turn digest logging on from this game's
-   first turn; `normalise` sets normalisation. The DLL reads and **deletes** the file at the next new game.
+   first turn; `normalise` sets normalisation; `dumpfrom=N` and `dumpto=M` (with digest logging on) also write
+   `Game.DumpHeadlessState` at `doTurnBegin` of turns N..M into `<Logs>\HeadlessDumps\doTurnBegin-tNNN\`, for
+   field-level comparison of the per-turn digests (`tools/headless/parity_t000.py`). The DLL reads and **deletes**
+   the file at the next new game.
 2. **Lua:** `Game.SetHeadlessPendingSeeds(map, sync)` (both), `Game.GetHeadlessPendingSeeds()` →
    `pending, map, sync`, `Game.ClearHeadlessPendingSeeds()`. Consumed by the next new game. This only helps if the
    `Game` table is available in the context that starts the game; whether the engine registers the DLL's Lua

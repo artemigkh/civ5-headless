@@ -3,7 +3,7 @@
 
 //------------------------------------------------------------------------------
 HHLogFile::HHLogFile(const std::wstring& wstrPath, const std::wstring& wstrName, uint uiFlags)
-	: m_wstrPath(wstrPath), m_wstrName(wstrName), m_uiFlags(uiFlags), m_pFile(NULL), m_bOpenedOnce(false)
+	: m_wstrPath(wstrPath), m_wstrName(wstrName), m_uiFlags(uiFlags), m_hFile(INVALID_HANDLE_VALUE), m_bOpenedOnce(false)
 {
 	InitializeCriticalSection(&m_cs);
 	Open();
@@ -18,26 +18,50 @@ HHLogFile::~HHLogFile()
 void HHLogFile::Open(void)
 {
 	EnterCriticalSection(&m_cs);
-	if(!m_pFile)
+	if(m_hFile == INVALID_HANDLE_VALUE)
 	{
-		// The first open of a run truncates, later reopens append (as the engine's logs).
-		m_pFile = _wfsopen(m_wstrPath.c_str(), m_bOpenedOnce ? L"a" : L"w", _SH_DENYWR);
+		// The first open of a run truncates, later reopens append (as the engine's logs). Win32
+		// handles, not CRT FILE streams: AI logging opens hundreds of files per game and the CRT
+		// stream table (512, shared with the DLL) ran out at about turn 100.
+		m_hFile = CreateFileW(m_wstrPath.c_str(), m_bOpenedOnce ? FILE_APPEND_DATA : GENERIC_WRITE, FILE_SHARE_READ, NULL,
+			m_bOpenedOnce ? OPEN_ALWAYS : CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 		m_bOpenedOnce = true;
-		if(!m_pFile)
-			HHLogError("cannot open log file %s", HHNarrow(m_wstrPath).c_str());
+		if(m_hFile == INVALID_HANDLE_VALUE)
+			HHLogError("cannot open log file %s (error %u)", HHNarrow(m_wstrPath).c_str(), (unsigned)GetLastError());
 	}
 	LeaveCriticalSection(&m_cs);
+}
+
+void HHLogFile::FlushLocked(void)
+{
+	if(m_hFile != INVALID_HANDLE_VALUE && !m_strBuffer.empty())
+	{
+		DWORD dwWritten = 0;
+		WriteFile(m_hFile, m_strBuffer.data(), (DWORD)m_strBuffer.size(), &dwWritten, NULL);
+	}
+	m_strBuffer.clear();
 }
 
 void HHLogFile::Close(void)
 {
 	EnterCriticalSection(&m_cs);
-	if(m_pFile)
+	FlushLocked();
+	if(m_hFile != INVALID_HANDLE_VALUE)
 	{
-		fclose(m_pFile);
-		m_pFile = NULL;
+		CloseHandle(m_hFile);
+		m_hFile = INVALID_HANDLE_VALUE;
 	}
 	LeaveCriticalSection(&m_cs);
+}
+
+static void AppendText(std::string& out, const char* sz)
+{
+	for(; *sz; ++sz)
+	{
+		if(*sz == '\n')
+			out += '\r';
+		out += *sz;
+	}
 }
 
 void HHLogFile::Write(const char* szPrefix, const TCHAR* format, va_list args)
@@ -46,16 +70,16 @@ void HHLogFile::Write(const char* szPrefix, const TCHAR* format, va_list args)
 		return;
 	std::string strText = HHFormatV(format, args);
 	EnterCriticalSection(&m_cs);
-	if(m_pFile)
+	if(m_hFile != INVALID_HANDLE_VALUE)
 	{
 		if(!(m_uiFlags & kDontTimeStamp))
-			fprintf(m_pFile, "[%.3f] ", HHSeconds());
-		fputs(szPrefix, m_pFile);
-		fputs(strText.c_str(), m_pFile);
+			m_strBuffer += HHFormat("[%.3f] ", HHSeconds());
+		AppendText(m_strBuffer, szPrefix);
+		AppendText(m_strBuffer, strText.c_str());
 		if(strText.empty() || strText[strText.size() - 1] != '\n')
-			fputc('\n', m_pFile);
-		if(!(m_uiFlags & kDontFlushOnWrite))
-			fflush(m_pFile);
+			m_strBuffer += "\r\n";
+		if(!(m_uiFlags & kDontFlushOnWrite) || m_strBuffer.size() >= 65536)
+			FlushLocked();
 	}
 	LeaveCriticalSection(&m_cs);
 	if(m_uiFlags & kWriteToConsole)

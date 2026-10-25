@@ -407,3 +407,17 @@ bool HHWriteTextFile(const std::string& strPath, const std::string& strText)
 	fclose(f);
 	return true;
 }
+
+bool HHReadTextFile(const std::string& strPath, std::string& strText)
+{
+	FILE* f = _wfopen(HHWiden(strPath).c_str(), L"rb");
+	if(!f)
+		return false;
+	strText.clear();
+	char buf[65536];
+	size_t n;
+	while((n = fread(buf, 1, sizeof(buf), f)) > 0)
+		strText.append(buf, n);
+	fclose(f);
+	return true;
+}

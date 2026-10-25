@@ -22,12 +22,14 @@ public:
 	virtual void Archive(LPCWSTR wszArchiveName);
 
 	void Write(const char* szPrefix, const TCHAR* format, va_list args);
+	void FlushLocked(void);
 
 private:
 	std::wstring m_wstrPath;
 	std::wstring m_wstrName;
 	uint m_uiFlags;
-	FILE* m_pFile;
+	HANDLE m_hFile;                 // Win32 handle: a run opens more logs than the CRT's 512 FILE streams
+	std::string m_strBuffer;        // pending text (CRLF), written on flush
 	bool m_bOpenedOnce;
 	CRITICAL_SECTION m_cs;
 };

@@ -66,6 +66,8 @@ public:
 	bool CallTestAny(_In_z_ const char* szName, _In_opt_ ICvEngineScriptSystemArgs1* args, bool& value);
 
 	lua_State* GetMainState() const { return m_L; }
+	// Runs the GameEvents listeners of szName (mode: hook, testall, testany, accum); returns handled.
+	bool DispatchGameEvent(const char* szName, ICvEngineScriptSystemArgs1* pArgs, const char* szMode, double& dValue);
 	// Closes the Lua state (runs every __gc, some of which are DLL code): call while the
 	// game DLL, its game data and the databases are still alive.
 	void Shutdown();

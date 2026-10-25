@@ -2,6 +2,7 @@
 #include "lua/HHScriptSystem.h"
 #include "engine/HHEngineServices.h"
 #include "engine/HHRuntime.h"
+#include "setup/HHVfs.h"
 
 // Every engine-side call that changes DLL state is recorded in kResult.steps, so the run
 // folder documents the exact sequence (newgame-report.json "steps").
@@ -343,6 +344,17 @@ namespace
 	}
 }
 
+size_t HHDeliverNetMessages(HHNewGameInterfaces& kIf)
+{
+	if(!kIf.pEngine || kIf.pEngine->GetPendingNetMessageCount() == 0)
+		return 0;
+	ICvNetMessageHandler1* pHandler = kIf.pContext->GetNetMessageHandler();
+	const size_t n = kIf.pEngine->DeliverNetMessages(pHandler);
+	if(pHandler)
+		pHandler->Destroy();
+	return n;
+}
+
 bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 {
 	ICvPreGame1* pg = kIf.pPreGame;
@@ -389,7 +401,11 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	{
 		const std::string seedFile = HHGetPaths().cache + "HeadlessSeeds.txt";
 		// Same keys as vpbench's driver (digest=1: per-turn digest logging from turn 0).
-		HHWriteTextFile(seedFile, HHFormat("map=%u\nsync=%u\ndigest=1\n", uiMapSeed, uiSyncSeed));
+		std::string seeds = HHFormat("map=%u\nsync=%u\ndigest=1\n", uiMapSeed, uiSyncSeed);
+		// --dump-turns FROM:TO: the DLL dumps the state at doTurnBegin of those turns (Logs\HeadlessDumps).
+		if(HHGetOptions().dumpFrom >= 0)
+			seeds += HHFormat("dumpfrom=%d\ndumpto=%d\n", HHGetOptions().dumpFrom, HHGetOptions().dumpTo);
+		HHWriteTextFile(seedFile, seeds);
 		kResult.steps.push_back(HHFormat("write %s: map=%u sync=%u", seedFile.c_str(), uiMapSeed, uiSyncSeed));
 		kResult.seedMode = "HeadlessSeeds.txt";
 	}
@@ -494,10 +510,7 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	}
 	if(kIf.pEngine)
 	{
-		ICvNetMessageHandler1* pHandler = kIf.pContext->GetNetMessageHandler();
-		const size_t nOptions = kIf.pEngine->GetPendingPlayerOptionCount();
-		if(pHandler)
-			kIf.pEngine->DeliverPlayerOptions(pHandler, pg->activePlayer());
+		const size_t nOptions = HHDeliverNetMessages(kIf);
 		kResult.steps.push_back(HHFormat("NetMessageHandler.ResponsePlayerOption(%d, option, value) x%u", (int)pg->activePlayer(), (unsigned)nOptions));
 	}
 	// The in-game UI's first frame (trace S1/S3b): SelectSettler (selects the active player's
@@ -763,4 +776,411 @@ void HHEndNewGame(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 	// ICvGame1::Uninit (CvDllGame::Uninit traps while it is set).
 	HH_STEP("setGameStarted(false)", kIf.pPreGame->setGameStarted(false));
 	HH_STEP("Game.Uninit()", kIf.pGame->Uninit());
+}
+
+//------------------------------------------------------------------------------
+// M3: gameplay add-ins and the autoplay turn loop
+//------------------------------------------------------------------------------
+namespace
+{
+	// InGameUIAddin scripts that register gameplay GameEvents listeners and need no UI (plan M3.2,
+	// appendix C). Every other InGameUIAddin of the activated mods is UI-only and skipped (logged).
+	const char* kGameplayAddins[] = { "GlobalCityBombardRange.lua", "CBP_IncaFunctions.lua" };
+
+	std::string BaseName(const std::string& path)
+	{
+		const size_t slash = path.find_last_of("\/");
+		return slash == std::string::npos ? path : path.substr(slash + 1);
+	}
+
+	bool IsGameplayAddin(const std::string& file)
+	{
+		const std::string base = BaseName(file);
+		for(size_t i = 0; i < sizeof(kGameplayAddins) / sizeof(kGameplayAddins[0]); ++i)
+			if(_stricmp(base.c_str(), kGameplayAddins[i]) == 0)
+				return true;
+		return false;
+	}
+
+	int LuaInt(HHScriptSystem& kScripts, const char* szChunk, int iDefault)
+	{
+		int v = iDefault;
+		if(lua_State* L = RunReturning(kScripts, "Headless query", szChunk))
+		{
+			if(lua_isnumber(L, -1))
+				v = (int)lua_tointeger(L, -1);
+			kScripts.FreeLuaThread(L);
+		}
+		return v;
+	}
+
+	// The stateful part of one in-game UI frame of the reference profile (EUI, DLC\UI_bc1). Run after
+	// every game core Update, when the real UI gets a frame with the core idle.
+	// - NotificationPanel.lua UpdateCivListNow (the civ ribbon; refreshed on AIProcessingStarted/Ended,
+	//   SerialEventCityInfoDirty and so on, i.e. every turn): for every ever-alive major in the ribbon
+	//   that is alive, met by the active team and not at war with it, player:CalculateGoldRate(), which
+	//   recomputes CvTreasury::m_iExpensePerTurnUnitMaintenance (serialized). Without it that field lags
+	//   behind the reference whenever units or cities change after the player's DoGold (first seen at the
+	//   turn-0 doTurnBegin digest of every major that founded its capital in turn 0; hh-m2-aa100-a T100).
+	// ASSUMPTION: the ribbon is shown (EUI option CivRibbon, default on) and no other UI getter is stateful.
+	const char* kUiFrameLua =
+		"local a = Game.GetActivePlayer()\n"
+		"local at = Teams[Players[a]:GetTeam()]\n"
+		"local n = 0\n"
+		"for i = 0, GameDefines.MAX_MAJOR_CIVS - 1 do\n"
+		"  local p = Players[i]\n"
+		"  if p and p:IsEverAlive() and not p:IsMinorCiv() and i ~= a and p:IsAlive() and at:IsHasMet(p:GetTeam())\n"
+		"     and not Teams[p:GetTeam()]:IsAtWar(at:GetID()) then\n"
+		"    p:CalculateGoldRate(); n = n + 1\n"
+		"  end\n"
+		"end\n"
+		"return n\n";
+
+	// VP's EUI NotificationPanel.lua (MODS\(3a) VP - EUI Compatibility Files), "STACKING OBSERVER
+	// NOTIFICATION AGING": while autoplay runs (observer mode), every NotificationAdded forces a sweep that
+	// right-clicks away (UI.RemoveNotification) each shown, undismissed notification of the active player
+	// created at least UIObserverNotificationLifetimeTurns (Stacking_Settings, default 3) turns ago.
+	// UI.RemoveNotification is the engine's dismiss: MayUserDismissNotification, then DismissNotification
+	// (sets the serialized Notification::m_bDismissed; hh-m2-aa100-a playersRest from turn 22).
+	// ASSUMPTION (per-turn digests): only the forced sweep on NotificationAdded has an effect; the
+	// once-per-turn sweeps on SerialEventGameDataDirty / AIProcessingStartedForPlayer do not.
+	const char* kObserverExpiredLua =
+		"if Game.GetAIAutoPlay() <= 0 then return '' end\n"
+		"local lifetime = 3\n"
+		"if GameInfo.Stacking_Settings then for row in GameInfo.Stacking_Settings() do\n"
+		"  if row.Name == 'UIObserverNotificationLifetimeTurns' then lifetime = tonumber(row.Value) or 3 end end end\n"
+		"lifetime = math.max(0, math.min(10000, math.floor(lifetime)))\n"
+		"if lifetime == 0 then return '' end\n"
+		"local player = Players[Game.GetActivePlayer()]\n"
+		"local turn = Game.GetGameTurn()\n"
+		"local t = {}\n"
+		"for index = 0, player:GetNumNotifications() - 1 do\n"
+		"  local created = player:GetNotificationTurn(index)\n"
+		"  if not player:GetNotificationDismissed(index) and created >= 0 and turn - created >= lifetime then\n"
+		"    t[#t + 1] = player:GetNotificationIndex(index)\n"
+		"  end\n"
+		"end\n"
+		"return table.concat(t, ' ')\n";
+
+	// The engine's frame for a human active player (trace hh-m0-s1c-continents after autoplay ends):
+	// on the active player's turn start EndTurnTimerReset, UpdateSelectionList (auto unit cycle: selects
+	// a unit, CvUnit::m_iEverSelectedCount), RebroadcastNotifications and SetBusyUnitUpdatesRemaining(600);
+	// then every frame UpdateTestEndTurn (CvPlayer::m_eEndTurnBlockingType).
+	void HumanTurnFrame(HHNewGameInterfaces& kIf)
+	{
+		// A popup that is up (WhosWinning) keeps the engine from cycling units and testing the end of
+		// turn (hh-m2-aa100-a T100: m_eEndTurnBlockingType -1, no unit ever selected).
+		if(kIf.pUI->IsPopupShown())
+			return;
+		const bool bTurnStart = kIf.pUI->TakeActivePlayerTurnStart();
+		const PlayerTypes eActive = kIf.pPreGame->activePlayer();
+		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(eActive);
+		if(!pPlayer)
+			return;
+		if(pPlayer->IsHuman() && pPlayer->IsAlive() && pPlayer->IsTurnActive())
+		{
+			if(bTurnStart)
+			{
+				kIf.pGame->EndTurnTimerReset();
+				kIf.pGame->UpdateSelectionList();
+				pPlayer->RebroadcastNotifications();
+				pPlayer->SetBusyUnitUpdatesRemaining(600);
+			}
+			kIf.pGame->UpdateTestEndTurn();
+		}
+		pPlayer->Destroy();
+	}
+
+	// VP's WhosWinningPopup.lua (MODS\(2) Vox Populi\Core Files\Overrides) OnPopup: it rolls the synced
+	// RNG (Game.Rand: the presenter, then list modes until a new allowed one) and reads the scores of the
+	// mode (GetMilitaryMight is a lazy cache; RefreshTourism changes cities). CvGame::doTurn queues it every
+	// PROGRESS_POPUP_TURN_FREQUENCY turns when the active player is alive: the turn autoplay hands the
+	// game back (hh-m2-aa100-a T100: 2 more sync RNG calls, no unit selected).
+	const char* kWhosWinningLua =
+		"local Food, Production, Gold, Science, Culture, Happiness, Wonders, Power, Influence, Tourism = 0,1,2,3,4,5,6,7,8,9\n"
+		"local function industrial()\n"
+		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"    if p:IsAlive() and p:GetCurrentEra() >= GameInfo.Eras['ERA_INDUSTRIAL'].ID then return true end end\n"
+		"  return false\n"
+		"end\n"
+		"local function allowed(m)\n"
+		"  if m == Culture then\n"
+		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"      if p:IsAlive() and p:GetNumPolicies() < 2 then return false end end\n"
+		"    if industrial() then return false end\n"
+		"  elseif m == Influence then\n"
+		"    local use = false\n"
+		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"      if p:IsAlive() and p:GetNumCivsInfluentialOn() > 0 then use = true end end\n"
+		"    if not use then return false end\n"
+		"  elseif m == Tourism then\n"
+		"    local none = true\n"
+		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"      if p:IsAlive() and p:GetTourism() / 100 > 0 then none = false end end\n"
+		"    if none then return false end\n"
+		"  elseif m == Food or m == Production then\n"
+		"    if industrial() then return false end\n"
+		"  elseif m == Wonders then\n"
+		"    if Game.GetNumWorldWonders() < 2 then return false end\n"
+		"  elseif m == Happiness then\n"
+		"    if Game.IsOption(GameOptionTypes.GAMEOPTION_NO_HAPPINESS) then return false end\n"
+		"  elseif m == Science then\n"
+		"    if Game.IsOption(GameOptionTypes.GAMEOPTION_NO_SCIENCE) then return false end\n"
+		"  end\n"
+		"  return true\n"
+		"end\n"
+		"local function score(p, m)\n"
+		"  if m == Food or m == Production then\n"
+		"    local y = m == Food and YieldTypes.YIELD_FOOD or YieldTypes.YIELD_PRODUCTION\n"
+		"    for c in p:Cities() do c:GetYieldRateTimes100(y) end\n"
+		"  elseif m == Gold then p:GetGold()\n"
+		"  elseif m == Science then Teams[p:GetTeam()]:GetTeamTechs():GetNumTechsKnown()\n"
+		"  elseif m == Culture then p:GetNumPolicies()\n"
+		"  elseif m == Happiness then p:GetExcessHappiness()\n"
+		"  elseif m == Wonders then p:GetNumWorldWonders()\n"
+		"  elseif m == Power then p:GetMilitaryMight()\n"
+		"  elseif m == Influence then p:GetNumCivsInfluentialOn()\n"
+		"  end\n"
+		"end\n"
+		"Game.Rand(25, 'Rolling to determine Progress Screen dude.')\n"
+		"local last = __HHWhosWinningMode or -1\n"
+		"local r, bad = last, false\n"
+		"while r == last or bad do\n"
+		"  bad = false\n"
+		"  r = Game.Rand(10, 'Rolling to determine Progress Screen list type.')\n"
+		"  if not allowed(r) then bad = true end\n"
+		"end\n"
+		"__HHWhosWinningMode = r\n"
+		"if r == Tourism then\n"
+		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"    if p:IsAlive() then for ci = 0, p:GetNumCities() - 1 do local c = p:GetCityByID(ci)\n"
+		"      if c ~= nil then c:RefreshTourism(); c:GetYieldRateTimes100(YieldTypes.YIELD_TOURISM) end end end end\n"
+		"else\n"
+		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
+		"    if p:IsAlive() then score(p, r) end end\n"
+		"end\n"
+		"return r\n";
+
+	// SerialEventGameMessagePopup on the UI frame after AddPopup. Only the popups whose Lua has game
+	// state effects are emulated; every popup is logged.
+	void ShowQueuedPopups(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+	{
+		std::vector<CvPopupInfo> popups = kIf.pUI->TakeQueuedPopups();
+		for(size_t i = 0; i < popups.size(); ++i)
+		{
+			const int eType = (int)popups[i].eButtonPopupType;
+			std::string what = HHFormat("popup %d (data %d,%d,%d) at turn %d", eType, popups[i].iData1, popups[i].iData2,
+			                            popups[i].iData3, kIf.pGame->GetGameTurn());
+			if(eType == BUTTONPOPUP_WHOS_WINNING)
+			{
+				what += HHFormat(": WhosWinning list mode %d", LuaInt(*kIf.pScripts, kWhosWinningLua, -1));
+				kIf.pUI->SetPopupUp(true);
+			}
+			HHLog("%s", what.c_str());
+			kResult.steps.push_back(what);
+		}
+	}
+
+	void ObserverNotificationAging(HHNewGameInterfaces& kIf)
+	{
+		if(!kIf.pUI->TakeNotificationAdded())
+			return;
+		const PlayerTypes eActive = kIf.pPreGame->activePlayer();
+		std::string ids;
+		if(lua_State* L = RunReturning(*kIf.pScripts, "Headless notification aging", kObserverExpiredLua))
+		{
+			if(lua_isstring(L, -1))
+				ids = lua_tostring(L, -1);
+			kIf.pScripts->FreeLuaThread(L);
+		}
+		if(ids.empty())
+			return;
+		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(eActive);
+		if(!pPlayer)
+			return;
+		const char* p = ids.c_str();
+		while(*p)
+		{
+			char* end = NULL;
+			const int id = (int)strtol(p, &end, 10);
+			if(end == p)
+				break;
+			p = end;
+			while(*p == ' ')
+				++p;
+			// Only notifications the panel shows (g_ActiveNotifications), as the active player's.
+			std::map<int, PlayerTypes>::const_iterator it = kIf.pUI->GetShownNotifications().find(id);
+			if(it == kIf.pUI->GetShownNotifications().end() || it->second != eActive)
+				continue;
+			if(pPlayer->MayUserDismissNotification(id))
+				pPlayer->DismissNotification(id, true);
+		}
+		pPlayer->Destroy();
+	}
+
+	std::string DumpState(HHScriptSystem& kScripts, const std::string& folder)
+	{
+		std::string chunk = "if Game.DumpHeadlessState == nil then return nil end\nreturn Game.DumpHeadlessState([==[" + folder + "]==])\n";
+		std::string line;
+		if(lua_State* L = RunReturning(kScripts, "Headless dump", chunk.c_str()))
+		{
+			if(lua_isstring(L, -1))
+				line = lua_tostring(L, -1);
+			kScripts.FreeLuaThread(L);
+		}
+		return line;
+	}
+}
+
+bool HHLoadGameplayAddins(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+{
+	bool bOk = true;
+	const std::vector<HHActivatedMod>& mods = HHGetVfs().GetMods();
+	for(size_t m = 0; m < mods.size(); ++m)
+	{
+		for(size_t e = 0; e < mods[m].entryPoints.size(); ++e)
+		{
+			const HHModEntryPoint& ep = mods[m].entryPoints[e];
+			if(_stricmp(ep.type.c_str(), "InGameUIAddin") != 0)
+				continue;
+			if(!IsGameplayAddin(ep.file))
+			{
+				HHLog("InGameUIAddin skipped (UI only): %s / %s", mods[m].name.c_str(), ep.file.c_str());
+				continue;
+			}
+			std::string path = mods[m].folder + "\\" + Slashes(ep.file);
+			if(GetFileAttributesW(HHWiden(path).c_str()) == INVALID_FILE_ATTRIBUTES)
+			{
+				const std::vector<HHVfsEntry>* pFound = HHGetVfs().Find(BaseName(ep.file));
+				path = pFound && !pFound->empty() ? (*pFound)[0].path : std::string();
+			}
+			if(path.empty())
+			{
+				HHLogError("gameplay add-in not found: %s / %s", mods[m].name.c_str(), ep.file.c_str());
+				bOk = false;
+				continue;
+			}
+			// Each add-in is its own context: a thread with its own environment, kept alive for the game
+			// (its listeners close over it).
+			lua_State* L = kIf.pScripts->CreateLuaThread(BaseName(path).c_str());
+			if(!L || !kIf.pScripts->LoadFile(L, path.c_str()))
+			{
+				HHLogError("gameplay add-in failed: %s", path.c_str());
+				bOk = false;
+				continue;
+			}
+			kResult.addins.push_back(path);
+			kResult.steps.push_back("InGameUIAddin " + path);
+		}
+	}
+	return bOk;
+}
+
+bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurns, int nIdleUpdates)
+{
+	const double t0 = Now();
+	HHScriptSystem& kScripts = *kIf.pScripts;
+	// ARM (work/headless/game_probe.py, InGame context, while the load screen is up): quick combat and
+	// quick movement are game options (serialized state); SetAIAutoPlay moves the active player to an
+	// observer slot and re-sends the player options for it.
+	const std::string arm = HHFormat(
+		"Game.SetOption('GAMEOPTION_QUICK_COMBAT',true);Game.SetOption('GAMEOPTION_QUICK_MOVEMENT',true);"
+		"Game.SetAIAutoPlay(%d,0);return Game.GetAIAutoPlay()", nTurns);
+	int iArmed = 0;
+	if(lua_State* L = RunReturning(kScripts, "Headless arm-autoplay", arm.c_str()))
+	{
+		iArmed = (int)lua_tointeger(L, -1);
+		kScripts.FreeLuaThread(L);
+	}
+	kResult.steps.push_back(HHFormat("ARM: QUICK_COMBAT, QUICK_MOVEMENT, Game.SetAIAutoPlay(%d, 0) -> %d; active player %d", nTurns, iArmed,
+	                                 (int)kIf.pPreGame->activePlayer()));
+	kResult.steps.push_back(HHFormat("NetMessageHandler.Response* x%u", (unsigned)HHDeliverNetMessages(kIf)));
+	kIf.pUI->ClearShownNotifications();   // NotificationPanel OnSetActivePlayer: RemoveNotificationID for all
+	kIf.pUI->TakeNotificationAdded();
+	kIf.pUI->ClearSelection();            // the engine drops the selection when the active player changes
+	kIf.pUI->TakeActivePlayerTurnStart();
+	if(iArmed != nTurns)
+	{
+		kResult.error = "SetAIAutoPlay did not arm autoplay";
+		return false;
+	}
+	// CONTINUE (vpbench.CONTINUE, LoadScreen context): Events.LoadScreenClose() and UI.SetDontShowPopups(false)
+	// are UI; Game.SetPausePlayer(-1) unpauses the game core.
+	HH_STEP("Game.SetPausePlayer(-1)", kIf.pGame->SetPausePlayer(NO_PLAYER));
+	HHDeliverNetMessages(kIf);
+
+	// The game core: ICvGame1::Update until the autoplay counter is back to 0 at turn nTurns (the
+	// engine calls it once per frame from its core thread; one call processes one player).
+	int iTurn = kIf.pGame->GetGameTurn();
+	double tTurn = Now();
+	int iTurnUpdates = 0;
+	int iIdle = -1;
+	const int kMaxUpdatesPerTurn = 2000;
+	for(;;)
+	{
+		kIf.pEngine->SetInGameCoreUpdate(true);
+		kIf.pGame->Update();
+		kIf.pEngine->SetInGameCoreUpdate(false);
+		kIf.pEngine->EndOfUpdate();
+		HHDeliverNetMessages(kIf);
+		if(!HHGetOptions().noUiFrame)
+		{
+			ObserverNotificationAging(kIf);
+			LuaInt(kScripts, kUiFrameLua, 0);
+			ShowQueuedPopups(kIf, kResult);
+			HumanTurnFrame(kIf);
+		}
+		++kResult.iUpdates;
+		++iTurnUpdates;
+		const int iNow = kIf.pGame->GetGameTurn();
+		if(iNow != iTurn)
+		{
+			kResult.turnSeconds.push_back(std::make_pair(iTurn, Now() - tTurn));
+			kResult.turnUpdates.push_back(std::make_pair(iTurn, iTurnUpdates));
+			HHLog("turn %d: %d updates, %.2f s", iTurn, iTurnUpdates, Now() - tTurn);
+			iTurn = iNow;
+			tTurn = Now();
+			iTurnUpdates = 0;
+		}
+		if(kIf.pGame->GetGameState() != GAMESTATE_ON)
+		{
+			HHLog("game state %d at turn %d", (int)kIf.pGame->GetGameState(), iNow);
+			break;
+		}
+		if(iIdle < 0 && iNow >= nTurns && LuaInt(kScripts, "return Game.GetAIAutoPlay()", -1) == 0)
+			iIdle = 0;   // autoplay ended: the human turn; the reference keeps running Updates until its end probe
+		if(iIdle >= 0 && iIdle++ >= nIdleUpdates)
+			break;
+		if(iTurnUpdates > kMaxUpdatesPerTurn)
+		{
+			kResult.error = HHFormat("watchdog: turn %d did not end after %d updates", iNow, iTurnUpdates);
+			HHLogError("%s", kResult.error.c_str());
+			break;
+		}
+	}
+	kResult.turnSeconds.push_back(std::make_pair(iTurn, Now() - tTurn));
+	kResult.turnUpdates.push_back(std::make_pair(iTurn, iTurnUpdates));
+	kResult.iTurnsPlayed = kIf.pGame->GetGameTurn();
+	kResult.netMessages = kIf.pEngine->GetNetMessageCounts();
+	kResult.timings.push_back(std::make_pair(std::string("autoplay"), Now() - t0));
+
+	if(!HHGetOptions().luaBeforeDump.empty())
+	{
+		std::string chunk;
+		if(HHReadTextFile(HHGetOptions().luaBeforeDump, chunk))
+		{
+			if(lua_State* L = RunReturning(kScripts, "--lua-before-dump", chunk.c_str()))
+			{
+				kResult.steps.push_back(HHFormat("--lua-before-dump %s -> %s", HHGetOptions().luaBeforeDump.c_str(), lua_isstring(L, -1) ? lua_tostring(L, -1) : "?"));
+				kScripts.FreeLuaThread(L);
+			}
+		}
+		else
+			HHLogError("cannot read %s", HHGetOptions().luaBeforeDump.c_str());
+	}
+	const std::string folder = HHGetPaths().run + HHFormat("dump-t%03d", kResult.iTurnsPlayed);
+	const std::string line = DumpState(kScripts, folder);
+	kResult.steps.push_back("Game.DumpHeadlessState(" + folder + ")");
+	kResult.bAutoplayOk = kResult.error.empty() && !line.empty();
+	return kResult.bAutoplayOk;
 }

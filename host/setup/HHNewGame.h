@@ -19,6 +19,7 @@ struct HHNewGameInterfaces
 	HHScriptSystem* pScripts;
 	ICvDLLDatabaseUtility1* pDbUtil;
 	HHEngineUtility* pEngine;
+	class HHUserInterface* pUI;
 };
 
 struct HHNewGameResult
@@ -31,11 +32,22 @@ struct HHNewGameResult
 	std::string digestTotal;                                 // Game.GetHeadlessDigest().total, if the DLL has it
 	std::string seedMode;                                    // how the spec seeds reached the game
 	unsigned int uiExeSeed;                                  // pregame seeds before Game.Init (the engine's own)
-	HHNewGameResult() : bPregameOk(false), bStarted(false), bOutputsOk(false), iWidth(0), iHeight(0), uiExeSeed(0) {}
+	// Autoplay (M3)
+	bool bAutoplayOk;
+	int iTurnsPlayed, iUpdates;
+	std::vector<std::pair<int, double> > turnSeconds;        // game turn -> wall seconds spent in it
+	std::vector<std::pair<int, int> > turnUpdates;           // game turn -> Update calls
+	std::vector<std::string> addins;                         // gameplay add-ins loaded
+	std::map<std::string, int> netMessages;                  // send* counts by kind
+	HHNewGameResult() : bPregameOk(false), bStarted(false), bOutputsOk(false), iWidth(0), iHeight(0), uiExeSeed(0),
+		bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
 };
 
 // Pregame from the resolved spec (Task 1). Every engine call is appended to kResult.steps.
 bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+// The engine's net loopback: delivers every queued send* as its Response*; returns the count.
+size_t HHDeliverNetMessages(HHNewGameInterfaces& kIf);
+
 // "Start game" (Task 4): close slots, preload a premade map, Init, Init2, game started.
 bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 // T000 outputs (Task 5): t000-map.json, checkpoints/turn-0000.json, t000-digest.json.
@@ -43,6 +55,13 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 bool HHLoadScreen(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 
 bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+
+// The gameplay InGameUIAddin scripts of the activated mods (plan M3.2): each in its own Lua thread.
+bool HHLoadGameplayAddins(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+
+// M3: arms autoplay for nTurns the way the reference runs do (game_probe: ARM, then the load screen's
+// CONTINUE) and drives ICvGame1::Update until autoplay ends at turn nTurns; writes dump-tNNN.
+bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurns, int nIdleUpdates);
 // Leaves the started game so the DLL can be uninitialised (CvDllGame::Uninit traps while
 // pregame says the game is started).
 void HHEndNewGame(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
