@@ -150,11 +150,12 @@ commit it with the change it describes.
 - **Map options identical** (`hh-m5b-mapopt-*`, DLL 6C73DC9A, Tiny): Continents, Communitu_79a and Continental_Drift
   with every option at min, max and random: 9/9 identical (digests T0–T2 and both dumps; `parity_run.py --matrix
   work/test-runs/hh-m5b-matrix.json --tag b`). About 75 s of real time per case.
-- **Resumed 2026-10-25 (user):** hh-host merged through 960ed22f9 (f0b3365e5: unit maintenance on each call, trade
-  version on load only, `work/headless/skew_sweep.py`). Host agent relaunched: finish the frame-skew sweep (K=7 for all
-  18 cases, tag s7; Standard s2 at K=2, tag s6b), fix any persistent dependence, then normalise UI-only state out of the
-  digest (user rule below) and verify the transient cases become identical. Results so far (tag s6, K=2): 15 identical,
-  2 transient-only (notification `m_bDismissed`), no persistent dependence. Real game idle (DLL 6C73DC9A deployed).
+- **Frame-skew sweep complete (host only, K=2 and K=7, 18 cases: 7 Tiny 100-turn, 9 Tiny games to victory, Standard
+  continents-s1/-s2): no persistent frame-count dependence.** Three one-turn transients (observer notification
+  `m_bDismissed`, UI timing), gone after the UI-only normalisation (hh-host 75397ee04, merged c08b24207: observer
+  notifications' dismissed flag, `CvUnit::m_iEverSelectedCount`, tutorial/right-click/advisor flags; documented in
+  `docs/headless-dll-additions.md`; host A/A and end dumps confirm unchanged results). References recorded with older
+  DLLs differ from it in those fields: new references need the new DLL.
 - **Closing M5 (user, 2026-10-25; plan section 9.6):** after the frame-skew sweep (K=7) and the UI-only
   normalisation (hh-host 75397ee04, being verified) are done: merge hh-host, build the field-map DLL from the merge
   (`tools/headless/fieldmap_transform.py apply`, `work/build-vp-msvc.py --no-ltcg --pch-memory 400`,
