@@ -198,10 +198,11 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 		const SlotStatus eStatus = status == "taken" ? SS_TAKEN : (status == "computer" ? SS_COMPUTER : SS_CLOSED);
 		const char* szStatus = eStatus == SS_TAKEN ? "SS_TAKEN" : (eStatus == SS_COMPUTER ? "SS_COMPUTER" : "SS_CLOSED");
 		HH_STEP(HHFormat("setSlotStatus(%d, %s)", (int)p, szStatus), pg->setSlotStatus(p, eStatus));
-		// ASSUMPTION (trace): the setup screen leaves active slots assigned and closed slots
-		// unassigned (resetSlots does this for the world's default slots; the advanced setup
-		// adds AI players the same way).
-		const SlotClaim eClaim = eStatus == SS_CLOSED ? SLOTCLAIM_UNASSIGNED : SLOTCLAIM_ASSIGNED;
+		// Claims: closing a slot unassigns it; opening one keeps its claim, so only the world's
+		// default slots (resetSlots in setWorldSize) are assigned. M5 references: majors2 has slots
+		// 2-7 unassigned, majors12 (standard world, 8 default players) slots 8-11 unassigned.
+		const bool bUnassign = eStatus == SS_CLOSED;
+		const SlotClaim eClaim = bUnassign ? SLOTCLAIM_UNASSIGNED : pg->slotClaim(p);
 		if(pg->slotClaim(p) != eClaim)
 			HH_STEP(HHFormat("setSlotClaim(%d, %s)", (int)p, eClaim == SLOTCLAIM_ASSIGNED ? "SLOTCLAIM_ASSIGNED" : "SLOTCLAIM_UNASSIGNED"),
 			        pg->setSlotClaim(p, eClaim));
