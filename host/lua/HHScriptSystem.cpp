@@ -287,10 +287,45 @@ FILogFile* HHScriptSystem::GetLuaLog()
 	return HHLogFileMgr::Get().GetLog("Lua.log", 0);
 }
 
+namespace
+{
+	int HHEngineIpairs(lua_State* L)
+	{
+		luaL_checktype(L, 1, LUA_TTABLE);
+		lua_pushvalue(L, lua_upvalueindex(1)); // the stock ipairs iterator
+		lua_pushvalue(L, 1);
+		lua_rawgeti(L, 1, 0);
+		const bool bHasZero = !lua_isnil(L, -1);
+		lua_pop(L, 1);
+		lua_pushinteger(L, bHasZero ? -1 : 0);
+		return 3;
+	}
+}
+
+void HHScriptSystem::InstallEngineIpairs(lua_State* L)
+{
+	// Take the stock iterator from the stock ipairs, then wrap it.
+	lua_getglobal(L, "ipairs");
+	lua_newtable(L);
+	lua_call(L, 1, 1); // first result: the iterator
+	lua_pushcclosure(L, HHEngineIpairs, 1);
+	lua_setglobal(L, "ipairs");
+}
+
+void HHScriptSystem::HideDebugLibrary()
+{
+	if(!m_L || HHGetOptions().luaDebugLibrary == false)
+		return;
+	lua_pushnil(m_L);
+	lua_setglobal(m_L, "debug");
+	HHLog("Lua: debug library removed from _G (the boot-time VP_LUAAPI thread is done)");
+}
+
 HHScriptSystem::HHScriptSystem() : m_L(NULL), m_iErrors(0), m_pUtility(NULL)
 {
 	m_L = luaL_newstate();
 	luaL_openlibs(m_L);
+	InstallEngineIpairs(m_L);
 
 	// Keep debug.traceback for the host's error handler before scripts can touch debug.
 	lua_getglobal(m_L, "debug");
@@ -301,10 +336,11 @@ HHScriptSystem::HHScriptSystem() : m_L(NULL), m_iErrors(0), m_pUtility(NULL)
 	}
 	lua_pop(m_L, 1);
 	// The game runs with EnableLuaDebugLibrary = 0: UI contexts have no debug table (probe
-	// hh-probe-include-20261025a). The DLL's own CreateLuaThread threads do reach it in the
-	// real game: the DLL's embedded VP_LUAAPI chunk reads debug.getinfo and logs "ran without
-	// errors". So debug stays in _G (what CreateLuaThread environments see) unless
-	// --no-lua-debug hides it everywhere. UI contexts (M3+) must shadow it.
+	// hh-probe-include-20261025a) and neither has the Map Script thread (probe 2,
+	// hh-m5-cdrift-probe2: pcall(debug.getinfo) fails). The boot-time VP_LUAAPI thread does reach
+	// it: its chunk reads debug.getinfo into a local and logs "ran without errors". So debug stays
+	// in _G until boot's CacheGameDatabaseData is done (HideDebugLibrary), or is hidden from the
+	// start with --no-lua-debug.
 	if(!HHGetOptions().luaDebugLibrary)
 	{
 		lua_pushnil(m_L);

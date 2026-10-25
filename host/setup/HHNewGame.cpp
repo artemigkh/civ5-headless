@@ -540,7 +540,14 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// The in-game UI's first frame (trace S1/S3b): SelectSettler (selects the active player's
 	// settler: increments its serialized m_iEverSelectedCount) and the active player's
 	// RebroadcastNotifications.
-	HH_STEP("Game.SelectSettler()", kIf.pGame->SelectSettler());
+	// ASSUMPTION (M5 era-medieval/industrial/future, no trace yet): for a later-era start (game turn > 0)
+	// the real game has no settler selected at the start dump but the unit nearest to plot (0,0), which is
+	// what UpdateSelectionList picks off turn 0 (CvGame::cycleUnits -> CvMap::findUnit): unit 1004 in
+	// era-medieval. So the first frame is taken to call UpdateSelectionList instead of SelectSettler there.
+	if(kIf.pGame->GetGameTurn() == 0)
+		HH_STEP("Game.SelectSettler()", kIf.pGame->SelectSettler());
+	else
+		HH_STEP(HHFormat("Game.UpdateSelectionList() /* start turn %d: no SelectSettler */", kIf.pGame->GetGameTurn()), kIf.pGame->UpdateSelectionList());
 	if(ICvPlayer1* pActive = kIf.pGame->GetPlayer(pg->activePlayer()))
 	{
 		HH_STEP(HHFormat("Game.GetPlayer(%d).RebroadcastNotifications()", (int)pg->activePlayer()), pActive->RebroadcastNotifications());

@@ -518,6 +518,23 @@ base; `include` returns a table of the included paths (empty for a missing name)
 UI notifications are the OUT `Gameplay*`/`Publish*` methods). The host may drop them; Lua that calls
 `Events.X(...)` needs a table whose members accept any call (plan H7).
 
+### 10.5 Library semantics that differ from stock Lua 5.1 [M]
+
+- **`ipairs` visits index 0.** `ipairs(t)` returns the stock iterator, `t` and an initial control of `-1` when
+  `t[0] ~= nil` (`false` counts as non-nil), else `0`; the iterator is the stock one (`f(t,i)` returns `i+1, t[i+1]`
+  or nothing at nil; `f(t,nil)` raises "number expected"; the same function object for every call). So
+  `{[0]=z,a,b}` gives 0,1,2; `{a,b}` 1,2; `{[0]=z}` 0; `{[0]=z,[2]=b}` 0; `{[-1]=n,[0]=z,a}` 0,1; `{[0]=false,a}` 0,1.
+  Measured in the front-end contexts (runs `hh-m5-ipairs-probe`, `hh-m5-ipairs-probe2`, probes
+  `work/headless/probes/ipairs-semantics.lua` and `ipairs-iterator.lua`) and confirmed in the Map Script thread:
+  VP's `Continental_Drift.lua` stores its height grids from `maps[0]` and sums them with `ipairs(maps)`, so the real
+  heights include grid 0 (probe 2, run `hh-m5-cdrift-probe2`). The host installs this `ipairs` in every Lua state it
+  creates (`HHScriptSystem::InstallEngineIpairs`: the main state, so every thread, and the database builder's
+  map-script registration state).
+- **No `debug` library** in the front-end contexts and in the Map Script thread (`pcall(debug.getinfo)` fails there,
+  probe 2). The boot-time `VP_LUAAPI` thread has it: its chunk reads `debug.getinfo` into a local and logs "Embedded
+  script ran without errors!". The host keeps `debug` in `_G` until boot's `CacheGameDatabaseData` is done and then
+  removes it (`HHScriptSystem::HideDebugLibrary`; `--no-lua-debug` hides it from the start).
+
 ## 11. Runtime facts [M]
 
 `HHRUNTIME` on the core thread at the first `Update`: x87 control word 0x027F (53-bit, round to nearest, all

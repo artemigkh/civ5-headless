@@ -447,6 +447,7 @@ namespace
 		}
 		lua_State* L = luaL_newstate();
 		luaL_openlibs(L);
+		HHScriptSystem::InstallEngineIpairs(L);
 		lua_pushcfunction(L, MsPrint);
 		lua_setglobal(L, "print");
 		lua_pushcfunction(L, MsInclude);
