@@ -104,11 +104,16 @@ class CostModel:
         with self.lock:
             curve = self.curves.get(size)
             startup = self.startup.get(size, PRIOR['startup'] * max(1.0, SIZE_FACTOR.get(size, 4.0) ** 0.5))
-        if curve:
+        f = SIZE_FACTOR.get(size, 4.0)
+        prior = lambda n: f * (PRIOR['a'] * n + PRIOR['b'] * n * n)
+        if curve and turns <= curve[-1][0]:
             autoplay = _interpolate(curve, turns)
+        elif curve:
+            # beyond the observed turns: the prior's shape, scaled to where the observation ends
+            t_end, s_end = curve[-1]
+            autoplay = prior(turns) * min(4.0, max(0.25, s_end / max(prior(t_end), 1e-6)))
         else:
-            f = SIZE_FACTOR.get(size, 4.0)
-            autoplay = f * (PRIOR['a'] * turns + PRIOR['b'] * turns * turns)
+            autoplay = prior(turns)
         contention = 1.0 if concurrency <= 4 else 1.1
         return startup + autoplay * contention
 
@@ -119,19 +124,13 @@ class CostModel:
 
 
 def _interpolate(curve, turns):
-    """Cumulative seconds at turns from [(turn, seconds)]; beyond the curve, the last 20% slope growing linearly."""
+    """Cumulative seconds at turns (within the curve) from [(turn, seconds)]."""
     if turns <= curve[0][0]:
         return curve[0][1] * turns / max(curve[0][0], 1)
     for (t0, s0), (t1, s1) in zip(curve, curve[1:]):
         if t0 <= turns <= t1:
             return s0 + (s1 - s0) * (turns - t0) / max(t1 - t0, 1)
-    t_end, s_end = curve[-1]
-    k = max(0, int(len(curve) * 0.8) - 1)
-    t_k, s_k = curve[k]
-    slope = (s_end - s_k) / max(t_end - t_k, 1)
-    extra = turns - t_end
-    growth = slope / max(t_end, 1)  # per-turn cost grows roughly linearly with the turn
-    return s_end + slope * extra + 0.5 * growth * extra * extra
+    return curve[-1][1]
 
 
 def turn_times(folder):

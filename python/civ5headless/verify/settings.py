@@ -83,7 +83,8 @@ class Settings:
     envelope_margin: float = 0.02       # warn this far below the threshold, fail further down
     bias_alpha: float = 0.05            # max-T false-flag rate
     bias_one_sided: float = 0.9         # a flagged series sits on one side of the median this often
-    bias_z_cap: float = 10.0
+    bias_z_cap: float = 5.0             # a turn counts at most this many spreads from the median
+    bias_min_members: int = 16          # fewer ensemble games: the bias check reports (info) but gives no verdict
     min_members: int = 8                # ensemble games needed at a turn for it to count
     stats_from_turn: int = 2            # statistics ignore earlier turns (every game is the same there)
     aggregates: list = field(default_factory=lambda: ['mean', 'max'])

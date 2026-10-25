@@ -489,7 +489,12 @@ def statistics_checks(ctx):
                    if flagged else f"no series flagged ({len(b['series'])} series; global p = {b['pValue']:.2f})")
         if median_shift is not None:
             summary += f'; detects shifts of about {median_shift:.0%} in a typical series'
-        out.append(check('statistics.bias', title_b, b['status'], summary, flagged=flagged, threshold=b['threshold'],
+        status = b['status']
+        if b['members'] < s.bias_min_members:
+            status = 'info'
+            summary = (f"{b['members']} ensemble games are too few for a calibrated verdict (at least {s.bias_min_members}): "
+                       + summary)
+        out.append(check('statistics.bias', title_b, status, summary, flagged=flagged, threshold=b['threshold'],
                          pValue=b['pValue'], series=len(b['series']),
                          mostSensitive=[dict(series=n, label=series.label(n), shift=v) for v, n in shifts[:6]],
                          medianDetectableShift=median_shift))
@@ -543,7 +548,8 @@ def performance_checks(ctx, history=None, entry=None):
         else:
             summary = (f"host {reg['current']:.3f} s/turn against {reg['baseline']:.3f} (median of the last {reg['runs']} runs): "
                        f"{reg['change']:+.0%}" + (f"; changed since the previous run: {', '.join(reg['changed'])}" if reg['changed'] else ''))
-            out.append(check('performance.history', title_h, reg['status'], summary, **reg))
+            out.append(check('performance.history', title_h, reg['status'], summary,
+                             **{k: v for k, v in reg.items() if k != 'status'}))
     if ctx.settings.standard_turns:
         title_s = f'Standard map, {ctx.settings.standard_turns} turns: scale and memory'
         sj = host_timing_job(ctx, 'standard')

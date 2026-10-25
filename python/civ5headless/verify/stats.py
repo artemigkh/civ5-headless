@@ -160,9 +160,12 @@ def envelope(reference, ensemble, lo=0.025, hi=0.975, target=0.95, alpha=0.05, m
 # ---- bias ----
 
 def _robust_scale(sorted_values, median):
-    """The spread used to standardise a deviation: IQR / 1.349, floored at 1% of |median| (and a tiny constant)."""
+    """The spread used to standardise a deviation: IQR / 1.349, floored at 1% of |median|; None when the ensemble
+    has no spread there (an IQR of 0: early turns where most games are alike say nothing about a distribution)."""
     iqr = quantile(sorted_values, 0.75) - quantile(sorted_values, 0.25)
-    return max(iqr / 1.349, 0.01 * abs(median), 1e-9)
+    if iqr <= 1e-12:
+        return None
+    return max(iqr / 1.349, 0.01 * abs(median))
 
 
 def _deviation(s, col, z_cap, leave_out):
@@ -178,6 +181,8 @@ def _deviation(s, col, z_cap, leave_out):
             continue
         med = quantile(values, 0.5)
         scale = _robust_scale(values, med)
+        if scale is None:
+            continue
         zs.append(max(-z_cap, min(z_cap, (v - med) / scale)))
         rel.append(min(abs(med) / scale, 1e6))
         if v > med + 1e-9:
@@ -200,10 +205,14 @@ def bias_model(ensemble, alpha=0.05, z_cap=10.0, min_members=8, from_turn=0, to_
             d = _deviation(g.get(name) or {}, col, z_cap, leave_out=True)
             if d is not None:
                 per[name].append((k, d[0]))
-    moments = {name: (mean(b for _, b in v), max(sd(b for _, b in v), 1e-6)) for name, v in per.items() if len(v) >= 3}
+    moments = {name: (mean(b for _, b in v), max(sd(b for _, b in v), 1e-6)) for name, v in per.items() if len(v) >= 4}
+    # Each member's T against the others' B (mean and sd without its own B), as the reference's T is against the
+    # members': with its own B in the sd, a member's T could never exceed (n - 1) / sqrt(n).
     member_max = [0.0] * len(ensemble)
-    for name, (mu, s) in moments.items():
+    for name in moments:
         for k, b in per[name]:
+            others = [x for j, x in per[name] if j != k]
+            mu, s = mean(others), max(sd(others), 1e-6)
             member_max[k] = max(member_max[k], abs(b - mu) / s)
     tau = quantile(sorted(member_max), 1 - alpha) if member_max else None
     return dict(columns=cols, moments=moments, memberMax=member_max, threshold=tau, alpha=alpha, z_cap=z_cap,

@@ -119,6 +119,8 @@ def envelope_svg(c, width=300, height=150):
 
 def _short(v):
     a = abs(v)
+    if a < 1e-9:
+        return '0'
     if a >= 1e6:
         return f'{v / 1e6:.1f}M'
     if a >= 1e4:
