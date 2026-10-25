@@ -155,14 +155,16 @@ commit it with the change it describes.
   18 cases, tag s7; Standard s2 at K=2, tag s6b), fix any persistent dependence, then normalise UI-only state out of the
   digest (user rule below) and verify the transient cases become identical. Results so far (tag s6, K=2): 15 identical,
   2 transient-only (notification `m_bDismissed`), no persistent dependence. Real game idle (DLL 6C73DC9A deployed).
-- **On resume:** read `work/wt/hh-host/RESUME.md`, check `git -C work/wt/hh-host status` and its log, then relaunch the
-  agent with its work order plus the checkpoint: finish the sweep (K=7 for all 18 cases under a new tag, Standard s2 at
-  K=2); fix each persistent dependence as its own DLL commit; then the UI-only digest normalisation (below). When the sweep is
-  clean: merge hh-host, build the field-map DLL from the merge (`tools/headless/fieldmap_transform.py apply`,
-  `work/build-vp-msvc.py --no-ltcg --pch-memory 400`, `git checkout -- CvGameCoreDLL_Expansion2`), deploy
-  (`work/stage_vp.py --dll/--pdb`, `--verify`, `work/deploy-vp.ps1`), host_first for m5-long and the 7 remaining
-  m5-batch2 cases, then record host-first with rolling dumps (remove `work/test-runs/hh-m5b-matrix.stop` and
-  `hh-m5l-matrix.stop`; m5-long with `--retry-failed`).
+- **Closing M5 (user, 2026-10-25; plan section 9.6):** after the frame-skew sweep (K=7) and the UI-only
+  normalisation (hh-host 75397ee04, being verified) are done: merge hh-host, build the field-map DLL from the merge
+  (`tools/headless/fieldmap_transform.py apply`, `work/build-vp-msvc.py --no-ltcg --pch-memory 400`,
+  `git checkout -- CvGameCoreDLL_Expansion2`), deploy (`work/stage_vp.py --dll/--pdb`, `--verify`, `work/deploy-vp.ps1`),
+  then one Standard game to victory, host-first:
+  `python work/headless/host_first.py work/headless/matrix/m5-final.json --dll <field-map DLL> --mods-db
+  work/headless/db/game-cache-20261025/mods.db --loc-db work/headless/db/game-cache-20261025/Localization-Merged.db
+  --exe <host exe>`, then `python work/headless/record_matrix.py work/headless/matrix/m5-final.json --require-host
+  --host-digest "work/headless-runs/first-{run}/Logs/HeadlessDigest.log" --rolling-dumps 5`, then
+  `parity_run.py hh-m5z-continents-s1 --turns 400`. Identical means M5 is done. The 16 Tiny cases are not re-recorded.
 - **Not scheduled:** moving the host to its own repository, for sharing with other mod developers: notes in
   [headless-repo-migration.md](headless-repo-migration.md). The user will decide later; not a plan step.
 - **Later, once the host is finished (user request 2026-10-25): benchmark Vox Deorum's no-render approach against

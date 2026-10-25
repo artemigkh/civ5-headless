@@ -415,6 +415,10 @@ change.
 4. **Maps:** no scenario maps with fixed players. VP's map scripts, Continental Drift and Communitu among
    them, are in scope and in the parity matrix. Premade maps without fixed players stay in scope.
 5. **Multiplayer-only options** (simultaneous turns, turn timer, pitboss) are out of scope.
+6. **Closing M5 (2026-10-25):** real-game runs are kept short (Tiny maps, host-first, stop at the first lasting
+   difference; UI-only state is not a difference). After the host-only frame-skew sweep is clean and the UI-only
+   normalisation is in, M5 closes with one Standard game to victory on the final DLL (continents-s1:
+   `work/headless/matrix/m5-final.json`): identical to the host means done. The 16 Tiny cases are not re-recorded.
 
 ## Appendix A: engine contract inventory (2026-10-24)
 
