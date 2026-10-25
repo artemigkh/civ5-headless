@@ -19,6 +19,10 @@ The headless logs (digest, runtime, trace) are copied into the run folder at the
 divergence); the dumps are copied to <run>/HeadlessDumps. --stop-turn S quits once turn S is reached while still
 arming --turns N, so a short re-record of a long game keeps the same autoplay count (it is in the digest); the @end
 probes are skipped then.
+
+--host-digest HOST_LOG compares the game's live HeadlessDigest.log with a host run of the same case (same spec,
+DLL and --turns), point by point as the turns pass. At the first difference it writes <run>/divergence.json and
+quits --diverge-turns turns later (default 2), so a long reference costs real-game time only up to its divergence.
 """
 from pathlib import Path
 import argparse, json, shutil, subprocess, sys, time
@@ -26,7 +30,8 @@ import argparse, json, shutil, subprocess, sys, time
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'work/vpbench'))
 sys.path.insert(0, str(ROOT / 'work/headless'))
-import vpbench, gamespec
+sys.path.insert(0, str(ROOT / 'tools/headless'))
+import vpbench, gamespec, hhdigest
 from vpbench import write, utc
 from db_capture import INSTALLED_DLL, sha256
 
@@ -38,6 +43,41 @@ TURN = ("return {turn=Game.GetGameTurn(),autoplay=Game.GetAIAutoPlay(),pause=Gam
         "winner=Game.GetWinner(),state=Game.GetGameState()}")
 VICTORY = ("local ok,v=pcall(function() return Game.GetVictory() end);"
            "return {turn=Game.GetGameTurn(),winner=Game.GetWinner(),victory=ok and v or -2,state=Game.GetGameState()}")
+
+
+class LiveDigest:
+    """Reads the game's HeadlessDigest.log as it grows and compares each new point with a host run's log."""
+
+    def __init__(self, live_path, host_path):
+        self.live_path, self.offset, self.pending = live_path, 0, b''
+        self.host = hhdigest.digest_lines(host_path)
+        self.compared = 0
+        self.first = None
+
+    def poll(self):
+        """Compare the points logged since the last poll; returns the first divergence once there is one."""
+        if self.first or not self.live_path.exists(): return self.first
+        with self.live_path.open('rb') as f:
+            f.seek(self.offset)
+            data = f.read()
+        self.offset += len(data)
+        data = self.pending + data
+        lines = data.split(b'\n')
+        self.pending = lines.pop()  # incomplete last line
+        for raw in lines:
+            line = raw.decode('utf-8', 'replace').rstrip('\r')
+            if not line.startswith('HHDIGEST|'): continue
+            _, fields, order = hhdigest.parse_line(line)
+            key = (fields.get('point'), int(fields['turn']))
+            if key not in self.host: continue
+            self.compared += 1
+            host_fields, host_order = self.host[key]
+            names = [n for n in order + [n for n in host_order if n not in fields] if n not in hhdigest.META]
+            sections = [n for n in names if fields.get(n) != host_fields.get(n) and n not in hhdigest.EXCLUDED]
+            if fields['total'] != host_fields['total'] or sections:
+                self.first = dict(turn=key[1], point=key[0], sections=sections, compared=self.compared)
+                break
+        return self.first
 
 
 def main():
@@ -55,7 +95,11 @@ def main():
     ap.add_argument('--dump-from', type=int, help='With --spec: DLL state dumps at doTurnBegin from this turn')
     ap.add_argument('--dump-to', type=int, help='... to this turn (default: --dump-from)')
     ap.add_argument('--stop-turn', type=int, default=0, help='With --spec and --turns: quit once this turn is reached')
+    ap.add_argument('--host-digest', help='With --spec and --turns: a host run\'s HeadlessDigest.log of the same case; '
+                    'stop --diverge-turns turns after the first difference')
+    ap.add_argument('--diverge-turns', type=int, default=2)
     args = ap.parse_args()
+    if args.host_digest and not (args.spec and args.turns > 0 and args.digest): ap.error('--host-digest needs --spec, --turns and the digest')
     if args.dump_from is not None and args.dump_to is None: args.dump_to = args.dump_from
     probes = []
     for item in args.probe:
@@ -125,8 +169,10 @@ def main():
                 b.call('InGame', ARM.format(turns=args.turns), 'arm-autoplay')
             b.call('LoadScreen', vpbench.CONTINUE, 'continue')
             if args.turns > 0:
+                live = LiveDigest(vpbench.GAME_DOCS / 'Logs/HeadlessDigest.log', Path(args.host_digest)) if args.host_digest else None
                 started = time.monotonic()
                 last_turn, last_change = None, started
+                early = False
                 while True:
                     time.sleep(3)
                     state = b.call('InGame', TURN, 'turn', keep=False)
@@ -134,12 +180,21 @@ def main():
                     if state['turn'] != last_turn: last_turn, last_change = state['turn'], now
                     if state['winner'] >= 0 or state['state'] != 0: break
                     if state['turn'] >= args.turns and state['autoplay'] == 0: break
-                    if args.stop_turn and state['turn'] >= args.stop_turn: break
+                    if args.stop_turn and state['turn'] >= args.stop_turn: early = True; break
+                    if live and not live.first and live.poll():
+                        write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, **live.first))
+                        b.log('diverged', **live.first)
+                    if live and live.first and state['turn'] >= live.first['turn'] + args.diverge_turns: early = True; break
                     if now - last_change >= args.stall_seconds: raise TimeoutError(f'autoplay stalled: {state}')
                     if now - started >= args.max_seconds: raise TimeoutError(f'autoplay over the time cap: {state}')
-                b.log('autoplay_done', **state)
-                if args.stop_turn and state['turn'] >= args.stop_turn and state['winner'] < 0 and state['state'] == 0:
-                    return 0
+                b.log('autoplay_done', early=early, **state)
+                if live:
+                    time.sleep(3)
+                    if not live.first and live.poll():
+                        write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, **live.first))
+                    write(b.run / 'live-compare.json', dict(utc=utc(), hostDigest=args.host_digest, compared=live.compared,
+                                                            first=live.first, stoppedAt=state['turn'], early=early))
+                if early: return 0
                 time.sleep(3)
                 write(b.run / 'victory.json', dict(utc=utc(), **b.call('InGame', VICTORY, 'victory')))
             run_probes('end')
