@@ -92,7 +92,7 @@ class CliTest(unittest.TestCase):
     def test_doctor_runs(self):
         code, out, _ = call(['doctor'])
         self.assertIn(code, (0, 1))
-        self.assertIn('checks:', out)
+        self.assertIn('host games:', out)
         code, out, _ = call(['doctor', '--json'])
         self.assertEqual(set(json.loads(out)['values']), set(config.KEYS))
 
