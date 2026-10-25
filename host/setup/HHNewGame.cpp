@@ -144,6 +144,9 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// mod scripts, game-relative for base scripts and premade maps): the DLL looks up
 	// MapScriptOptions defaults by this string, and LoadFile resolves it.
 	HH_STEP(HHFormat("setMapScriptName(\"%s\")", mapFile.c_str()), pg->setMapScriptName(CvString(mapFile.c_str())));
+	// gamespec.py pregame_lua sets GAMESPEED_STANDARD (ID 2, the DLL's hard-coded case for TURNTIMER_MEDIUM)
+	// first, so Marathon, which sets no timer, gets a fixed one; mirrored here.
+	HH_STEP("setGameSpeed(2 /* GAMESPEED_STANDARD: turn timer pin */)", pg->setGameSpeed((GameSpeedTypes)2));
 	HH_STEP(HHFormat("setGameSpeed(%d)", kSpec["speed"]["id"].AsInt()), pg->setGameSpeed((GameSpeedTypes)kSpec["speed"]["id"].AsInt()));
 	// PreGame state the spec does not set: the real exe keeps it from the previous game of the session
 	// (setGameSpeed sets no turn timer for Marathon). --pregame-turn-timer reproduces such a reference.
@@ -537,7 +540,14 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// The in-game UI's first frame (trace S1/S3b): SelectSettler (selects the active player's
 	// settler: increments its serialized m_iEverSelectedCount) and the active player's
 	// RebroadcastNotifications.
-	HH_STEP("Game.SelectSettler()", kIf.pGame->SelectSettler());
+	// ASSUMPTION (M5 era-medieval/industrial/future, no trace yet): for a later-era start (game turn > 0)
+	// the real game has no settler selected at the start dump but the unit nearest to plot (0,0), which is
+	// what UpdateSelectionList picks off turn 0 (CvGame::cycleUnits -> CvMap::findUnit): unit 1004 in
+	// era-medieval. So the first frame is taken to call UpdateSelectionList instead of SelectSettler there.
+	if(kIf.pGame->GetGameTurn() == 0)
+		HH_STEP("Game.SelectSettler()", kIf.pGame->SelectSettler());
+	else
+		HH_STEP(HHFormat("Game.UpdateSelectionList() /* start turn %d: no SelectSettler */", kIf.pGame->GetGameTurn()), kIf.pGame->UpdateSelectionList());
 	if(ICvPlayer1* pActive = kIf.pGame->GetPlayer(pg->activePlayer()))
 	{
 		HH_STEP(HHFormat("Game.GetPlayer(%d).RebroadcastNotifications()", (int)pg->activePlayer()), pActive->RebroadcastNotifications());
@@ -887,6 +897,28 @@ namespace
 	// on the active player's turn start EndTurnTimerReset, UpdateSelectionList (auto unit cycle: selects
 	// a unit, CvUnit::m_iEverSelectedCount), RebroadcastNotifications and SetBusyUnitUpdatesRemaining(600);
 	// then every frame UpdateTestEndTurn (CvPlayer::m_eEndTurnBlockingType).
+	// The exe closes the slot of a city-state that is no longer alive (M5 era-medieval: the pregame slot
+	// status is SS_CLOSED from the first doTurnBegin after the city-state died, T150). Checked after every
+	// Update (one Update processes one player), so it lands before the next doTurnBegin.
+	void CloseDeadCityStateSlots(HHNewGameInterfaces& kIf)
+	{
+		for(int i = kMaxMajorCivs; i < MAX_CIV_PLAYERS; ++i)
+		{
+			const PlayerTypes p = (PlayerTypes)i;
+			if(kIf.pPreGame->slotStatus(p) != SS_COMPUTER)
+				continue;
+			ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(p);
+			const bool bAlive = pPlayer && pPlayer->IsAlive();
+			if(pPlayer)
+				pPlayer->Destroy();
+			if(!bAlive)
+			{
+				HHLog("setSlotStatus(%d, SS_CLOSED): city-state no longer alive (turn %d)", i, kIf.pGame->GetGameTurn());
+				kIf.pPreGame->setSlotStatus(p, SS_CLOSED);
+			}
+		}
+	}
+
 	void HumanTurnFrame(HHNewGameInterfaces& kIf)
 	{
 		// A popup that is up (WhosWinning) keeps the engine from cycling units and testing the end of
@@ -982,6 +1014,23 @@ namespace
 		"end\n"
 		"return r\n";
 
+	// CP's CityEventPopup.lua (Core Files\New UI) OnPopup for BUTTONPOPUP_MODDER_7, the single-choice city
+	// event result (CvCity::DoStartEvent queues it for a human owner): outside the spy branch it adds the
+	// owner's NOTIFICATION_GENERIC "City Event: <title>" (game state) and shows the popup. %d placeholders:
+	// Data1 (event choice), Data2 (city ID), Data3 (owner). M5 options-5 (events on): the real p00 has it.
+	const char* kCityEventPopupLua =
+		"local iChoice, iCity, iOwner = %d, %d, %d\n"
+		"local info = GameInfo.CityEventChoices[iChoice]\n"
+		"local owner = Players[iOwner]\n"
+		"if not info or not owner then return 0 end\n"
+		"local city = owner:GetCityByID(iCity)\n"
+		"if city == nil then return 0 end\n"
+		"local name = Locale.ConvertTextKey(city:GetNameKey())\n"
+		"local title = Locale.Lookup('TXT_KEY_CITY_EVENT_TITLE', name, info.Description)\n"
+		"local help = Locale.Lookup('TXT_KEY_CITY_EVENT_HELP', name, city:GetScaledEventChoiceValue(iChoice))\n"
+		"owner:AddNotification(NotificationTypes.NOTIFICATION_GENERIC, help, Locale.ConvertTextKey('TXT_KEY_CITY_EVENT_NOTIFICATION') .. title, city:Plot():GetX(), city:Plot():GetY())\n"
+		"return 1\n";
+
 	// SerialEventGameMessagePopup on the UI frame after AddPopup. Only the popups whose Lua has game
 	// state effects are emulated; every popup is logged.
 	void ShowQueuedPopups(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
@@ -992,6 +1041,17 @@ namespace
 			const int eType = (int)popups[i].eButtonPopupType;
 			std::string what = HHFormat("popup %d (data %d,%d,%d) at turn %d", eType, popups[i].iData1, popups[i].iData2,
 			                            popups[i].iData3, kIf.pGame->GetGameTurn());
+			if(eType == BUTTONPOPUP_MODDER_7 && !popups[i].bOption1)
+			{
+				const std::string chunk = HHFormat(kCityEventPopupLua, popups[i].iData1, popups[i].iData2, popups[i].iData3);
+				what += HHFormat(": CityEventPopup notification %d", LuaInt(*kIf.pScripts, chunk.c_str(), -1));
+				kIf.pUI->SetPopupUp(true);
+			}
+			// GreatPersonRewardPopup.lua only displays (no game state) but its popup stays up, which stops the
+			// unit cycle and the end-of-turn test (M5 era-industrial T280: m_eEndTurnBlockingType -1, no unit
+			// selected). TECH_AWARD does not block (identical M5 cases with it at T50).
+			if(eType == BUTTONPOPUP_GREAT_PERSON_REWARD)
+				kIf.pUI->SetPopupUp(true);
 			if(eType == BUTTONPOPUP_WHOS_WINNING)
 			{
 				what += HHFormat(": WhosWinning list mode %d", LuaInt(*kIf.pScripts, kWhosWinningLua, -1));
@@ -1200,6 +1260,7 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		kIf.pEngine->SetInGameCoreUpdate(false);
 		kIf.pEngine->EndOfUpdate();
 		HHDeliverNetMessages(kIf);
+		CloseDeadCityStateSlots(kIf);
 		if(!HHGetOptions().noUiFrame)
 		{
 			ObserverNotificationAging(kIf);

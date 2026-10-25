@@ -66,6 +66,13 @@ public:
 	bool CallTestAny(_In_z_ const char* szName, _In_opt_ ICvEngineScriptSystemArgs1* args, bool& value);
 
 	lua_State* GetMainState() const { return m_L; }
+	// The engine's ipairs (measured, runs hh-m5-ipairs-probe/-probe2): ipairs(t) returns the stock iterator,
+	// t and an initial control of -1 when t[0] ~= nil (else 0), so a loop visits t[0] first. Replaces the
+	// global ipairs of L (every thread of a state inherits it through its environment's __index).
+	static void InstallEngineIpairs(lua_State* L);
+	// The game runs with EnableLuaDebugLibrary = 0: only the boot-time VP_LUAAPI thread reaches debug
+	// (its chunk keeps debug.getinfo in a local). Removes debug from _G once that thread is done.
+	void HideDebugLibrary();
 	// Runs the GameEvents listeners of szName (mode: hook, testall, testany, accum); returns handled.
 	bool DispatchGameEvent(const char* szName, ICvEngineScriptSystemArgs1* pArgs, const char* szMode, double& dValue);
 	// Closes the Lua state (runs every __gc, some of which are DLL code): call while the

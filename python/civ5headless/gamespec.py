@@ -24,6 +24,10 @@ A spec is JSON that mirrors the single-player setup screens (plan section 4.4):
 `resolve` validates names against a game database and writes the resolved spec (IDs included) that
 the host consumes. `lua` prints the front-end Lua that sets the same pregame state in the real game
 (run in the ModsSinglePlayer context before Events.SerialEventStartGame).
+
+The Lua sets GAMESPEED_STANDARD before the spec's speed: CvPreGame::setGameSpeed sets the turn timer for
+every speed but Marathon, which keeps whatever the previous game of the session left (references recorded
+before this pin: civ5headless.exe --pregame-turn-timer N reproduces them). The host mirrors the sequence.
 """
 from pathlib import Path
 import argparse, json, random, secrets, sqlite3, sys
@@ -157,6 +161,9 @@ def pregame_lua(r):
          f'PreGame.SetRandomWorldSize(false);PreGame.SetWorldSize({r["worldSize"]["id"]});PreGame.SetNumMinorCivs({r["cityStates"]})',
          'PreGame.SetLoadWBScenario(false)',
          f'PreGame.SetRandomMapScript(false);PreGame.SetMapScript({json.dumps(r["map"]["file"])})',
+         # Standard first: CvPreGame::setGameSpeed sets the turn timer for every speed except Marathon,
+         # which keeps the previous game's timer; standard pins it (TURNTIMER_MEDIUM) first.
+         'PreGame.SetGameSpeed(GameInfo.GameSpeeds.GAMESPEED_STANDARD.ID)',
          f'PreGame.SetGameSpeed({r["speed"]["id"]});PreGame.SetEra({r["era"]["id"]});PreGame.SetHandicap(0,{r["difficulty"]["id"]})']
     L += [f'PreGame.SetVictory({v["id"]},{str(v["enabled"]).lower()})' for v in r['victories'].values()]
     L.append(f'PreGame.SetMaxTurns({r["maxTurns"]});PreGame.ResetGameOptions();PreGame.ResetMapOptions()')

@@ -712,6 +712,9 @@ namespace
 		HHSetPhase("cache");
 		s.bCacheOk = pDbUtil->CacheGameDatabaseData();
 		HHLog("CacheGameDatabaseData: %s", s.bCacheOk ? "ok" : "FAILED");
+		// The VP_LUAAPI thread ran inside CacheGameDatabaseData; later threads (Map Script, InGame)
+		// see no debug library in the real game.
+		pScripts->HideDebugLibrary();
 		HH_TIMING("cache");
 		HHExportsCheck();
 

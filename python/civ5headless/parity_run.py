@@ -126,7 +126,8 @@ def run_case(ref, a, quiet=False):
         final = f'dump-t{first_turn + turns:03d}'
         result['dumpFinal'] = compare_dump(ref / final, run / final) if turns else result['dumpT000']
         d = result['digest']
-        complete = d['lastHostTurn'] is not None and d['lastRefTurn'] is not None and d['lastHostTurn'] >= d['lastRefTurn']
+        # a reference without digest points (0 turns: load-screen dump only) is judged on its dumps
+        complete = d['lastRefTurn'] is None or (d['lastHostTurn'] is not None and d['lastHostTurn'] >= d['lastRefTurn'])
         identical = d['first'] is None and complete and result['dumpT000']['ok'] and result['dumpFinal']['ok']
         result['status'] = 'identical' if identical else 'different'
     (run / 'parity-result.json').write_text(json.dumps(result, indent=1), encoding='utf-8') if run.exists() else None
