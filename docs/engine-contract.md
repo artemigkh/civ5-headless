@@ -103,6 +103,9 @@ Limits of the traces (read before trusting a "never seen"):
     while paused and do nothing; the initial autosave (`AutoSave(true,false)`, `CvGame::update` at turn slice 0)
     happens in the first unpaused Update. These are Lua calls, invisible in the trace; the host must replicate
     them (or start unpaused and accept that `m_iTurnSlice` differs, which is normalised).
+11. **Some UI calls write serialized state** [S]: `SelectSettler` at game start increments the settler's
+    `m_iEverSelectedCount`; the player options of item 4 are applied by the loopback; UI Lua's by-name
+    `GetGameOption` stores defaults in pregame (normalised). The host must make the first two calls.
 
 ## 2. Threads and locks
 
@@ -232,7 +235,7 @@ The exact values are in `calls/00003-pregame-setup.json` and in the `HHPREGAME` 
 | 18.311 | `NetMessageStaticsReset()`, **`SendPlayerOptions(true)`** | OUT `BeginSendBundle`, 12 × (`getPlayerOption(hash)`, `sendPlayerOption(hash,v)`), `EndSendBundle` |
 | 18.311 | `NetworkSyncronization::Clear{City,Random,Player,Plot,Unit}Deltas()` | MP sync bookkeeping |
 | 18.311 | `NetMessageHandler::ResponsePlayerOption(0, hash, v)` ×12 | loopback delivery, same frame |
-| 18.315 | `SelectSettler()` | OUT `clearSelectedCities`, `ClearSelectionList`, `InsertIntoSelectionList(unit,…)`, `GameplayMinimapUnitSelect`, …; the UI selection only |
+| 18.315 | **`SelectSettler()`** | OUT `clearSelectedCities`, `ClearSelectionList`, `InsertIntoSelectionList(unit,…)`, `GameplayMinimapUnitSelect`, …; also increments the settler's serialized `m_iEverSelectedCount` [S] |
 | 18.342 | `RebroadcastNotifications()` | |
 | 19.238 | first **`Update()`** on the core thread | phase D |
 
@@ -251,7 +254,7 @@ from the loader (OUT `DoMapSetup(2772)`, `CreateLuaThread("WorldBuilderMapLoader
 `DoMapSetup(4160)` (from `CvMap::init` [I]), `CallCFunction(L, …)` (`GenerateRandomMap` [I]) → nested
 `CallFunction(L,0,0)` (the script's `GenerateMap`, 2 s; inside it the map RNG via `Map.Rand`:
 `IsGameCoreThread` → false, `IsGameCoreExecuting` → false per draw; `HasGameCoreLock` → true;
-`GameplayYieldMightHaveChanged`, `GameplayFeatureChanged`), `CallCFunction(L, GetGameInitialItemsOverrides, …)`,
+`GameplayYieldMightHaveChanged`, `GameplayFeatureChanged`), `CallCFunction(L, …)` (`GetGameInitialItemsOverrides` [I]),
 `FreeLuaThread` → `initDiplomacy` (OUT `GameplayMetTeam`, `CallHook("TeamMeet",[t,t])`, barbarians
 `CallHook("DeclareWar",[63,t])`, `GameplayWarStateChanged`) → `setInitialItems` (`GameplayTechAcquired`,
 units: `SetDontShowPopups(true/false)`, `IsUnitSelected` → false, `CallTestAll("PlayerCanTrain"/"CanHavePromotion")`
@@ -293,7 +296,7 @@ call) and returns true. `LoadFile` resolves the relative path through the VFS (`
 7. `SetGraphicsInitialized(true)` (recommended for exactness; the visual paths then run and call no-op OUT
    methods; try false only after digest parity holds), `SetupGraphical()` for players 0–63.
 8. `DoGameStarted()`, `NetMessageStaticsReset()`, `SendPlayerOptions(true)` + deliver the 12
-   `ResponsePlayerOption(0, hash, value)`.
+   `ResponsePlayerOption(0, hash, value)`, then `SelectSettler()` (state: selection count of the settler).
 9. `SetPausePlayer` is a Lua call in the real game: either call nothing (start unpaused) or mimic
    `Game.SetPausePlayer(0)`/`(-1)` through the DLL's Lua API; then arm autoplay (section 7) before the first
    `Update`.
@@ -371,7 +374,7 @@ Non-accessor inbound calls nested in an outbound call (S1, AA100):
 
 | Inside | Callback | Count (AA100) | Host |
 |---|---|---:|---|
-| `GameplayUnitTeleported`, `GameplayUnitVisibility`, `GameplayUnitCreated`, `GameplayUnitEmbark`, `GameplayUnitDestroyed(InCombat)`, `GameplayCityCreated` | `CvDllMap::UpdateDeferredFog()` | 4,999 | not needed: it flushes the deferred-fog plot list, which is filled only when graphics are initialized, and `CvPlot::updateFog` only notifies the engine [S]; with `SetGraphicsInitialized(true)` call it once per `Update` (or at the end of each top-level call) to keep the list from growing |
+| `GameplayUnitTeleported`, `GameplayUnitVisibility`, `GameplayUnitCreated`, `GameplayUnitEmbark`, `GameplayUnitDestroyed(InCombat)`, `GameplayCityCreated` | `CvDllMap::UpdateDeferredFog()` | 4,999 | not needed: it flushes the deferred-fog plot set (filled only when graphics are initialized, bounded by the plot count) and `CvPlot::updateFog` only notifies the engine (`GameplayFOWChanged`) [S] |
 | `GameplayEraChanged` | `CvDllUnit::SetupGraphical()` | 8 | no |
 | `AutoSave` | `SetTimeStr`, `PreGame::write`, `Game/Map/Team/Player::Write`, `WriteSupportingClassData` | 6.5 | no |
 | `ICvUserInterface1::doTurn` | `CvDllPlayer::AddNotification(…, "Losing Gold!", …)` after `GetNumCities`/`GetGold`/`CalculateBaseNetGold` of each player | 1 | no for autoplay: `CvNotifications::Add` returns −1 for non-human players [S] |
@@ -401,8 +404,10 @@ thread `ResponsePlayerOption(0, …)` ×12, `EndTurnTimerReset`, `UpdateSelectio
 `UpdateTestEndTurn` per frame; `GetHeadSelectedUnit` becomes non-null on the UI thread. The game then idles in the
 human turn (S1: 55 more updates, AA100: 40).
 
-Host: call the same Lua (or `CvGame::setAIAutoPlay` through the DLL's Lua API) before the first `Update`, deliver
-the 12 responses, and stop when the turn counter reaches the target; do not emulate the human turn.
+Host: run the same Lua (the DLL's `Game.SetOption` → `CvGame::setOption` and `Game.SetAIAutoPlay` →
+`CvGame::setAIAutoPlay`; quick combat and quick movement are game options, i.e. serialized state, and
+`ResetGameOptions` in the front end cleared the boot-time values) before the first `Update`, deliver the 12
+responses, and stop when the turn counter reaches the target; do not emulate the human turn.
 
 ## 8. Shutdown [M]
 
@@ -438,7 +443,8 @@ Getters are excluded; full generated list in appendix B. "Needed" = the host mus
 | `NetMessageStaticsReset` | new game, shutdown | 2 | yes (cheap) | |
 | `SendPlayerOptions(true)` + `ResponsePlayerOption` | new game, autoplay switches | 1 + 12 per switch | **yes** | finding 4 |
 | `NetworkSyncronization::Clear*Deltas` | new game (+ S1 end of T0) | 5 | no [I] | MP sync |
-| `SelectSettler`, `UpdateSelectionList`, `SelectionListIgnoreBuildingDefense`, `ResetPathFinder` | new game, autoplay end | 1–10 | no | UI selection; `ResetPathFinder` is a no-op [S] |
+| `SelectSettler` | new game | once | **yes** | `CvGame::selectUnit` increments the settler's `m_iEverSelectedCount`, which is serialized (unit data of player 0) [S] |
+| `UpdateSelectionList`, `SelectionListIgnoreBuildingDefense`, `ResetPathFinder` | autoplay end, nested in selection calls | 1–10 | no | `UpdateSelectionList` selects (and counts) a unit of the returning human, after the target turn; `ResetPathFinder` is a no-op [S] |
 | `RebroadcastNotifications` | new game, active-player changes | 3 | no | |
 | `CvDllGame::Update` | loop, core | one per player per turn | **yes** | 6.1 |
 | `ResponsePledgeMinorProtection`, `ResponseMinorCivBullyGold` | loop, UI | 19, 3 per 100 turns | **yes** | 6.4 |
