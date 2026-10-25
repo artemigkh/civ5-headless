@@ -80,6 +80,8 @@ namespace
 		"                       and turn-NNNN-final.json in vpbench's format ({utc, seconds, data})\n"
 		"  --checkpoint-every <n>    newgame: checkpoint turns that are multiples of n (default 1)\n"
 		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
+		"  --heap-perturb <seed> address-perturbation self-test (results must not change): random heap spacer\n"
+		"                       allocations interleaved with the DLL's allocations, and the game DLL rebased\n"
 		"  --game-log-flags <m> with game logging: 1 AILog, 2 AIPerfLog, 4 BuilderAILog, 8 PlayerAndCityAILogSplit\n"
 		"                       (default 15, as the reference profile; diagnostics of log-dependent results)\n"
 		"  --rand-log <flags>   config.ini RandLog: 5 = every synced RNG call incl. map generation (Logs\\RandCalls.csv)\n"
@@ -215,6 +217,7 @@ namespace
 			else if(a == "--checkpoint-every") { o.checkpointEvery = atoi(v.c_str()); ++i; }
 			else if(a == "--rand-log") { o.randLog = atoi(v.c_str()); ++i; }
 			else if(a == "--game-log-flags") { o.gameLogFlags = atoi(v.c_str()); ++i; }
+			else if(a == "--heap-perturb") { o.heapPerturb = (unsigned int)strtoul(v.c_str(), NULL, 10); ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
@@ -567,7 +570,21 @@ namespace
 		HHEngineUtility* pEngine = new HHEngineUtility(pScripts);
 		HHUserInterface* pUI = new HHUserInterface();
 
+		// --heap-perturb: map the game DLL somewhere else than usual (reserve its normal base and a
+		// seed-sized block first), so global and static addresses differ too.
+		if(o.heapPerturb)
+		{
+			HMODULE hProbe = LoadLibraryExW(HHWiden(o.dllPath).c_str(), NULL, DONT_RESOLVE_DLL_REFERENCES);
+			void* pBase = hProbe;
+			if(hProbe)
+				FreeLibrary(hProbe);
+			void* pBlock = pBase ? VirtualAlloc(pBase, 64 * 1024, MEM_RESERVE, PAGE_NOACCESS) : NULL;
+			void* pExtra = VirtualAlloc(NULL, (SIZE_T)(1 + o.heapPerturb % 61) * 1024 * 1024, MEM_RESERVE, PAGE_NOACCESS);
+			HHLog("heap-perturb %u: game DLL normal base %p (reserved: %s), extra reservation %p", o.heapPerturb, pBase, pBlock ? "yes" : "no", pExtra);
+		}
 		HMODULE hGame = LoadLibraryExW(HHWiden(o.dllPath).c_str(), NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+		if(o.heapPerturb)
+			HHLog("heap-perturb: game DLL loaded at %p", (void*)hGame);
 		if(!hGame)
 		{
 			s.error = HHFormat("cannot load the game DLL (error %lu)", GetLastError());
