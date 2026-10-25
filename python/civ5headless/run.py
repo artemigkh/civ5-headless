@@ -249,9 +249,12 @@ def newgame(a, quiet=False, cfg=None):
         game_dir = getattr(a, 'game_dir', None) or cfg.require('game_dir', 'pass --game-dir')
         dll = Path(a.dll or cfg.require('dll', 'pass --dll')).resolve()
         exe = dbcache.find_exe(a.exe, cfg)
-        profiles = None
-        if not getattr(a, 'no_profiles', False):
-            profiles = Path(getattr(a, 'profiles', None) or cfg.require('profiles', 'pass --profiles (or --no-profiles)')).resolve()
+        no_profiles = bool(getattr(a, 'no_profiles', False))
+        profiles = None if no_profiles else getattr(a, 'profiles', None) or cfg.profiles
+        profiles = Path(profiles).resolve() if profiles else None
+        if not profiles and not no_profiles:
+            run.log('warning', quiet=quiet, message="no profiles folder configured: the host looks for profiles\\ next to "
+                    "its exe and in the folders above (set profiles in civ5headless.toml, or pass --profiles or --no-profiles)")
         fingerprint = fingerprint_options(a)
         lua_probes = probes.fingerprint_probes(cfg, run.dir, **fingerprint) if fingerprint else []
         lua_probes += [Path(p).resolve() for p in getattr(a, 'lua_probe', None) or []]
@@ -278,7 +281,10 @@ def newgame(a, quiet=False, cfg=None):
             if mods_db: cmd += ['--mods-db', str(Path(mods_db).resolve())]
         if loc_db: cmd += ['--loc-db', str(Path(loc_db).resolve())]
         cmd += ['--game-dir', str(game_dir)]
-        cmd += ['--profiles', str(profiles)] if profiles else ['--no-profiles']
+        if no_profiles:
+            cmd += ['--no-profiles']
+        elif profiles:
+            cmd += ['--profiles', str(profiles)]
         if getattr(a, 'no_addins', False): cmd += ['--no-addins']
         for name in getattr(a, 'skip_addin', None) or []:
             cmd += ['--skip-addin', name]

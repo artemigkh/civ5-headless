@@ -20,6 +20,11 @@ A spec is JSON that mirrors the single-player setup screens (plan section 4.4):
 - "random" choices made by the setup screen itself (map script, size) are resolved here from the
   spec seed, so the resolved spec is fully explicit; the reference run uses the resolved spec.
 - Seeds default to fresh random values; the resolved spec records them.
+- `minorCivs` (optional) lists MINOR_CIV_* types, at most `cityStates` of them, for the host: resolved as
+  [{"index": i, "slot": MAX_MAJOR_CIVS + i, "type": T, "id": N}], with MAX_MAJOR_CIVS from the database's Defines
+  (43-civ DLLs have more major slots). The host honours it where it chooses the city-states itself (DLLs that leave
+  the choice to the exe). The real game cannot be told: its PreGame Lua API has no SetMinorCivType, so `lua` emits
+  nothing for it; a real-game comparison fills it with the city-states the real game chose.
 
 `resolve` validates names against a game database (--db; default: the configured database, or the
 cached build for the configured mods and DLL) and writes the resolved spec (IDs included) that
@@ -64,6 +69,28 @@ def _find_file(db, sql, name, what):
     if len(found) != 1:
         raise SpecError(f'{what} {name!r} matches {len(found)} entries' + (f': {found}' if found else ''))
     return found[0]
+
+
+def max_major_civs(db):
+    """Defines.MAX_MAJOR_CIVS of the game database (the DLL's major slots), else the stock 22."""
+    try:
+        row = db.execute("select Value from Defines where Name = 'MAX_MAJOR_CIVS'").fetchone()
+    except sqlite3.Error:
+        row = None
+    return int(row[0]) if row and row[0] is not None else MAX_MAJOR_CIVS
+
+
+def _minor_civs(db, types, city_states):
+    """The resolved minorCivs: [{index, slot, type, id}], city-state i in slot MAX_MAJOR_CIVS + i."""
+    if not isinstance(types, list) or not all(isinstance(t, str) for t in types):
+        raise SpecError('minorCivs must be a list of MINOR_CIV_* types')
+    if len(types) > city_states:
+        raise SpecError(f'minorCivs lists {len(types)} city-states, more than cityStates ({city_states})')
+    dup = sorted({t for t in types if types.count(t) > 1})
+    if dup:
+        raise SpecError(f'minorCivs lists {dup} more than once')
+    first = max_major_civs(db)
+    return [{'index': i, 'slot': first + i, 'type': t, 'id': _type_id(db, 'MinorCivilizations', t)} for i, t in enumerate(types)]
 
 
 def resolve(spec, db_path):
@@ -130,6 +157,8 @@ def _resolve(spec, db):
         raise SpecError(f'majors must be 1..{MAX_MAJOR_CIVS - 1} (autoplay needs a free major slot for the observer)')
     out['majors'] = majors
     out['cityStates'] = int(spec.get('cityStates', world[3]))
+    if spec.get('minorCivs') is not None:
+        out['minorCivs'] = _minor_civs(db, spec['minorCivs'], out['cityStates'])
     out['maxTurns'] = int(spec.get('maxTurns', 0))
 
     enabled = spec.get('victories')
@@ -164,7 +193,8 @@ def _resolve(spec, db):
 
 
 def pregame_lua(r):
-    """Front-end Lua that sets the resolved spec's pregame state (ModsSinglePlayer context)."""
+    """Front-end Lua that sets the resolved spec's pregame state (ModsSinglePlayer context). minorCivs has no part in
+    it: the PreGame Lua API cannot set a city-state's type."""
     L = ['PreGame.SetLeaderName(0,"");PreGame.SetCivilizationDescription(0,"");PreGame.SetCivilizationShortDescription(0,"");PreGame.SetCivilizationAdjective(0,"")',
          f'for i=0,{MAX_MAJOR_CIVS - 1} do PreGame.SetCivilization(i,-1);PreGame.SetTeam(i,i) end',
          f'PreGame.SetRandomWorldSize(false);PreGame.SetWorldSize({r["worldSize"]["id"]});PreGame.SetNumMinorCivs({r["cityStates"]})',

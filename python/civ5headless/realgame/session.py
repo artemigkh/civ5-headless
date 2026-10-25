@@ -5,6 +5,7 @@
     s.set_mods(mod_ids)                         # enable exactly these mods, activate them      -> dict
     s.start_game(spec, map_seed, sync_seed, lua_probes=[...], fingerprint=True)   # setup, start, load, probes -> dict
     s.autoplay(turns, max_seconds=None)         # observer autoplay; per-turn wall times        -> dict
+    s.replay_data()                             # every major's replay datasets (in a game)     -> dict
     s.to_main_menu()                            # for the next setup in the same session        -> dict
     s.collect_logs(dest)                        # the game's logs written this session          -> [names]
     s.process_stats()                           # peak working set, peak private bytes, CPU     -> dict
@@ -83,10 +84,32 @@ local mods={};local okm,act=pcall(Modding.GetActivatedMods);if okm and act then 
 return {tables=#names,failed=failed,activated=mods}
 '''
 LOGS = ('Lua.log', 'Database.log', 'HeadlessDigest.log', 'HeadlessRuntime.log', 'HeadlessTrace-*.log')
+# Replay data: the players and the data of the host's final Lua (run.FINAL, replayData), fetched one player per call
+# with each dataset as one "turn=value,..." string: the tuner's result limits (10000 items, 256 KiB) are too small for
+# every player's series of a long game in one table.
+MAJORS = 'p and p:IsEverAlive() and not p:IsBarbarian() and not p:IsMinorCiv() and not p:IsObserver()'
+REPLAY_OWNERS = f'local o={{}};for owner=0,63 do local p=Players[owner];if {MAJORS} then o[#o+1]=owner end end;return o'
+REPLAY_PLAYER = r'''
+local p=Players[%d]
+local ok,d=pcall(function() return p:GetReplayData() end)
+if not ok or not d then return {} end
+local o={}
+for k,s in pairs(d) do local a={};for t,x in pairs(s) do a[#a+1]=tostring(t)..'='..tostring(x) end;o[k]=table.concat(a,',') end
+return o
+'''
 
 
 class SessionError(RuntimeError):
     pass
+
+
+def _number(text):
+    """A number Lua's tostring printed: int when integral (the text itself when it is no number)."""
+    try:
+        value = float(text)
+    except ValueError:
+        return text
+    return int(value) if value.is_integer() else value
 
 
 def as_list(value):
@@ -421,6 +444,20 @@ class RealGameSession:
                     cpuSeconds=s.get('CPUSeconds'), workingSet=s.get('WorkingSet'), privateBytes=s.get('PrivateBytes'),
                     peakVirtual=s.get('PeakVirtual'), pid=self.game.pid, alive=self.alive(), launches=self.launches,
                     earlier=list(self.earlier))
+
+    def replay_data(self):
+        """Every major civ's replay data as the host's run folder has it (replay-data.json):
+        {player: {REPLAYDATASET_X: [[turn, value], ...]}}, turns in order."""
+        if not self.in_game:
+            raise SessionError('start_game() first')
+        owners = self.call('InGame', REPLAY_OWNERS, 'replay-owners') or []
+        out = {}
+        for owner in (owners.values() if isinstance(owners, dict) else owners):
+            sets = self.call('InGame', REPLAY_PLAYER % int(owner), f'replay-data-{int(owner)}') or {}
+            out[str(int(owner))] = {name: sorted([_number(t), _number(v)] for t, _, v in
+                                                 (pair.partition('=') for pair in text.split(',') if pair))
+                                    for name, text in sets.items()}
+        return out
 
     def game_database(self, dest):
         """Export the database the game holds in memory into dest (a new SQLite file); returns dest."""
