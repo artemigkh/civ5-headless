@@ -3,8 +3,9 @@
     s = RealGameSession(cfg, run_dir)
     s.launch()                                  # start the game, wait for the main menu       -> dict
     s.set_mods(mod_ids)                         # enable exactly these mods, activate them      -> dict
-    s.start_game(spec, map_seed, sync_seed, lua_probes=[...])   # setup, start, load, probes   -> dict
+    s.start_game(spec, map_seed, sync_seed, lua_probes=[...], fingerprint=True)   # setup, start, load, probes -> dict
     s.autoplay(turns, max_seconds=None)         # observer autoplay; per-turn wall times        -> dict
+    s.replay_data()                             # every major's replay datasets (in a game)     -> dict
     s.to_main_menu()                            # for the next setup in the same session        -> dict
     s.collect_logs(dest)                        # the game's logs written this session          -> [names]
     s.process_stats()                           # peak working set, peak private bytes, CPU     -> dict
@@ -34,7 +35,7 @@ from pathlib import Path
 import shutil
 import time
 
-from .. import spec as specmod, winproc
+from .. import probes as probes_mod, spec as specmod, winproc
 from ..run import utc, write
 from . import launch as launchmod, mods as modsmod, seeds, tuner
 
@@ -83,10 +84,32 @@ local mods={};local okm,act=pcall(Modding.GetActivatedMods);if okm and act then 
 return {tables=#names,failed=failed,activated=mods}
 '''
 LOGS = ('Lua.log', 'Database.log', 'HeadlessDigest.log', 'HeadlessRuntime.log', 'HeadlessTrace-*.log')
+# Replay data: the players and the data of the host's final Lua (run.FINAL, replayData), fetched one player per call
+# with each dataset as one "turn=value,..." string: the tuner's result limits (10000 items, 256 KiB) are too small for
+# every player's series of a long game in one table.
+MAJORS = 'p and p:IsEverAlive() and not p:IsBarbarian() and not p:IsMinorCiv() and not p:IsObserver()'
+REPLAY_OWNERS = f'local o={{}};for owner=0,63 do local p=Players[owner];if {MAJORS} then o[#o+1]=owner end end;return o'
+REPLAY_PLAYER = r'''
+local p=Players[%d]
+local ok,d=pcall(function() return p:GetReplayData() end)
+if not ok or not d then return {} end
+local o={}
+for k,s in pairs(d) do local a={};for t,x in pairs(s) do a[#a+1]=tostring(t)..'='..tostring(x) end;o[k]=table.concat(a,',') end
+return o
+'''
 
 
 class SessionError(RuntimeError):
     pass
+
+
+def _number(text):
+    """A number Lua's tostring printed: int when integral (the text itself when it is no number)."""
+    try:
+        value = float(text)
+    except ValueError:
+        return text
+    return int(value) if value.is_integer() else value
 
 
 def as_list(value):
@@ -95,9 +118,10 @@ def as_list(value):
 
 
 def hhseeds(log_path, since):
-    """The HHSEEDS lines (as dicts) of a HeadlessDigest.log written after since (epoch seconds), else []."""
+    """The HHSEEDS lines (as dicts) of a HeadlessDigest.log written after since (epoch seconds), else []. File times
+    are coarser than time.time() (a write right after since can carry an earlier time), hence the second of slack."""
     p = Path(log_path)
-    if not p.is_file() or p.stat().st_mtime < since:
+    if not p.is_file() or p.stat().st_mtime < since - 1:
         return []
     lines = [l for l in p.read_text(encoding='utf-8', errors='replace').splitlines() if l.startswith('HHSEEDS|')]
     return [dict(f.partition('=')[::2] for f in l.split('|')[1:]) for l in lines]
@@ -274,9 +298,15 @@ class RealGameSession:
             spec = specmod.resolve(spec, dbcache.database(self.cfg, log=self.log)[0])
         return spec
 
-    def start_game(self, spec, map_seed=None, sync_seed=None, lua_probes=()):
+    def start_game(self, spec, map_seed=None, sync_seed=None, lua_probes=(), fingerprint=None):
         """Set up and start a game from a spec (resolved, or resolved here against the configured database) and
-        leave it loaded and paused at turn 0. The seeds default to the spec's; None for both means the clock."""
+        leave it loaded and paused at turn 0. The seeds default to the spec's; None for both means the clock.
+        lua_probes run in order in InGame, where and when the host runs its --lua-probe files; fingerprint (True,
+        or dict(every=K, turns=[...], split=N)) runs the fingerprint probe first, with the files a host run uses
+        (probes.fingerprint_probes)."""
+        if fingerprint:
+            options = probes_mod.fingerprint_options(fingerprint)
+            lua_probes = probes_mod.fingerprint_probes(self.cfg, self.dir, **options) + list(lua_probes)
         if self.game is None:
             raise SessionError('launch() first')
         if not self.alive():
@@ -414,6 +444,20 @@ class RealGameSession:
                     cpuSeconds=s.get('CPUSeconds'), workingSet=s.get('WorkingSet'), privateBytes=s.get('PrivateBytes'),
                     peakVirtual=s.get('PeakVirtual'), pid=self.game.pid, alive=self.alive(), launches=self.launches,
                     earlier=list(self.earlier))
+
+    def replay_data(self):
+        """Every major civ's replay data as the host's run folder has it (replay-data.json):
+        {player: {REPLAYDATASET_X: [[turn, value], ...]}}, turns in order."""
+        if not self.in_game:
+            raise SessionError('start_game() first')
+        owners = self.call('InGame', REPLAY_OWNERS, 'replay-owners') or []
+        out = {}
+        for owner in (owners.values() if isinstance(owners, dict) else owners):
+            sets = self.call('InGame', REPLAY_PLAYER % int(owner), f'replay-data-{int(owner)}') or {}
+            out[str(int(owner))] = {name: sorted([_number(t), _number(v)] for t, _, v in
+                                                 (pair.partition('=') for pair in text.split(',') if pair))
+                                    for name, text in sets.items()}
+        return out
 
     def game_database(self, dest):
         """Export the database the game holds in memory into dest (a new SQLite file); returns dest."""

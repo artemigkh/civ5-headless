@@ -18,9 +18,12 @@ QUEUE.json (relative paths are relative to the queue file's folder):
    "jobs": [{"name": "extra", "turns": 250}]}  # optional explicit jobs (defaults apply)
 
 Job keys: spec, turns, dll, db (a built database; otherwise built once per (mods input, DLL) and cached),
-modsDir, modsDb, locDb, exe, gameDir, seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery,
-maxSeconds, stallSeconds, maxMemoryMB, prune, hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default
-true). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, db) come from the configuration (c5h doctor).
+modsDir, modsDb, mods (the mod set as ["ID[:VER]", ...]: a generated registry instead of modsDb), noMods, locDb,
+exe, gameDir, profiles, noProfiles, skipAddins, noAddins, fingerprint (true, or {"every": K, "turns": [...],
+"split": N}), seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery, maxSeconds, stallSeconds,
+maxMemoryMB, prune, hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true); they are the c5h run
+options of the same name. Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the
+configuration (c5h doctor).
 
 State: QUEUE.state.json (next to the queue). A restart skips completed runs (status.json completed), re-queues
 interrupted ones (their folder is kept as <name>-rN) and leaves failed ones failed unless --retry-failed.
@@ -34,13 +37,13 @@ import argparse, collections, json, os, subprocess, sys, threading, time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from . import config, dbcache, winproc
+from . import config, dbcache, modsdb, winproc
 from . import run as host_run
 from .compare import digest
 
 DEFAULTS = dict(turns=100, diagnostics=0, checkpointEvery=1, maxSeconds=7200, stallSeconds=900, maxMemoryMB=3500,
                 prune=True, hostArgs=[])
-PATH_KEYS = ('spec', 'dll', 'db', 'modsDir', 'modsDb', 'locDb', 'exe', 'gameDir')
+PATH_KEYS = ('spec', 'dll', 'db', 'modsDir', 'modsDb', 'locDb', 'exe', 'gameDir', 'profiles')
 
 
 def utc(): return datetime.now(timezone.utc).isoformat()
@@ -73,6 +76,8 @@ def expand(queue, qpath):
         j['luaProbes'] = [rel(base, p) for p in j.get('luaProbes') or []]
         if not j.get('spec'):
             raise SystemExit(f"job {j['name']}: spec is required")
+        if (j.get('mods') is not None or j.get('noMods')) and j.get('modsDb'):
+            raise SystemExit(f"job {j['name']}: mods and noMods exclude modsDb (the registry is generated)")
     return jobs
 
 
@@ -110,10 +115,14 @@ class Queue:
         return host_run.read(self.run_dir(job) / 'status.json') or {}
 
 
-def job_args(job, folder, db, affinity):
-    return SimpleNamespace(run=None, run_dir=str(folder), spec=job['spec'], target_turn=int(job['turns']), dll=job.get('dll'), db=str(db),
-                           mods_dir=job.get('modsDir'), mods_db=job.get('modsDb'), loc_db=job.get('locDb'), exe=job.get('exe'),
-                           game_dir=job.get('gameDir'), lua_probe=job.get('luaProbes'), heap_perturb=job.get('heapPerturb'),
+def job_args(job, folder, inputs, affinity):
+    """run.py's namespace for a job; inputs: its database and mods (databases())."""
+    return SimpleNamespace(run=None, run_dir=str(folder), spec=job['spec'], target_turn=int(job['turns']), dll=job.get('dll'),
+                           db=inputs['db'], mods_dir=inputs['modsDir'], mods_db=inputs['modsDb'], mod=None,
+                           no_mods=bool(job.get('noMods')), loc_db=job.get('locDb'), exe=job.get('exe'),
+                           game_dir=job.get('gameDir'), profiles=job.get('profiles'), no_profiles=bool(job.get('noProfiles')),
+                           skip_addin=list(job.get('skipAddins') or []), no_addins=bool(job.get('noAddins')),
+                           fingerprint=job.get('fingerprint'), lua_probe=job.get('luaProbes'), heap_perturb=job.get('heapPerturb'),
                            frame_skew=job.get('frameSkew'),
                            diagnostics=int(job.get('diagnostics') or 0), improved_mask=job.get('improvedMask'), ab_role=job.get('abRole'),
                            checkpoint_every=int(job.get('checkpointEvery') or 1), stall_seconds=job.get('stallSeconds'),
@@ -149,22 +158,27 @@ def prepare(q, retry_failed):
 
 
 def databases(q, jobs):
-    """Build (or find) the database of every job: once per (mods input, DLL) through dbcache."""
-    out = {}
+    """{job name: dict(db, modsDir, modsDb)}: every job's database, built (or found) once per (mods input, DLL) through
+    dbcache, and its mods input (a mod set's generated registry, also once per mod set)."""
+    out, built = {}, {}
     cfg = q.cfg
     for job in jobs:
+        mods = [] if job.get('noMods') else job.get('mods')
+        mods_dir, mods_db = modsdb.resolve(cfg, mods, job.get('modsDir'), job.get('modsDb'), log=q.log)
+        inputs = dict(modsDir=str(mods_dir) if mods_dir else None, modsDb=str(mods_db) if mods_db else None)
+        if job.get('noMods'):
+            inputs.update(modsDir=None, modsDb=None)  # run.py passes --no-mods to the host
         if job.get('db') or cfg.db:
-            out[job['name']] = str(Path(job.get('db') or cfg.db).resolve())
+            out[job['name']] = dict(inputs, db=str(Path(job.get('db') or cfg.db).resolve()))
             continue
         dll = job.get('dll') or cfg.require('dll')
-        key = (job.get('modsDir'), job.get('modsDb'), dll, job.get('exe'))
-        if key not in out:
+        key = (str(mods_dir), str(mods_db), str(dll), job.get('exe'))
+        if key not in built:
             t = time.monotonic()
-            db, info = dbcache.database(cfg, mods_dir=job.get('modsDir'), mods_db=job.get('modsDb'), dll=dll, exe=job.get('exe'),
-                                        log=q.log)
-            out[key] = str(db)
+            db, info = dbcache.database(cfg, mods_dir=mods_dir, mods_db=mods_db, dll=dll, exe=job.get('exe'), log=q.log)
+            built[key] = str(db)
             q.log(f'database {info.get("cacheKey")} for {Path(dll).parent.name}/{Path(dll).name}: {db} ({time.monotonic() - t:.1f} s)')
-        out[job['name']] = out[key]
+        out[job['name']] = dict(inputs, db=built[key])
     return out
 
 

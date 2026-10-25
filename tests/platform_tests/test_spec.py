@@ -21,6 +21,7 @@ SCHEMA = [
     'CREATE TABLE Victories(ID INTEGER, Type TEXT)',
     'CREATE TABLE GameOptions(ID INTEGER, Type TEXT, SupportsSinglePlayer INTEGER)',
     'CREATE TABLE Civilizations(ID INTEGER, Type TEXT, Playable INTEGER)',
+    'CREATE TABLE MinorCivilizations(ID INTEGER, Type TEXT)',
 ]
 ROWS = {
     'Worlds': [(0, 'WORLDSIZE_DUEL', 2, 4), (1, 'WORLDSIZE_TINY', 4, 8), (3, 'WORLDSIZE_STANDARD', 8, 16)],
@@ -41,6 +42,7 @@ ROWS = {
     'Victories': [(0, 'VICTORY_TIME'), (1, 'VICTORY_SPACE_RACE'), (2, 'VICTORY_DOMINATION')],
     'GameOptions': [(0, 'GAMEOPTION_RAGING_BARBARIANS', 1), (1, 'GAMEOPTION_PITBOSS', 0)],
     'Civilizations': [(0, 'CIVILIZATION_AMERICA', 1), (1, 'CIVILIZATION_GREECE', 1), (2, 'CIVILIZATION_MINOR', 0)],
+    'MinorCivilizations': [(0, 'MINOR_CIV_GENEVA'), (4, 'MINOR_CIV_SIDON'), (7, 'MINOR_CIV_ZURICH')],
 }
 
 
@@ -139,6 +141,26 @@ class ResolveTest(unittest.TestCase):
         for s in bad:
             with self.subTest(spec=s), self.assertRaises(spec.SpecError):
                 self.resolve(dict(s, seeds={'map': 1, 'sync': 1}))
+
+    def test_minor_civs(self):
+        r = self.resolve({'map': {'size': 'WORLDSIZE_TINY'}, 'minorCivs': ['MINOR_CIV_SIDON', 'MINOR_CIV_GENEVA']})
+        self.assertEqual(r['minorCivs'], [{'index': 0, 'slot': 22, 'type': 'MINOR_CIV_SIDON', 'id': 4},
+                                          {'index': 1, 'slot': 23, 'type': 'MINOR_CIV_GENEVA', 'id': 0}])
+        self.assertNotIn('minorCivs', self.resolve({}))  # absent unless given: resolved specs stay as they were
+        self.assertNotIn('SIDON', spec.pregame_lua(r))
+        self.assertNotIn('MinorCiv', spec.pregame_lua(r).replace('SetNumMinorCivs', '').replace('GetNumMinorCivs', ''))
+        con = sqlite3.connect(self.db)
+        con.execute('CREATE TABLE Defines(Name TEXT, Value INTEGER)')
+        con.execute("INSERT INTO Defines VALUES('MAX_MAJOR_CIVS', 43)")
+        con.commit()
+        con.close()
+        r = self.resolve({'minorCivs': ['MINOR_CIV_ZURICH']})
+        self.assertEqual(r['minorCivs'], [{'index': 0, 'slot': 43, 'type': 'MINOR_CIV_ZURICH', 'id': 7}])
+        for bad in ({'minorCivs': ['MINOR_CIV_ATLANTIS']}, {'minorCivs': 'MINOR_CIV_SIDON'},
+                    {'minorCivs': ['MINOR_CIV_SIDON', 'MINOR_CIV_SIDON']},
+                    {'cityStates': 1, 'minorCivs': ['MINOR_CIV_SIDON', 'MINOR_CIV_GENEVA']}):
+            with self.subTest(spec=bad), self.assertRaises(spec.SpecError):
+                self.resolve(bad)
 
     def test_ambiguous_suffix(self):
         con = sqlite3.connect(self.db)

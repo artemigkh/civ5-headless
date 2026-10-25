@@ -57,6 +57,22 @@ class DoctorTest(unittest.TestCase):
         self.assertEqual(self.cfg.config_ini.read_bytes(), INI.replace('EnableTuner = 1', 'EnableTuner = 0').replace(
             'MapRandSeed = 0', 'MapRandSeed = 1').replace('SyncRandSeed = 0', 'SyncRandSeed = 2').encode())
 
+    def test_profiles_and_probes(self):
+        self.assertEqual(self.check('profiles')[0], 'FAIL')
+        self.assertEqual(self.check('probes')[0], 'warn')
+        root = Path(self.tmp.name)
+        self.cfg.profiles, self.cfg.probes = root / 'profiles', root / 'probes'
+        (root / 'profiles/a').mkdir(parents=True)
+        (root / 'profiles/a/profile.json').write_text('{}', encoding='utf-8')
+        (root / 'probes').mkdir()
+        self.assertEqual(self.check('profiles')[0], 'ok')
+        self.assertEqual(self.check('UI emulation profiles'), ('warn', '1 profiles, no known-ui-files.json'))
+        (root / 'profiles/known-ui-files.json').write_text('{}', encoding='utf-8')
+        self.assertEqual(self.check('UI emulation profiles'), ('ok', '1 profiles'))
+        self.assertEqual(self.check('fingerprint probe')[0], 'warn')
+        (root / 'probes/fingerprint.lua').write_text('', encoding='utf-8')
+        self.assertEqual(self.check('fingerprint probe')[0], 'ok')
+
     def test_active_mod_not_installed(self):
         mods_db = self.cfg.cache_dir / 'Civ5ModsDatabase.db'
         mods_db.write_bytes(b'')

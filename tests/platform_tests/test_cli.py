@@ -9,11 +9,13 @@ import re
 import sqlite3
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
 from civ5headless import cli, config, queue, run
 
+from .test_modsdb import ADDON_ID, BASE_ID, make_mods
 from .test_spec import make_db
 
 REPO = Path(__file__).resolve().parents[2]
@@ -52,7 +54,8 @@ class ImportTest(unittest.TestCase):
         self.assertEqual(project['project']['requires-python'], '>=3.11')
         self.assertEqual(project['project']['dependencies'], [])
         self.assertEqual(project['tool']['setuptools']['package-dir'], {'': 'python'})
-        self.assertEqual(project['tool']['setuptools']['package-data'], {'civ5headless.realgame': ['*.lua']})
+        self.assertEqual(project['tool']['setuptools']['package-data'], {'civ5headless': ['data/*.json'],
+                                                                         'civ5headless.realgame': ['*.lua']})
 
 
 class CliTest(unittest.TestCase):
@@ -112,8 +115,10 @@ class PlayTest(unittest.TestCase):
             probe.write_text('print(1)', encoding='utf-8')
             for name in ('mods.db', 'loc.db', 'game.dll'):
                 (tmp / name).write_bytes(b'x')
+            (tmp / 'profiles').mkdir()
             cfg = config.Config(game_dir=game, mods_dir=tmp / 'MODS', mods_db=tmp / 'mods.db', loc_db=tmp / 'loc.db',
-                                dll=tmp / 'game.dll', exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs')
+                                dll=tmp / 'game.dll', exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs',
+                                profiles=tmp / 'profiles')
             spec = {'map': {'script': 'Continents.lua', 'size': 'WORLDSIZE_TINY'}, 'seeds': {'map': 1, 'sync': 2}}
             r = run.play(spec, 4, run='p1', cfg=cfg, lua_probes=[probe], heap_perturb=5, host_args=['--no-ui-frame'],
                          seeds={'sync': 3})
@@ -135,13 +140,78 @@ class PlayTest(unittest.TestCase):
             self.assertEqual(value('--loc-db'), [str((tmp / 'loc.db').resolve())])
             self.assertEqual(value('--lua-probe'), [str(probe.resolve())])
             self.assertEqual(value('--heap-perturb'), ['5'])
+            self.assertEqual(value('--profiles'), [str((tmp / 'profiles').resolve())])
             self.assertIn('--no-ui-frame', argv)
+            self.assertFalse({'--no-mods', '--no-profiles', '--no-addins', '--skip-addin'} & set(argv))
+            self.assertEqual(r.report['format'], 'civ5headless-host-report/1')  # host-report.json before newgame-report.json
             resolved = json.loads((r.dir / 'spec-resolved.json').read_text(encoding='utf-8'))
             self.assertEqual(resolved['seeds'], {'map': 1, 'sync': 3})
             self.assertEqual(json.loads((r.dir / 'spec.json').read_text(encoding='utf-8')), spec)
             # a second game into the same folder is refused
             with self.assertRaises(FileExistsError):
                 run.play(r.dir / 'spec.json', 4, run_dir=r.dir, cfg=cfg)
+
+    def test_play_mod_set_ui_options_and_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {'C5H_TEST_PYTHON': sys.executable}):
+            tmp = Path(tmp)
+            db = tmp / 'game.db'
+            make_db(db)
+            (tmp / 'game.dll').write_bytes(b'x')
+            (tmp / 'probes').mkdir()
+            (tmp / 'probes/fingerprint.lua').write_text('-- fingerprint\n', encoding='utf-8')
+            probe = tmp / 'probe.lua'
+            probe.write_text('print(1)', encoding='utf-8')
+            mods_dir = make_mods(tmp / 'MODS')
+            cfg = config.Config(game_dir=tmp, mods_dir=mods_dir, mods_db=tmp / 'game-registry.db', dll=tmp / 'game.dll',
+                                exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs', db_cache=tmp / 'cache',
+                                probes=tmp / 'probes')
+            spec = {'map': {'script': 'Continents.lua', 'size': 'WORLDSIZE_TINY'}, 'seeds': {'map': 1, 'sync': 2}}
+            r = run.play(spec, 2, run='m', cfg=cfg, mods=[ADDON_ID, BASE_ID], no_profiles=True,
+                         skip_addins=['Panel.lua', 'Other.xml'], no_addins=True, fingerprint=dict(every=5, turns=[3]),
+                         lua_probes=[probe])
+            self.assertTrue(r.ok, r.status.get('error'))
+            argv = json.loads((r.dir / 'argv.json').read_text(encoding='utf-8'))[1:]
+
+            def value(opt):
+                return [argv[i + 1] for i, a in enumerate(argv) if a == opt]
+
+            registry = Path(value('--mods-db')[0])
+            self.assertEqual(registry.parent.parent, tmp / 'cache/modsdb')
+            con = sqlite3.connect(registry)
+            self.assertEqual([r[0] for r in con.execute('SELECT ModID FROM Mods ORDER BY RowID')], [BASE_ID, ADDON_ID])
+            con.close()
+            self.assertEqual(value('--mods-dir'), [str(mods_dir.resolve())])
+            self.assertEqual(value('--skip-addin'), ['Panel.lua', 'Other.xml'])
+            self.assertTrue({'--no-profiles', '--no-addins'} <= set(argv))
+            self.assertEqual(value('--profiles'), [])
+            self.assertEqual(value('--lua-probe'), [str(r.dir / 'fingerprint-settings.lua'), str(tmp / 'probes/fingerprint.lua'),
+                                                     str(probe.resolve())])
+            self.assertIn('C5HFP_EVERY = 5\nC5HFP_TURNS = {3}\n', (r.dir / 'fingerprint-settings.lua').read_text(encoding='utf-8'))
+            command = json.loads((r.dir / 'hh-command.json').read_text(encoding='utf-8'))
+            self.assertEqual(command['fingerprint'], dict(every=5, turns=[3], split=None))
+            # without mods: --no-mods and neither a MODS folder nor a registry for the host
+            r = run.play(spec, 2, run='n', cfg=cfg, no_mods=True, fingerprint=True, profiles=tmp / 'probes')
+            self.assertTrue(r.ok, r.status.get('error'))
+            argv = json.loads((r.dir / 'argv.json').read_text(encoding='utf-8'))[1:]
+            self.assertIn('--no-mods', argv)
+            self.assertFalse({'--mods-db', '--mods-dir', '--no-profiles'} & set(argv))
+            self.assertEqual(value('--lua-probe'), [str(tmp / 'probes/fingerprint.lua')])
+            self.assertEqual(value('--profiles'), [str((tmp / 'probes').resolve())])
+            # errors end the run with the reason
+            r = run.play(spec, 2, run='e', cfg=cfg, mods=[ADDON_ID])
+            self.assertFalse(r.ok)
+            self.assertIn('not in the set', r.status['error'])
+
+    def test_run_option_checks(self):
+        for argv, message in ((['--mod', 'x', '--no-mods'], 'exclude each other'),
+                              (['--mod', 'x', '--mods-db', 'r.db'], 'exclude --mods-db'),
+                              (['--profiles', 'p', '--no-profiles'], 'exclude each other'),
+                              (['--fingerprint-turns', '1,x'], 'turn numbers')):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()) as err:
+                with self.assertRaises(SystemExit) as ctx:
+                    run.main(['spec.json', '--turns', '3'] + argv, config.Config())
+                self.assertEqual(ctx.exception.code, 2)
+                self.assertIn(message, err.getvalue())
 
 
 class QueueTest(unittest.TestCase):
@@ -175,6 +245,63 @@ class QueueTest(unittest.TestCase):
             self.assertEqual(queue.Queue(qpath, cfg).out, Path(tmp) / 'runs/queue')
             with self.assertRaises(SystemExit):
                 queue.expand({'jobs': [{'name': 'x'}, {'name': 'x', 'spec': 's'}]}, qpath)
+
+    def test_mod_sets_and_host_options(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            qpath = tmp / 'queue.json'
+            mods_dir = make_mods(tmp / 'MODS')
+            q = {'defaults': {'spec': 'spec.json', 'turns': 5, 'profiles': 'profiles', 'skipAddins': ['A.lua'],
+                              'fingerprint': {'every': 10}},
+                 'jobs': [{'name': 'set', 'mods': [BASE_ID, ADDON_ID]}, {'name': 'none', 'noMods': True, 'noProfiles': True},
+                          {'name': 'game', 'noAddins': True}]}
+            jobs = {j['name']: j for j in queue.expand(q, qpath)}
+            self.assertEqual(Path(jobs['set']['profiles']), (tmp / 'profiles').resolve())
+            cfg = config.Config(mods_dir=mods_dir, mods_db=tmp / 'game.db', db=tmp / 'built.db', db_cache=tmp / 'cache')
+            logs = []
+            q = SimpleNamespace(cfg=cfg, log=logs.append)
+            inputs = queue.databases(q, list(jobs.values()))
+            self.assertEqual(inputs['set']['db'], str((tmp / 'built.db').resolve()))
+            self.assertEqual(Path(inputs['set']['modsDb']).name, 'Civ5ModsDatabase.db')
+            self.assertEqual(Path(inputs['set']['modsDir']), mods_dir.resolve())
+            self.assertEqual((inputs['none']['modsDir'], inputs['none']['modsDb']), (None, None))
+            self.assertEqual(Path(inputs['game']['modsDb']), tmp / 'game.db')
+            a = queue.job_args(jobs['set'], tmp / 'runs/set', inputs['set'], None)
+            self.assertEqual((a.mods_db, a.mod, a.no_mods, a.skip_addin, a.no_addins, a.no_profiles),
+                             (inputs['set']['modsDb'], None, False, ['A.lua'], False, False))
+            self.assertEqual(run.fingerprint_options(a), dict(every=10, turns=[], split=None))
+            a = queue.job_args(jobs['none'], tmp / 'runs/none', inputs['none'], None)
+            self.assertEqual((a.no_mods, a.no_profiles, a.mods_db), (True, True, None))
+            with self.assertRaises(SystemExit):
+                queue.expand({'jobs': [{'name': 'x', 'spec': 's', 'mods': [], 'modsDb': 'r.db'}]}, qpath)
+
+
+class CommandTest(unittest.TestCase):
+    """Commands whose module main takes no configuration, and the defaults c5h adds."""
+
+    def test_fingerprint_show(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'Lua.log'
+            log.write_text('InGame: C5HFP|v=1|meta|turn=0|plots=10|width=5|height=2|maxMajors=2|maxCivs=3|every=1\n'
+                           'InGame: C5HFP|v=1|turn=0|point=inject|part=1/1|total=0000000A|game=0000000B\n', encoding='utf-8')
+            code, out, _ = call(['fingerprint', 'show', str(log)])
+            self.assertEqual(code, 0)
+            self.assertIn('0', out)
+            code, out, _ = call(['fingerprint', 'compare', str(log), str(log)])
+            self.assertEqual(code, 0)
+            self.assertIn('identical', out)
+
+    def test_hazards_gets_the_configured_profiles(self):
+        seen = []
+        cfg = config.Config(profiles=Path('profiles-folder'))
+        with mock.patch('civ5headless.hazards.main', side_effect=lambda argv: seen.append(argv) or 0):
+            cli.hazards_main(['scan', 'ui.lua'], cfg)
+            cli.hazards_main(['scan', '--profiles=mine'], cfg)
+            cli.hazards_main(['known', '--report', 'r.json', '--note', 'n'], cfg)
+            cli.hazards_main(['methods', '--dll-source', 'src'], cfg)
+        self.assertEqual(seen, [['scan', 'ui.lua', '--profiles', 'profiles-folder'], ['scan', '--profiles=mine'],
+                                ['known', '--report', 'r.json', '--note', 'n', '--known', str(Path('profiles-folder/known-ui-files.json'))],
+                                ['methods', '--dll-source', 'src']])
 
 
 class NoMachinePathsTest(unittest.TestCase):

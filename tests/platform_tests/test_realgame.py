@@ -19,7 +19,7 @@ import time
 import unittest
 from unittest import mock
 
-from civ5headless import config, spec as specmod
+from civ5headless import config, run, spec as specmod
 from civ5headless.realgame import dbcapture, launch, mods, probe, seeds, session, tuner
 
 from .fake_tuner import FakeTuner, LuaError, unescape
@@ -227,10 +227,17 @@ class LuaTest(unittest.TestCase):
                        ARM=session.ARM.format(turns=3), CONTINUE=session.CONTINUE, TURN=session.TURN,
                        VICTORY=session.VICTORY, HALT=session.HALT, MENU=session.MENU, QUIT=session.QUIT,
                        EXPORT=session.EXPORT % tuner.lua_string('x/y.db'), DISMISS=mods.DISMISS_LEGAL,
-                       ACTIVATE=mods.ACTIVATE)
+                       ACTIVATE=mods.ACTIVATE, REPLAY_OWNERS=session.REPLAY_OWNERS, REPLAY_PLAYER=session.REPLAY_PLAYER % 3)
         for name, source in sources.items():
             with self.subTest(name=name):
                 self.assertIsNone(compile_(source))
+
+    def test_replay_player(self):
+        fake = ("Players={[3]={GetReplayData=function(self) return {REPLAYDATASET_SCORE={[1]=5,[2]=7.5},"
+                "REPLAYDATASET_NONE={}} end}}\n")
+        values = self.run_lua(fake + session.REPLAY_PLAYER % 3)['values'][0]
+        self.assertEqual(values['REPLAYDATASET_NONE'], '')
+        self.assertEqual(sorted(values['REPLAYDATASET_SCORE'].split(',')), ['1=5', '2=7.5'])
 
     def test_set_enabled_mods(self):
         wanted = [('11111111-2222-3333-4444-555555555555', 1, 'A'), ('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 2, 'B')]
@@ -490,6 +497,14 @@ class FakeGame:
         if 'C5H_TEST_PROBE' in source:
             self.log.append(('probe', 'running' if self.running else 'paused'))
             return ['probe ran']
+        if source == session.REPLAY_OWNERS:
+            return [[0, 2]]
+        if 'GetReplayData' in source:
+            owner = int(re.search(r'Players\[(\d+)\]', source).group(1))
+            return [{'REPLAYDATASET_SCORE': f'2=9,1={owner}', 'REPLAYDATASET_EMPTY': ''}]
+        if 'C5HFP_EVERY' in source:
+            self.log.append(('fingerprint settings', source.splitlines()[1:]))
+            return [True]
         if 'Game.SetAIAutoPlay(' in source and 'QUICK_COMBAT' in source:
             self.autoplay = int(re.search(r'SetAIAutoPlay\((\d+),0\)', source).group(1))
             self.log.append(('arm', self.autoplay, 'running' if self.running else 'paused'))
@@ -590,6 +605,9 @@ class SessionTest(SessionCase):
         # the host's order: probes at turn 0 while paused, then arm, then continue
         order = [e for e in self.game.log if e[0] in ('probe', 'arm', 'continue')]
         self.assertEqual(order, [('probe', 'paused'), ('arm', 3, 'paused'), ('continue',)])
+        self.assertEqual(s.replay_data(), {'0': {'REPLAYDATASET_SCORE': [[1, 0], [2, 9]], 'REPLAYDATASET_EMPTY': []},
+                                           '2': {'REPLAYDATASET_SCORE': [[1, 2], [2, 9]], 'REPLAYDATASET_EMPTY': []}})
+        self.assertIn(session.MAJORS, run.FINAL)  # the same players as the host's replay-data.json
 
         s.to_main_menu()
         # other seeds: config.ini first, then a relaunch so the DLL reads them; the mods are activated again
@@ -618,6 +636,18 @@ class SessionTest(SessionCase):
         self.assertEqual(events[0], 'launched')
         self.assertEqual(events[-1], 'quit')
         self.assertEqual(s.quit()['exited'], True)  # twice is harmless
+
+    def test_fingerprint_probe_files(self):
+        self.cfg.probes = Path(self.tmp.name) / 'probes'
+        self.cfg.probes.mkdir()
+        (self.cfg.probes / 'fingerprint.lua').write_text('-- C5H_TEST_PROBE fingerprint\n', encoding='utf-8')
+        with self.session() as s:
+            s.launch(101, 202)
+            s.set_mods([])
+            started = s.start_game(self.spec, lua_probes=[self.probe], fingerprint=dict(every=5, turns=[1, 2]))
+        self.assertEqual([Path(p['file']).name for p in started['probes']], ['fingerprint-settings.lua', 'fingerprint.lua', 'probe.lua'])
+        self.assertTrue(all(p['ok'] for p in started['probes']), started['probes'])
+        self.assertIn(('fingerprint settings', ['C5HFP_EVERY = 5', 'C5HFP_TURNS = {1, 2}']), self.game.log)
 
     def test_first_game_relaunches_without_launch_seeds(self):
         with self.session() as s:

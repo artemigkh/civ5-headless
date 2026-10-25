@@ -12,8 +12,11 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   - platform: milestones 1 (package, configuration, `c5h`) and 2 (real-game session, DLC snapshot from the game's
     files, doctor, get_toolchain, user guide) merged; milestone 3 (integrating anydll's pieces: `--profiles`,
     `--fingerprint`, `c5h fingerprint`/`hazards`, mods registry generator `c5h modsdb`) under way.
-  - anydll: phase C items 1–5 and 7 merged (973c324). C.6's real-game comparisons wait for phase E.
-  - verify: under way (started from main after platform milestone 1).
+    Also: spec field `minorCivs` (host-only pins), `RealGameSession.replay_data()`.
+  - anydll: phase C items 1–5 and 7 merged (973c324). Milestone 2 under way: host honours `minorCivs` when it does
+    the civ choice (stock-like DLLs), `hazards.scan_report` and a per-hit `reach`, review of the 58 game-reachable
+    UI hazards on this fork's mods, `fingerprint.probe_path()`. C.6's real-game comparisons wait for phase E.
+  - verify: merged (22d209f); adapts to the pieces above once they land.
 - Open for phase E or later: UI popups reach add-in listeners only through profiles (generic routing not evaluated);
   the order of `<LuaContext>` children before the parent's script is assumed (engine-contract open question 11); the
   real-game session has run only against a fake game.
@@ -69,3 +72,31 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   digest DLL; dense against sparse fingerprints identical on the stock DLL (3 x 150 turns) and on plain VP (upstream
   master + determinism fixes, 3 x 100 turns). On main: 104 tests pass; `c5h snapshot --dll <stock DLL>` runs the
   post-processing and equals the captured snapshot.
+
+### 2026-10-25: verify merged
+
+- `c5h verify` (22d209f): modes quick, full and host-only; checks setup (database, pregame, turn 0, civ choice,
+  health: Lua errors, stubs, UI hazards), trajectory (real against host, A/A, frame skew, heap perturbation, probe
+  neutrality), statistics (ensemble envelope and bias sign test over replay datasets and fingerprint metrics, with
+  mean, max and sum aggregates), performance (per-turn time, memory, CPU, throughput at 1/4/8 workers, history
+  file); HTML and JSON report; exit codes 0 pass, 1 fail, 2 usage, 3 incomplete. docs/verification.md.
+- Host-only on the field-map DLL and this fork's mods (the agent's run): 3.5 min; A/A, skew 7 and heap-perturb all
+  150/150 turns; probes neutral; 4/4 setups reproduce; the one warning is UI hazards (58 game-reachable state-changing
+  calls without a profile). Throughput 56 / 231 / 394 games per hour at 1 / 4 / 8 workers.
+- Statistics self-test (32-game ensemble): 12 held-out host games pass the envelope (mean coverage 93.1%), bias quiet
+  in 11/12; a 5% shift of one metric is not detectable (about 25% is); foreign setups are caught once world sums are
+  aggregated. VP ignores the sync seed for these games, so ensembles vary the map seed.
+- Runs only against fakes: the whole real side. Calibration (phase E) must set the envelope and bias thresholds,
+  ensemble sizes and budgets per mode, the real/host time ratio of the planner, `heal_turns`, the default setups and
+  civilization list, and pregame/UI ignore lists from real dumps.
+
+### 2026-10-25: platform milestone 3 merged
+
+- 26e4a4e: `c5h modsdb` builds the mods registry from `.modinfo` files (game schema; activation order respects
+  dependencies). For this fork's 5 mods it equals the game's live registry in every row; the database built from it
+  and two Tiny 30-turn games (digests, fingerprints, host report) are identical to those from the game's registry.
+  `c5h run --mod/--no-mods`, `dbcache`, queue keys use it. Profiles and fingerprint wired into `run`, `queue` and
+  `RealGameSession.start_game` (same files, same injection point as the host); `c5h fingerprint`, `c5h hazards`;
+  config keys `profiles`, `probes`; spec `minorCivs`; `RealGameSession.replay_data()` (one player per tuner call:
+  the tuner caps a result at 10,000 items and 256 KiB). 174 tests.
+- Host-only `c5h verify` on main (before this merge): 3.6 min, verdict warn (UI hazards only), as in the agent's run.
