@@ -1,28 +1,25 @@
-"""Run Lua probes in the real game and save their results.
-
-NOT FUNCTIONAL YET: ported from the source repository, where it runs on that repository's vpbench module (launcher,
-FireTuner calls, mod activation). Milestone 2 rebuilds it on realgame/session.py. Until then main() stops with a
-message unless a vpbench module is importable (PYTHONPATH).
+"""Run Lua probes in the real game and save their results (on the real-game session, session.py).
 
   python -m civ5headless.realgame.probe --run NAME --probe CONTEXT=FILE.lua [--probe ...] [--no-mods]
   python -m civ5headless.realgame.probe --run NAME --spec SPEC.json [--turns N] --probe CONTEXT[@WHEN]=FILE.lua ...
 
-Launches the game (vpbench launcher), activates the benchmark mods unless --no-mods, runs each probe
-in its Lua context (MainMenu, ModsSinglePlayer, InGame, ...) through the tuner, writes the returned
-values to <runs>/NAME/probe-<n>-<file stem>.json, and quits normally.
+Launches the game, activates the configured mods (the activated mods of mods_db) unless --no-mods, runs each probe
+in its Lua context (MainMenu, ModsSinglePlayer, InGame, ...) through the tuner, writes the returned values to
+<runs>/NAME/probe-<n>-<file stem>.json, and quits normally.
 
-With --spec the probes can also run inside a game started from that spec (seeds pinned and the
-per-turn digest on, as vpbench newgame --spec). WHEN picks the moment:
+With --spec the probes can also run inside a game started from that spec, its seeds pinned through config.ini
+before the launch. WHEN picks the moment:
   setup  before the game starts (default without @: setup for front-end contexts, start for InGame)
   start  turn 0 after loading, before the load screen closes (game core idle)
-  end    after --turns N turns of AI autoplay (the observer setup vpbench uses), game core idle
+  end    after --turns N turns of AI autoplay (the observer setup the host uses), game core idle
 `{RUN}` in a probe is replaced by the run folder (forward slashes), e.g. for Game.DumpHeadlessState.
-The headless logs (digest, runtime, trace) are copied into the run folder at the end.
+The game's logs written during the run are copied into the run folder at the end.
 
---dump-from A --dump-to B has the DLL dump the state at doTurnBegin of turns A..B (field-level detail around a
-divergence); the dumps are copied to <run>/HeadlessDumps. --stop-turn S quits once turn S is reached while still
-arming --turns N, so a short re-record of a long game keeps the same autoplay count (it is in the digest); the @end
-probes are skipped then.
+DLLs with the optional digest additions (docs/dll-additions.md) read HeadlessSeeds.txt in the game's cache folder at
+the next new game; the run writes it with digest=1 (--no-digest: 0) and the dump range, and removes it afterwards.
+Other DLLs ignore it. --dump-from A --dump-to B has such a DLL dump the state at doTurnBegin of turns A..B; the dumps
+are copied to <run>/HeadlessDumps. --stop-turn S quits once turn S is reached while still arming --turns N, so a short
+re-record of a long game keeps the same autoplay count (it is in the digest); the @end probes are skipped then.
 
 --host-digest HOST_LOG compares the game's live HeadlessDigest.log with a host run of the same case (same spec,
 DLL and --turns), point by point as the turns pass. A difference that matches again within --diverge-turns turns
@@ -30,26 +27,18 @@ DLL and --turns), point by point as the turns pass. A difference that matches ag
 <run>/divergence.json and quits, so a long reference costs real-game time only up to its divergence.
 --rolling-dumps K dumps every turn and keeps the last K turns plus K turns around every difference, so the run that
 finds a divergence also has the field-level dumps around it (about 85 MB per Tiny dump).
---engine-seeds leaves the seeds to the engine (no map/sync in HeadlessSeeds.txt, so config.ini MapRandSeed/SyncRandSeed
-or the clock): the HHSEEDS lines the DLL logged go to <run>/seeds-observed.json. It tests seeding with a stock DLL.
+
+Exit code 0 when everything ran and the game exited.
 """
 from pathlib import Path
-import argparse, json, re, shutil, subprocess, sys, time
+import argparse, json, re, shutil, sys, time
 
 from .. import config
 from .. import spec as gamespec
 from ..compare import digest as hhdigest
 from ..run import utc, write
-from .dbcapture import sha256, vpbench_module
-
-ARM = ("assert(not PreGame.IsMultiplayerGame());local p=Players[0];assert(p and p:IsAlive() and not p:IsMinorCiv());"
-       "Game.SetOption('GAMEOPTION_QUICK_COMBAT',true);Game.SetOption('GAMEOPTION_QUICK_MOVEMENT',true);"
-       "Game.SetAIAutoPlay({turns},0);return Game.GetAIAutoPlay()")
-# vpbench's TURN plus the game state (GAMESTATE_ON is 0): a game to victory ends before the autoplay count runs out.
-TURN = ("return {turn=Game.GetGameTurn(),autoplay=Game.GetAIAutoPlay(),pause=Game.GetPausePlayer(),"
-        "winner=Game.GetWinner(),state=Game.GetGameState()}")
-VICTORY = ("local ok,v=pcall(function() return Game.GetVictory() end);"
-           "return {turn=Game.GetGameTurn(),winner=Game.GetWinner(),victory=ok and v or -2,state=Game.GetGameState()}")
+from .session import VICTORY, RealGameSession, SessionError
+from .tuner import TunerError
 
 
 def prune_dumps(dumps, keep):
@@ -114,16 +103,15 @@ def main(argv=None, cfg=None):
     cfg = cfg or config.load()
     ap = argparse.ArgumentParser(prog='python -m civ5headless.realgame.probe', description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--run', required=True)
+    ap.add_argument('--run', required=True, help='run folder name below <runs>')
     ap.add_argument('--probe', action='append', default=[], help='CONTEXT[@setup|start|end]=path/to/probe.lua')
     ap.add_argument('--no-mods', action='store_true')
-    ap.add_argument('--dll-sha')
     ap.add_argument('--spec', help='Start a game from this spec (spec.py)')
     ap.add_argument('--turns', type=int, default=0, help='With --spec: autoplay this many turns before the @end probes '
                     '(a game that ends earlier, with a winner or a game state other than ON, stops there)')
     ap.add_argument('--max-seconds', type=int, default=10800, help='Overall cap on the autoplay (default 3 h)')
     ap.add_argument('--stall-seconds', type=int, default=900, help='Fail when no turn passes for this long (default 15 min)')
-    ap.add_argument('--no-digest', dest='digest', action='store_false')
+    ap.add_argument('--no-digest', dest='digest', action='store_false', help='HeadlessSeeds.txt with digest=0')
     ap.add_argument('--dump-from', type=int, help='With --spec: DLL state dumps at doTurnBegin from this turn')
     ap.add_argument('--dump-to', type=int, help='... to this turn (default: --dump-from)')
     ap.add_argument('--stop-turn', type=int, default=0, help='With --spec and --turns: quit once this turn is reached')
@@ -131,10 +119,8 @@ def main(argv=None, cfg=None):
                     'stop --diverge-turns turns after the first difference')
     ap.add_argument('--diverge-turns', type=int, default=2)
     ap.add_argument('--rolling-dumps', type=int, default=0, help='With --spec: dump every turn, keep the last K')
-    ap.add_argument('--engine-seeds', action='store_true', help='With --spec: do not pin the seeds (engine/config.ini seeds)')
+    ap.add_argument('--no-cpu-guard', dest='cpu_guard', action='store_false')
     args = ap.parse_args(argv)
-    vpbench = vpbench_module('realgame.probe')
-    installed_dll = cfg.require('dll')
     if args.rolling_dumps and args.dump_from is None: args.dump_from, args.dump_to = 0, 100000
     if args.host_digest and not (args.spec and args.turns > 0 and args.digest): ap.error('--host-digest needs --spec, --turns and the digest')
     if args.dump_from is not None and args.dump_to is None: args.dump_to = args.dump_from
@@ -148,114 +134,101 @@ def main(argv=None, cfg=None):
         probes.append((context, when, Path(path)))
     if args.no_mods and args.spec: ap.error('--spec needs the mods')
     if (args.dump_from is not None or args.stop_turn) and not args.spec: ap.error('--dump-from and --stop-turn need --spec')
-    dumps = vpbench.GAME_DOCS / 'Logs/HeadlessDumps'
+    run = cfg.require('runs') / args.run
+    if run.exists(): ap.error(f'{run} exists')
+    resolved = None
+    if args.spec:
+        from .. import dbcache
+        resolved = gamespec.resolve(json.loads(Path(args.spec).read_text(encoding='utf-8')),
+                                    dbcache.database(cfg, log=lambda m: print(m, file=sys.stderr))[0])
+    logs = cfg.require('user_dir') / 'Logs'
+    dumps = logs / 'HeadlessDumps'
     if args.dump_from is not None and dumps.exists():
         # Earlier runs' dumps of the same turns would be overwritten in place; keep them apart.
         dumps.rename(dumps.with_name(f'HeadlessDumps-{time.strftime("%Y%m%d-%H%M%S")}'))
-    b = vpbench.Bench(args.run)
-    since = time.time()
-    if args.no_mods:
-        dll_sha = args.dll_sha or sha256(installed_dll)
-        log = b.run.parent / (args.run + '-launch.log')
-        with log.open('wb') as stream:
-            code = subprocess.run([vpbench.PWSH, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(Path(vpbench.__file__).parent / 'vpbench-launch.ps1'),
-                                   '-RunName', args.run, '-ExpectedDLLSHA', dll_sha, '-MaximumSeconds', '1800'],
-                                  stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT).returncode
-        if code: raise RuntimeError(f'Launch failed; see {log}')
-        (b.run / 'calls').mkdir(exist_ok=True)
-        b.guards = json.loads((b.run / 'watcher-manifest.json').read_text(encoding='utf-8-sig'))
-        deadline = time.monotonic() + 240
-        while not ({'MainMenu', 'LegalScreen', 'ModsBrowser'} & b.states()):
-            if time.monotonic() >= deadline: raise TimeoutError('Main menu did not appear')
-            time.sleep(2)
-    else:
-        # The launch guard ends the game after this many seconds: room for the autoplay cap plus setup.
-        b.launch(args.dll_sha or sha256(installed_dll), min(43200, max(3600, args.max_seconds + 900)))
+    headless_seeds = cfg.require('cache_dir') / 'HeadlessSeeds.txt'
+    s = RealGameSession(cfg, run, cpu_guard=args.cpu_guard, stall_seconds=args.stall_seconds, poll=3.0,
+                        log=lambda m: print(f'{utc()} {m}', flush=True))
     counter = [0]
+    ok = True
 
     def run_probes(when):
+        nonlocal ok
         for context, moment, path in probes:
             if moment != when: continue
             counter[0] += 1
             n = counter[0]
             try:
-                source = path.read_text(encoding='utf-8').replace('{RUN}', b.run.as_posix())
-                value = b.call(context, source, f'probe-{n}', timeout=120)
-                result = {'ok': True, 'value': value}
-            except Exception as error:
+                source = path.read_text(encoding='utf-8-sig').replace('{RUN}', run.as_posix())
+                result = {'ok': True, 'value': s.call(context, source, f'probe-{n}')}
+            except (SessionError, TunerError) as error:
                 result = {'ok': False, 'error': str(error)}
-            write(b.run / f'probe-{n}-{path.stem}.json', dict(utc=utc(), context=context, when=when, file=str(path), **result))
-            b.log('probe', n=n, context=context, when=when, file=path.name, ok=result['ok'])
+                ok = False
+            write(run / f'probe-{n}-{path.stem}.json', dict(utc=utc(), context=context, when=when, file=str(path), **result))
+            s.event('probe', n=n, context=context, when=when, file=path.name, ok=result['ok'])
 
+    quit_info = {}
     try:
+        if resolved:
+            write(run / 'spec-resolved.json', resolved)
+            s.launch(resolved['seeds']['map'], resolved['seeds']['sync'])
+        else:
+            s.launch()
+        if not args.no_mods:
+            s.set_mods([m.id for m in cfg.active_mods])
         run_probes('setup')
-        if args.spec:
-            resolved = gamespec.resolve(json.loads(Path(args.spec).read_text(encoding='utf-8')), cfg.require('db'))
-            write(b.run / 'spec-resolved.json', resolved)
-            write(b.run / 'pregame.json', b.call('ModsSinglePlayer', gamespec.pregame_lua(resolved), 'pregame-setup'))
-            seeds = resolved['seeds']
+        if resolved:
             dump_range = f"dumpfrom={args.dump_from}\ndumpto={args.dump_to}\n" if args.dump_from is not None else ''
-            pinned = '' if args.engine_seeds else f"map={seeds['map']}\nsync={seeds['sync']}\n"
-            vpbench.HEADLESS_SEEDS.write_text(f"{pinned}digest={int(args.digest)}\nnormalise=1\n{dump_range}", encoding='ascii')
-            b.call('ModsSinglePlayer', vpbench.START, 'start-game')
-            b.wait_loaded()
-            write(b.run / 'setup.json', b.call('InGame', vpbench.SETUP, 'setup-info'))
-            if args.engine_seeds:
-                lines = [l for l in (vpbench.GAME_DOCS / 'Logs/HeadlessDigest.log').read_text(encoding='utf-8', errors='replace').splitlines()
-                         if l.startswith('HHSEEDS|')]
-                write(b.run / 'seeds-observed.json', [dict(f.partition('=')[::2] for f in l.split('|')[1:]) for l in lines])
-                b.log('seeds_engine', lines=len(lines))
-            else:
-                b.log('seeds_pinned', **vpbench.check_seeds(resolved))
+            headless_seeds.write_text(f"digest={int(args.digest)}\nnormalise=1\n{dump_range}", encoding='ascii')
+            write(run / 'setup.json', s.start_game(resolved))
             run_probes('start')
             if args.turns > 0:
-                b.call('InGame', ARM.format(turns=args.turns), 'arm-autoplay')
-            b.call('LoadScreen', vpbench.CONTINUE, 'continue')
-            if args.turns > 0:
-                live = LiveDigest(vpbench.GAME_DOCS / 'Logs/HeadlessDigest.log', Path(args.host_digest)) if args.host_digest else None
-                started = time.monotonic()
-                last_turn, last_change = None, started
-                early = False
-                while True:
-                    time.sleep(3)
-                    state = b.call('InGame', TURN, 'turn', keep=False)
-                    now = time.monotonic()
-                    if state['turn'] != last_turn: last_turn, last_change = state['turn'], now
-                    if state['winner'] >= 0 or state['state'] != 0: break
-                    if state['turn'] >= args.turns and state['autoplay'] == 0: break
-                    if args.stop_turn and state['turn'] >= args.stop_turn: early = True; break
+                live = LiveDigest(logs / 'HeadlessDigest.log', Path(args.host_digest)) if args.host_digest else None
+                early = [False]
+
+                def on_poll(state):
+                    if args.stop_turn and state['turn'] >= args.stop_turn:
+                        early[0] = True
                     if live:
                         live.poll()
                         if live.open and live.last_turn >= live.open['turn'] + args.diverge_turns:
-                            write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, transients=live.transients, **live.open))
-                            b.log('diverged', **live.open)
-                            early = True
-                            break
+                            write(run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, transients=live.transients, **live.open))
+                            s.event('diverged', **live.open)
+                            early[0] = True
                     if args.rolling_dumps:
                         k, turn, runs = args.rolling_dumps, state['turn'], live.runs() if live else []
                         prune_dumps(dumps, lambda t: t > turn - k or any(a - k <= t and (u is None or t <= u + k) for a, u in runs))
-                    if now - last_change >= args.stall_seconds: raise TimeoutError(f'autoplay stalled: {state}')
-                    if now - started >= args.max_seconds: raise TimeoutError(f'autoplay over the time cap: {state}')
-                b.log('autoplay_done', early=early, **state)
+                    return early[0]
+                played = s.autoplay(args.turns, max_seconds=args.max_seconds, on_poll=on_poll)
+                write(run / 'autoplay.json', played)
+                if played['endReason'] in ('max_seconds', 'stalled'):
+                    raise SessionError(f"autoplay ended early: {played['endReason']} at turn {played['endTurn']}")
                 if live:
                     time.sleep(3)
                     live.poll()
-                    if live.open and not early:
-                        write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, transients=live.transients, **live.open))
-                    write(b.run / 'live-compare.json', dict(utc=utc(), hostDigest=args.host_digest, compared=live.compared,
-                                                            first=live.first, open=live.open, transients=live.transients,
-                                                            stoppedAt=state['turn'], early=early))
-                if early: return 0
-                time.sleep(3)
-                write(b.run / 'victory.json', dict(utc=utc(), **b.call('InGame', VICTORY, 'victory')))
-            run_probes('end')
+                    if live.open and not early[0]:
+                        write(run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, transients=live.transients, **live.open))
+                    write(run / 'live-compare.json', dict(utc=utc(), hostDigest=args.host_digest, compared=live.compared,
+                                                          first=live.first, open=live.open, transients=live.transients,
+                                                          stoppedAt=played['endTurn'], early=early[0]))
+                if not early[0]:
+                    time.sleep(3)
+                    write(run / 'victory.json', dict(utc=utc(), **s.call('InGame', VICTORY, 'victory')))
+                    run_probes('end')
+            else:
+                run_probes('end')
+    except (SessionError, TunerError, OSError) as error:
+        ok = False
+        write(run / 'error.json', dict(utc=utc(), error=f'{type(error).__name__}: {error}'))
+        print(f'{utc()} failed: {error}', file=sys.stderr)
     finally:
-        b.quit()
-        if args.spec and vpbench.HEADLESS_SEEDS.exists(): vpbench.HEADLESS_SEEDS.unlink()
-        vpbench.collect_headless_logs(b, since)
+        quit_info = s.quit()
+        headless_seeds.unlink(missing_ok=True)  # never pin a later, unrelated game
+        s.collect_logs(run)
         if args.dump_from is not None and dumps.exists():
-            shutil.copytree(dumps, b.run / 'HeadlessDumps', dirs_exist_ok=True)
-    return 0
+            shutil.copytree(dumps, run / 'HeadlessDumps', dirs_exist_ok=True)
+        write(run / 'process.json', s.process_stats())
+    return 0 if ok and quit_info.get('exited') else 1
 
 
 if __name__ == '__main__':

@@ -23,6 +23,7 @@ COMMANDS = [
     ('spec', 'civ5headless.spec', 'main', 'resolve a game spec, or print its pregame Lua'),
     ('dbbuild', 'civ5headless.dbbuild', 'main', 'build the game database for a mod set'),
     ('dbcache', 'civ5headless.dbcache', 'main', 'the cached game database for the configured mods and DLL'),
+    ('snapshot', 'civ5headless.snapshot', 'main', "build the DLC snapshot (base game, expansions, DLC) from the game's files"),
     ('dbdiff', 'civ5headless.dbdiff', 'main', 'compare two game databases'),
     ('dumps', 'civ5headless.compare.dumps', 'main', 'compare two state dumps section by section'),
     ('parity', 'civ5headless.compare.parity', 'main', 'replay a real-game reference in the host and compare'),

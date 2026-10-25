@@ -7,7 +7,8 @@ the configuration (c5h doctor).
 
 The key hashes the contents of every .modinfo/.xml/.sql/.lua file below the MODS folder (the only files the
 builder reads), the mods database, the DLL (its post-processing runs on the database), the DLC snapshot and
-the builder exe. Entries live in <db_cache>/<key>/built.db with dbbuild.py's report next to it
+the builder exe. Without a configured snapshot, the one built from the game's files is used (c5h snapshot).
+Entries live in <db_cache>/<key>/built.db with dbbuild.py's report next to it
 (built.db.build/) and an inputs.json; a finished entry has built.db.ok.
 
 database(cfg, ...) is what the run, queue and comparison tools use: a database given explicitly, else the configured
@@ -16,7 +17,7 @@ one (db), else the cached build for the mods and DLL.
 from pathlib import Path
 import argparse, hashlib, json, os, subprocess, sys, time
 
-from . import config
+from . import config, snapshot
 
 SOURCE_EXT = {'.modinfo', '.xml', '.sql', '.lua'}
 PACKAGE_PARENT = Path(__file__).resolve().parents[1]
@@ -91,11 +92,11 @@ def database(cfg, db=None, mods_dir=None, mods_db=None, dll=None, exe=None, log=
     if db or cfg.db:
         p = Path(db or cfg.db).resolve()
         return p, dict(db=str(p))
-    hint = 'or pass --db with a built database'
+    exe = find_exe(exe, cfg)
     path, inputs, key = get_db(mods_dir or cfg.require('mods_dir', 'pass --mods-dir'),
                                mods_db or cfg.require('mods_db', 'pass --mods-db'),
                                dll or cfg.require('dll', 'pass --dll'),
-                               find_exe(exe, cfg), cfg.require('snapshot', hint), cfg.require('db_cache'),
+                               exe, snapshot.resolve(cfg, exe=exe, log=log), cfg.require('db_cache'),
                                cfg.require('game_dir'), log=log, config_file=cfg.file)
     return path, dict(inputs, db=str(path), cacheKey=key)
 
@@ -110,11 +111,17 @@ def main(argv=None, cfg=None):
     a.add_argument('--snapshot', default=cfg.snapshot)
     a.add_argument('--cache', default=cfg.db_cache)
     args = a.parse_args(argv)
-    missing = [k for k in ('mods_dir', 'mods_db', 'dll', 'exe', 'snapshot', 'cache') if getattr(args, k) is None]
+    missing = [k for k in ('mods_dir', 'mods_db', 'dll', 'exe', 'cache') if getattr(args, k) is None]
     if missing:
         a.error('not set: ' + ', '.join('--' + k.replace('_', '-') for k in missing) + ' (or set them in civ5headless.toml)')
-    db, inputs, key = get_db(args.mods_dir, args.mods_db, args.dll, args.exe, args.snapshot, args.cache,
-                             cfg.require('game_dir'), log=lambda m: print(m, file=sys.stderr), config_file=cfg.file)
+    log = lambda m: print(m, file=sys.stderr)
+    try:
+        snap = snapshot.resolve(cfg, args.snapshot, exe=args.exe, log=log)
+    except (config.ConfigError, snapshot.SnapshotError, RuntimeError) as error:
+        print(f'c5h dbcache: {error}', file=sys.stderr)
+        return 1
+    db, inputs, key = get_db(args.mods_dir, args.mods_db, args.dll, args.exe, snap, args.cache,
+                             cfg.require('game_dir'), log=log, config_file=cfg.file)
     print(db)
     return 0
 

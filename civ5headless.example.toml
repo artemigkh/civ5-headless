@@ -21,9 +21,11 @@
 # game's own.
 # dll = "builds/CvGameCore_Expansion2.dll"
 
-# Game database. snapshot is the DLC snapshot the database builder starts from (the game's cache
-# Civ5DebugDatabase.db copied at the main menu with no mods active); with it, games build their database from the mods
-# and cache it. db is a built game database used as is instead.
+# Game database. Games build their database from the mods and cache it (db_cache), starting from the DLC snapshot
+# (base game, expansions, DLC). Without snapshot set, that is built from the game's files and cached too (c5h
+# snapshot); set it to use a snapshot captured from the game instead (the cache's Civ5DebugDatabase.db at the main
+# menu with no mods active; python -m civ5headless.realgame.dbcapture --snapshot-only). db is a built game database
+# used as is.
 # snapshot = "db/dlc-snapshot.db"
 # db = "db/mods-reference.db"
 # db_cache = "cache/db"
