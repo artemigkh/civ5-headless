@@ -5,23 +5,29 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 
 ## Resume here
 
-- Phase A done (2026-10-25): history split, SDK vendored, own build, replay check passed.
-- Phases B, C, D: running as three workstreams (plan section 9), each in a worktree `../civ5-headless-wt/<name>`
-  next to this checkout, on branch `c5h-<name>`. Each writes `RESUME.md` in its worktree at every milestone and on a
-  pause; merges into main leave `RESUME.md` out.
-  - platform: milestones 1 (package, configuration, `c5h`) and 2 (real-game session, DLC snapshot from the game's
-    files, doctor, get_toolchain, user guide) merged; milestone 3 (integrating anydll's pieces: `--profiles`,
-    `--fingerprint`, `c5h fingerprint`/`hazards`, mods registry generator `c5h modsdb`) under way.
-    Also: spec field `minorCivs` (host-only pins), `RealGameSession.replay_data()`.
-  - anydll: phase C items 1–5 and 7 merged (973c324). Milestone 2 under way: host honours `minorCivs` when it does
-    the civ choice (stock-like DLLs), `hazards.scan_report` and a per-hit `reach`, review of the 58 game-reachable
-    UI hazards on this fork's mods, `fingerprint.probe_path()`. C.6's real-game comparisons wait for phase E.
-  - verify: merged (22d209f); adapts to the pieces above once they land.
-- Open for phase E or later: UI popups reach add-in listeners only through profiles (generic routing not evaluated);
-  the order of `<LuaContext>` children before the parent's script is assumed (engine-contract open question 11); the
-  real-game session has run only against a fake game.
-- The real game is not used until calibration (phase E) and the coverage comparisons (phase C.6); workstreams run
-  host-only games only.
+- **State (2026-10-25):** phases A–D done as far as they go without the real game, all merged into main (188
+  tests). The three workstream branches (`c5h-platform`, `c5h-anydll`, `c5h-verify`, worktrees in
+  `../civ5-headless-wt/`) are fully merged and idle; their `runs/` folders hold the host-only evidence.
+- **Stopped here: everything next needs the real game** (the user's rule: do all that needs no game, stop before
+  it). Phase E, calibration, about 2 hours of real game, in this order:
+  1. Preconditions: the real game free (no other autoplay or A/B queue), `c5h doctor` clean on the real-game group
+     (`EnableTuner = 1`, `LoggingEnabled = 1` in config.ini), the DLL under test deployed with its mods.
+  2. Live smoke of `RealGameSession`, never run live so far: launch, set_mods, start_game (Tiny, fingerprint), 5 turns
+     of autoplay, collect_logs, replay_data, quit; config.ini restored. About 5 minutes. Fix what breaks first.
+  3. `c5h verify --quick` with this fork's digest DLL and mods (exact match expected for the whole horizon).
+  4. `c5h verify --quick` with plain VP (upstream build plus its mod files deployed; back up and restore MODS) and with
+     the stock DLL and no mods (city-states learned from the real game's turn 0).
+  5. `c5h verify --full` once, then set the thresholds, ensemble sizes, budgets and the planner's real/host ratio
+     (docs/verification.md, "Calibration"); C.6's database and turn-0 coverage comes from the same runs.
+  6. Afterwards restore the real game to what it had before (the source repository's AI program DLL and mods).
+- **Waiting on the user, not on the game:** creating the GitHub repository `ruskyandrei/civ5-headless` (private) and
+  pushing; phase F (README quickstart, release with binaries); opening the upstream VP pull requests (branches
+  `vp-det-*` in the source repository, texts in its `docs/headless-upstream-prs.md`).
+- **Open, known limits:** UI popups reach add-in listeners only through profiles (generic routing not evaluated); the
+  order of `<LuaContext>` children before the parent's script is assumed (engine-contract open question 11);
+  `CalculateGoldRate` counts as fixed only for DLLs with the digest additions; Squads reads options from user mod data
+  (empty in the host); the hazard scan does not follow `include()`; statistical power is about a 25% shift when the
+  DLL ignores the sync seed (VP), so the ensemble varies the map; installed-package data for `probes/`.
 
 ## Log
 
@@ -114,3 +120,14 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   installed-package data for `probes/` (only `data/*.json` ships).
 - Independent check after the merge: the 120-turn M5 replay with main's exe (out 20261025-211224) has digests identical
   to the phase A run.
+
+### 2026-10-25: verify follow-up merged; stop before the real game
+
+- b19eb10: verify uses the merged interfaces (fingerprint through `run.play`/`start_game`, `replay_data()`,
+  `hazards.scan_report` reach, `--mod`/`--no-mods`); compared host games get the real game's city-states (read from
+  its turn-0 fingerprint) when the DLL leaves the choice to the exe; DLLs without digests get a sparse-fingerprint
+  probe-off reference; turn counts capped at the horizon. 188 tests.
+- Host-only runs (agent): this fork's DLL and mods pass in 4.0 min (0 uncovered game-reachable UI hazards; A/A, skew
+  and perturbation 150/150; 0.43 s/turn, 450 MB; 53 / 201 / 328 games/h at 1 / 4 / 8 workers). Stock DLL with no
+  mods: warn in 0.8 min, only the expected 37 UI hazards of the base-game and EUI UI; fingerprint A/A, skew and
+  perturbation 150/150; the stock DLL draws on the sync seed, so its ensemble keeps the map (0.08 s/turn, 121 MB).
