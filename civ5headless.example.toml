@@ -1,0 +1,38 @@
+# civ5headless.toml: copy this file to civ5headless.toml (repository root or the folder you run c5h from) and set
+# only what discovery gets wrong or cannot find. `c5h doctor` shows every value and where it came from.
+#
+# Every key is optional. Relative paths are relative to this file's folder; ~ and %VAR% are expanded. Write Windows
+# paths with forward slashes, or in single quotes when they hold no quote: in double quotes a backslash is an escape.
+
+# Game folder. Discovered from Steam (registry and libraryfolders.vdf).
+# game_dir = "%ProgramFiles(x86)%/Steam/steamapps/common/Sid Meier's Civilization V"
+
+# Documents\My Games\Sid Meier's Civilization 5. Discovered through the Documents known folder (OneDrive aware).
+# user_dir = "%USERPROFILE%/Documents/My Games/Sid Meier's Civilization 5"
+
+# MODS folder, the game's cache folder and the files in them; each defaults to user_dir's.
+# mods_dir = "pinned/MODS"
+# cache_dir = "..."
+# mods_db = "pinned/Civ5ModsDatabase.db"        # the activated mods (Activated = 1)
+# loc_db = "pinned/Localization-Merged.db"
+# config_ini = "..."
+
+# Game DLL. Discovered: the first active mod's CvGameCore_Expansion2.dll, else the Community Patch folder's, else the
+# game's own.
+# dll = "builds/CvGameCore_Expansion2.dll"
+
+# Game database. snapshot is the DLC snapshot the database builder starts from (the game's cache
+# Civ5DebugDatabase.db copied at the main menu with no mods active); with it, games build their database from the mods
+# and cache it. db is a built game database used as is instead.
+# snapshot = "db/dlc-snapshot.db"
+# db = "db/mods-reference.db"
+# db_cache = "cache/db"
+
+# Host. exe is discovered from out/latest.txt (python tools/build_host.py).
+# exe = "out/Release/20261025-120000/civ5headless.exe"
+# toolchain = "toolchain"
+
+# Where run folders go (default: <workspace>/runs) and the workspace itself (default: the repository root, or
+# %LOCALAPPDATA%\civ5headless for an installed package).
+# runs = "runs"
+# workspace = "."

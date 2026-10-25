@@ -1,19 +1,25 @@
-"""Headless vpbench backend: play a new game from a spec in civ5headless.exe and write a vpbench run folder.
+"""One host game: play a new game from a spec in civ5headless.exe and write a vpbench-style run folder.
 
-  python work/headless/hhbench.py newgame --run NAME --spec SPEC.json --target-turn N
-         [--dll DLL] [--db DB | --mods-dir MODS --mods-db Civ5ModsDatabase.db]
-         [--diagnostics 1] [--improved-mask N | --ab-role baseline|test] [--checkpoint-every 1]
-         [--maximum-seconds S] [--stall-seconds S] [--max-memory-mb MB] [--affinity MASK] [--prune]
-         [--run-dir DIR] [--exe EXE] [--host-arg ARG]...
+  c5h run SPEC.json --turns N [--run NAME | --run-dir DIR] [--seeds MAP SYNC]
+          [--dll DLL] [--db DB | --mods-dir MODS --mods-db Civ5ModsDatabase.db] [--loc-db DB] [--game-dir DIR]
+          [--exe EXE] [--lua-probe FILE]... [--heap-perturb N] [--frame-skew K]
+          [--diagnostics 1] [--improved-mask N | --ab-role baseline|test] [--checkpoint-every 1]
+          [--maximum-seconds S] [--stall-seconds S] [--max-memory-mb MB] [--affinity MASK] [--low-priority]
+          [--prune] [--host-arg ARG]...
 
-  (also reachable as: python work/vpbench/vpbench.py newgame --backend headless --run NAME --spec ... --target-turn N)
+From Python: run.play(spec, turns, ...) -> Result (see play).
+
+Inputs left out come from the configuration (civ5headless.toml or discovery; c5h doctor): the game folder, the DLL,
+the MODS folder, the mods and localization databases, the host exe and the runs folder (run folder <runs>/NAME;
+without --run or --run-dir, NAME is <spec stem>-<date>-<time>). The game database is --db, else the configured db,
+else the cached build for the mods and DLL (dbcache.py).
 
 The run folder has the files vpbench writes and its readers use (compare.py, abcompare.py, samerun.py):
 events.jsonl, setup.json, spec-resolved.json, status.json, turn-times.jsonl, turn-seen.json,
 checkpoints/turn-NNNN.json (+ turn-NNNN-final.json), replay-messages.json, replay-data.json; plus the host's
 own outputs (newgame-report.json, Logs/ with HeadlessDigest.log, t000-*.json, dump-t000/, dump-tN/).
 
-Differences from a real-game run (docs/headless-host.md, "Run folders"):
+Differences from a real-game run (docs/user-guide.md, "Run folders"):
 - checkpoints are taken exactly when the game turn advances (every --checkpoint-every turns), not by a
   30-second poll during the turn; turn-times.jsonl/turn-seen.json are exact, not 5-second polls;
 - status.process comes from the host process (CPU seconds, peak working set, peak private bytes);
@@ -24,20 +30,16 @@ Differences from a real-game run (docs/headless-host.md, "Run folders"):
   two DLL builds use --ab-role, which records improvedMask 0 (baseline) or -1 (test: every player runs the
   test DLL) in setup.json.
 """
+from dataclasses import dataclass
 from pathlib import Path
 import argparse, hashlib, json, os, shutil, subprocess, sys, time
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
-MAIN = ROOT.parents[2] if ROOT.parent.name == 'wt' else ROOT
-sys.path.insert(0, str(HERE))
-import dbcache, gamespec, winproc  # noqa: E402
+from . import config, dbcache, winproc
+from . import spec as gamespec
 
-RUNS = ROOT / 'work/test-runs'
-DEFAULT_GAME_DIR = r"E:\SteamLibrary\steamapps\common\Sid Meier's Civilization V"
-
-# vpbench.SETUP (work/vpbench/vpbench.py), as a function. Keep in sync.
+# vpbench.SETUP (the real-game benchmark of the Vox Populi fork this came from), as a function. Keep in sync.
 SETUP = r'''
 local out={turn=Game.GetGameTurn(),activePlayer=Game.GetActivePlayer(),speed=GameInfo.GameSpeeds[Game.GetGameSpeedType()].Type,
  world=GameInfo.Worlds[Map.GetWorldSize()].Type,map=PreGame.GetMapScript(),plots=Map.GetNumPlots(),version=(Game.GetDLLVersion and Game.GetDLLVersion() or ''),diagnostics=(Game.GetStackingDiagnosticsLevel and Game.GetStackingDiagnosticsLevel() or -1),players={}}
@@ -148,7 +150,7 @@ def spec_key(resolved, spec_path):
 
 
 def resolve_spec(spec_path, db, seeds=None):
-    spec = json.loads(Path(spec_path).read_text(encoding='utf-8'))
+    spec = json.loads(Path(spec_path).read_text(encoding='utf-8-sig'))
     if seeds:
         spec = dict(spec, seeds=dict(spec.get('seeds') or {}, **seeds))
     if spec.get('specVersion') and not seeds:
@@ -201,23 +203,32 @@ def prune(run):
                 shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
 
 
-def newgame(a, quiet=False):
-    """Play one game; returns 0 when completed. a: argparse namespace (see main) or an equivalent object."""
-    folder = (Path(a.run_dir) if getattr(a, 'run_dir', None) else RUNS / a.run).resolve()
+def run_folder(a, cfg):
+    if getattr(a, 'run_dir', None):
+        return Path(a.run_dir).resolve()
+    name = getattr(a, 'run', None) or f'{Path(a.spec).stem}-{datetime.now():%Y%m%d-%H%M%S}'
+    return (cfg.require('runs') / name).resolve()
+
+
+def newgame(a, quiet=False, cfg=None):
+    """Play one game; returns 0 when completed. a: argparse namespace (see add_arguments) or an equivalent object;
+    cfg: the configuration that supplies whatever a leaves out (default config.load())."""
+    cfg = cfg or config.load()
+    folder = run_folder(a, cfg)
     if (folder / 'status.json').is_file():
-        raise SystemExit(f'{folder} already has a status.json; use a new run name')
+        raise FileExistsError(f'{folder} already has a status.json; use a new run name')
     run = Run(folder)
     status = dict(state='failed', backend='headless')
     job = None
     try:
-        dll = Path(a.dll or (Path(a.mods_dir) / '(1) Community Patch/CvGameCore_Expansion2.dll')).resolve()
-        exe = dbcache.find_exe(a.exe)
-        if a.db:
-            db, dbinfo = Path(a.db).resolve(), dict(db=str(Path(a.db).resolve()))
-        else:
-            db, dbinfo, key = dbcache.get_db(a.mods_dir, a.mods_db, dll, exe, cache=getattr(a, 'db_cache', None),
-                                             log=lambda m: run.log('database_built', quiet=quiet, message=m))
-            dbinfo = dict(dbinfo, db=str(db), cacheKey=key)
+        mods_dir = getattr(a, 'mods_dir', None) or cfg.mods_dir
+        mods_db = getattr(a, 'mods_db', None) or cfg.mods_db
+        loc_db = getattr(a, 'loc_db', None) or cfg.loc_db
+        game_dir = getattr(a, 'game_dir', None) or cfg.require('game_dir', 'pass --game-dir')
+        dll = Path(a.dll or cfg.require('dll', 'pass --dll')).resolve()
+        exe = dbcache.find_exe(a.exe, cfg)
+        db, dbinfo = dbcache.database(cfg, db=a.db, mods_dir=mods_dir, mods_db=mods_db, dll=dll, exe=exe,
+                                      log=lambda m: run.log('database_built', quiet=quiet, message=m))
         resolved = resolve_spec(a.spec, db, getattr(a, 'seeds', None))
         write(run.dir / 'spec-resolved.json', resolved)
         seed_key = spec_key(resolved, a.spec)
@@ -232,9 +243,14 @@ def newgame(a, quiet=False):
                '--lua-before-arm', str(run.dir / 'hh-before-arm.lua'),
                '--checkpoint-lua', str(run.dir / 'hh-checkpoint.lua'), '--checkpoint-every', str(a.checkpoint_every),
                '--lua-before-dump', str(run.dir / 'hh-final.lua')]
-        if a.mods_dir: cmd += ['--mods-dir', str(Path(a.mods_dir).resolve())]
-        if a.mods_db: cmd += ['--mods-db', str(Path(a.mods_db).resolve())]
-        if getattr(a, 'game_dir', None): cmd += ['--game-dir', a.game_dir]
+        if mods_dir: cmd += ['--mods-dir', str(Path(mods_dir).resolve())]
+        if mods_db: cmd += ['--mods-db', str(Path(mods_db).resolve())]
+        if loc_db: cmd += ['--loc-db', str(Path(loc_db).resolve())]
+        cmd += ['--game-dir', str(game_dir)]
+        for probe in getattr(a, 'lua_probe', None) or []:
+            cmd += ['--lua-probe', str(Path(probe).resolve())]
+        if getattr(a, 'heap_perturb', None): cmd += ['--heap-perturb', str(a.heap_perturb)]
+        if getattr(a, 'frame_skew', None): cmd += ['--frame-skew', str(a.frame_skew)]
         cmd += list(a.host_arg or [])
         write(run.dir / 'hh-command.json', dict(command=cmd, exe=str(exe), exeSHA256=dbcache.sha256_file(exe), dll=str(dll),
                                                 dllSHA256=dll_sha, database=dbinfo))
@@ -352,49 +368,108 @@ def newgame(a, quiet=False):
             job.close()
 
 
-def add_newgame_args(n, vpbench=False):
-    """The newgame options; vpbench=True adds only those vpbench's own newgame parser lacks."""
-    if not vpbench:
-        n.add_argument('--run', help='run name: work/test-runs/NAME (as vpbench)')
-        n.add_argument('--spec', required=True, help='game spec (gamespec.py format, resolved or not)')
-        n.add_argument('--target-turn', type=int, required=True, help='autoplay to this turn')
-        n.add_argument('--diagnostics', type=int, default=0, help='Stacking diagnostics level during autoplay (behaviour runs)')
-        n.add_argument('--maximum-seconds', type=int, default=21600)
-    n.add_argument('--improved-mask', type=int, default=None, help='A/B: Game.SetStackingAIImprovedMask(N) before arming (DLLs with the switch)')
+@dataclass
+class Result:
+    """One played game: the run folder, whether it completed, its status.json and the host's report."""
+    dir: Path
+    ok: bool
+    status: dict
+
+    @property
+    def report(self):
+        """host-report.json when the host writes one (plan 9.2), else newgame-report.json."""
+        return read(self.dir / 'host-report.json') or read(self.dir / 'newgame-report.json', {}) or {}
+
+    @property
+    def digest_log(self):
+        return self.dir / 'Logs/HeadlessDigest.log'
+
+    @property
+    def lua_log(self):
+        return self.dir / 'Logs/Lua.log'
+
+
+def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None, db=None, mods_dir=None,
+         mods_db=None, loc_db=None, game_dir=None, exe=None, lua_probes=(), heap_perturb=None, frame_skew=None,
+         diagnostics=0, improved_mask=None, ab_role=None, checkpoint_every=1, max_seconds=21600, stall_seconds=900,
+         max_memory_mb=3500, affinity=None, low_priority=False, prune=False, host_args=(), poll=1.0, quiet=True):
+    """Play one game in civ5headless.exe and return its Result.
+
+    spec: a spec file (resolved or not) or a spec dict (written to the run folder as spec.json); turns: autoplay to
+    this turn; run / run_dir: the run folder (<runs>/run, or run_dir; default <runs>/<spec stem>-<date>-<time>);
+    cfg: a config.Config (default config.load()); seeds: {'map': M, 'sync': S} over the spec's;
+    lua_probes: files for the host's --lua-probe; heap_perturb, frame_skew: the host options of the same name;
+    host_args: further host arguments. The other keywords are the c5h run options of the same name; anything left
+    None comes from the configuration. Raises FileExistsError when the run folder already holds a game."""
+    cfg = cfg or config.load()
+    if isinstance(spec, dict):
+        folder = Path(run_dir).resolve() if run_dir else cfg.require('runs') / (run or f'spec-{datetime.now():%Y%m%d-%H%M%S}')
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'spec.json').write_text(json.dumps(spec, indent=1) + '\n', encoding='utf-8')
+        spec, run_dir = folder / 'spec.json', folder
+    a = SimpleNamespace(run=run, run_dir=str(run_dir) if run_dir else None, spec=str(spec), target_turn=int(turns),
+                        seeds=dict(seeds) if seeds else None, dll=dll, db=db, mods_dir=mods_dir, mods_db=mods_db,
+                        loc_db=loc_db, game_dir=game_dir, exe=exe, lua_probe=list(lua_probes or []),
+                        heap_perturb=heap_perturb, frame_skew=frame_skew, diagnostics=int(diagnostics or 0),
+                        improved_mask=improved_mask, ab_role=ab_role, checkpoint_every=int(checkpoint_every or 1),
+                        maximum_seconds=max_seconds, stall_seconds=stall_seconds, max_memory_mb=max_memory_mb or None,
+                        affinity=affinity, low_priority=low_priority, prune=prune, host_arg=list(host_args or []),
+                        poll=poll)
+    folder = run_folder(a, cfg)
+    a.run_dir = str(folder)
+    code = newgame(a, quiet=quiet, cfg=cfg)
+    status = read(folder / 'status.json', {}) or {}
+    return Result(folder, code == 0 and status.get('state') == 'completed', status)
+
+
+def add_arguments(n):
+    """The c5h run options (queue.py builds the same namespace from a queue's jobs)."""
+    n.add_argument('spec', help='game spec (spec.py format, resolved or not)')
+    n.add_argument('--turns', '--target-turn', dest='target_turn', type=int, required=True, help='autoplay to this turn')
+    n.add_argument('--run', help='run name: <runs>/NAME (default <spec stem>-<date>-<time>)')
     n.add_argument('--run-dir', help='run folder (instead of --run)')
-    n.add_argument('--dll', help='game DLL (default: CvGameCore_Expansion2.dll in MODS/(1) Community Patch)')
-    n.add_argument('--db', help='built game database (default: cached build from --mods-dir/--mods-db and --dll)')
-    n.add_argument('--mods-dir', help='MODS folder or pinned copy (read only)')
-    n.add_argument('--mods-db', help='Civ5ModsDatabase.db (activated mods)')
-    n.add_argument('--exe', help='civ5headless.exe (default: the latest build)')
-    n.add_argument('--game-dir', help='game folder (host default: ' + DEFAULT_GAME_DIR + ')')
+    n.add_argument('--seeds', nargs=2, type=int, metavar=('MAP', 'SYNC'), help="map and sync seeds over the spec's")
+    n.add_argument('--dll', help='game DLL (default: config dll)')
+    n.add_argument('--db', help='built game database (default: config db, else the cached build from the mods and DLL)')
+    n.add_argument('--mods-dir', help='MODS folder or pinned copy, read only (default: config mods_dir)')
+    n.add_argument('--mods-db', help='Civ5ModsDatabase.db with the activated mods (default: config mods_db)')
+    n.add_argument('--loc-db', help='Localization-Merged.db (default: config loc_db)')
+    n.add_argument('--game-dir', help='game folder (default: config game_dir)')
+    n.add_argument('--exe', help='civ5headless.exe (default: config exe)')
+    n.add_argument('--lua-probe', action='append', help='Lua file the host runs once the game has started (repeatable)')
+    n.add_argument('--heap-perturb', type=int, help='host heap layout perturbation seed (0: off)')
+    n.add_argument('--frame-skew', type=int, help='an extra engine update before every K-th one')
+    n.add_argument('--diagnostics', type=int, default=0, help='Stacking diagnostics level during autoplay (behaviour runs)')
+    n.add_argument('--improved-mask', type=int, default=None, help='A/B: Game.SetStackingAIImprovedMask(N) before arming (DLLs with the switch)')
     n.add_argument('--ab-role', choices=['baseline', 'test'], help='A/B of two DLL builds: record improvedMask 0 or -1 in setup.json')
     n.add_argument('--checkpoint-every', type=int, default=1, help='checkpoint every n turns (default 1)')
+    n.add_argument('--maximum-seconds', type=int, default=21600)
     n.add_argument('--stall-seconds', type=int, default=900, help='kill the host after this long without a new turn')
     n.add_argument('--max-memory-mb', type=int, default=3500, help='per-process commit limit (job object); 0 = none')
     n.add_argument('--affinity', default=None, help='CPU affinity mask for the host (e.g. 0x3)')
     n.add_argument('--low-priority', action='store_true', help='run the host below normal priority')
     n.add_argument('--prune', action='store_true', help='delete the database copy, state dumps and AI logs afterwards')
     n.add_argument('--poll', type=float, default=1.0, help='progress poll interval in seconds')
-    n.add_argument('--host-arg', action='append', help='extra civ5headless.exe argument (repeatable), e.g. --no-game-logging')
+    n.add_argument('--host-arg', action='append', help='extra civ5headless.exe argument (repeatable), e.g. --host-arg=--no-game-logging')
 
 
 def check_args(a, error):
-    if not (a.run or a.run_dir): error('--run or --run-dir is required')
-    if not a.spec: error('--spec is required')
-    if not a.target_turn or a.target_turn <= 0: error('--target-turn N (> 0) is required')
-    if not a.db and not (a.mods_dir and a.mods_db): error('--db, or --mods-dir and --mods-db, is required')
+    if a.target_turn <= 0: error('--turns N (> 0) is required')
     if a.improved_mask is not None and a.ab_role: error('--improved-mask and --ab-role exclude each other')
     if a.max_memory_mb == 0: a.max_memory_mb = None
+    a.seeds = dict(map=a.seeds[0], sync=a.seeds[1]) if a.seeds else None
 
 
-def main(argv=None):
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = p.add_subparsers(dest='command', required=True)
-    add_newgame_args(sub.add_parser('newgame'))
+def main(argv=None, cfg=None):
+    p = argparse.ArgumentParser(prog='c5h run', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    add_arguments(p)
     a = p.parse_args(argv)
     check_args(a, p.error)
-    return newgame(a)
+    try:
+        return newgame(a, cfg=cfg or config.load())
+    except FileExistsError as error:
+        print(f'c5h run: {error}', file=sys.stderr)
+        return 2
 
 
 if __name__ == '__main__':

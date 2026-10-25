@@ -1,14 +1,15 @@
-"""Parallel runner for headless games: a resumable queue of hhbench runs with N workers.
+"""Parallel runner for host games: a resumable queue of run.py games with N workers.
 
-  python work/headless/runner.py run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
-  python work/headless/runner.py status QUEUE.json        # job table and totals (also written as QUEUE.summary.json)
-  python work/headless/runner.py compare QUEUE.json       # samerun per seed pair, abcompare over the batch
+  c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
+  c5h queue status QUEUE.json        # job table and totals (also written as QUEUE.summary.json)
+  c5h queue compare QUEUE.json       # digests of each seed's variants against each other; --vpbench DIR adds
+                                     # samerun per seed pair, abcompare over the batch and compare (Vox Populi tools)
 
-QUEUE.json:
+QUEUE.json (relative paths are relative to the queue file's folder):
 
-  {"out": "work/test-runs/ab1",            # run folders: <out>/<job name> (relative to the repository root)
+  {"out": "ab1",                            # run folders: <out>/<job name> (default <runs>/<queue file stem>)
    "workers": 8, "affinity": "p-first",
-   "defaults": {"spec": "work/headless/specs/continents-standard.json", "turns": 100,
+   "defaults": {"spec": "../specs/continents-standard.json", "turns": 100,
                 "modsDir": "...MODS", "modsDb": "...Civ5ModsDatabase.db", "dll": "...CvGameCore_Expansion2.dll",
                 "diagnostics": 0, "checkpointEvery": 1, "maxSeconds": 7200, "stallSeconds": 900,
                 "maxMemoryMB": 3500, "prune": true, "hostArgs": []},
@@ -17,8 +18,9 @@ QUEUE.json:
    "jobs": [{"name": "extra", "turns": 250}]}  # optional explicit jobs (defaults apply)
 
 Job keys: spec, turns, dll, db (a built database; otherwise built once per (mods input, DLL) and cached),
-modsDir, modsDb, exe, gameDir, seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery,
-maxSeconds, stallSeconds, maxMemoryMB, prune, hostArgs, lowPriority (default true).
+modsDir, modsDb, locDb, exe, gameDir, seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery,
+maxSeconds, stallSeconds, maxMemoryMB, prune, hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default
+true). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, db) come from the configuration (c5h doctor).
 
 State: QUEUE.state.json (next to the queue). A restart skips completed runs (status.json completed), re-queues
 interrupted ones (their folder is kept as <name>-rN) and leaves failed ones failed unless --retry-failed.
@@ -28,18 +30,17 @@ Workers: worker k is pinned to the k-th physical core, P-cores (both hyperthread
 (--affinity none: no pinning). Games run below normal priority unless lowPriority is false.
 """
 from pathlib import Path
-import argparse, collections, copy, json, os, subprocess, sys, threading, time
+import argparse, collections, json, os, subprocess, sys, threading, time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
-sys.path.insert(0, str(HERE))
-import dbcache, hhbench, winproc  # noqa: E402
+from . import config, dbcache, winproc
+from . import run as host_run
+from .compare import digest
 
 DEFAULTS = dict(turns=100, diagnostics=0, checkpointEvery=1, maxSeconds=7200, stallSeconds=900, maxMemoryMB=3500,
                 prune=True, hostArgs=[])
-PATH_KEYS = ('spec', 'dll', 'db', 'modsDir', 'modsDb', 'exe')
+PATH_KEYS = ('spec', 'dll', 'db', 'modsDir', 'modsDb', 'locDb', 'exe', 'gameDir')
 
 
 def utc(): return datetime.now(timezone.utc).isoformat()
@@ -51,7 +52,7 @@ def rel(base, value):
 
 def expand(queue, qpath):
     """The job list: explicit jobs plus seeds x variants, each merged over the defaults."""
-    base = ROOT
+    base = Path(qpath).resolve().parent
     defaults = dict(DEFAULTS, **queue.get('defaults', {}))
     jobs = []
     variants = queue.get('variants') or {}
@@ -69,18 +70,19 @@ def expand(queue, qpath):
         for k in PATH_KEYS:
             if j.get(k):
                 j[k] = rel(base, j[k])
-        if not j.get('spec') or not j.get('dll'):
-            raise SystemExit(f"job {j['name']}: spec and dll are required")
-        if not j.get('db') and not (j.get('modsDir') and j.get('modsDb')):
-            raise SystemExit(f"job {j['name']}: db, or modsDir and modsDb, is required")
+        j['luaProbes'] = [rel(base, p) for p in j.get('luaProbes') or []]
+        if not j.get('spec'):
+            raise SystemExit(f"job {j['name']}: spec is required")
     return jobs
 
 
 class Queue:
-    def __init__(self, qpath):
+    def __init__(self, qpath, cfg):
         self.qpath = Path(qpath).resolve()
+        self.cfg = cfg
         self.queue = json.loads(self.qpath.read_text(encoding='utf-8'))
-        self.out = Path(rel(ROOT, self.queue.get('out') or f'work/test-runs/{self.qpath.stem}'))
+        out = self.queue.get('out')
+        self.out = Path(rel(self.qpath.parent, out)) if out else cfg.require('runs') / self.qpath.stem
         self.jobs = expand(self.queue, self.qpath)
         self.state_path = self.qpath.with_suffix('.state.json')
         self.stop_path = self.qpath.with_suffix('.stop')
@@ -105,12 +107,14 @@ class Queue:
         return self.out / job['name']
 
     def status(self, job):
-        return hhbench.read(self.run_dir(job) / 'status.json') or {}
+        return host_run.read(self.run_dir(job) / 'status.json') or {}
 
 
 def job_args(job, folder, db, affinity):
-    return SimpleNamespace(run=None, run_dir=str(folder), spec=job['spec'], target_turn=int(job['turns']), dll=job['dll'], db=str(db),
-                           mods_dir=job.get('modsDir'), mods_db=job.get('modsDb'), exe=job.get('exe'), game_dir=job.get('gameDir'),
+    return SimpleNamespace(run=None, run_dir=str(folder), spec=job['spec'], target_turn=int(job['turns']), dll=job.get('dll'), db=str(db),
+                           mods_dir=job.get('modsDir'), mods_db=job.get('modsDb'), loc_db=job.get('locDb'), exe=job.get('exe'),
+                           game_dir=job.get('gameDir'), lua_probe=job.get('luaProbes'), heap_perturb=job.get('heapPerturb'),
+                           frame_skew=job.get('frameSkew'),
                            diagnostics=int(job.get('diagnostics') or 0), improved_mask=job.get('improvedMask'), ab_role=job.get('abRole'),
                            checkpoint_every=int(job.get('checkpointEvery') or 1), stall_seconds=job.get('stallSeconds'),
                            max_memory_mb=job.get('maxMemoryMB') or None, affinity=affinity, prune=bool(job.get('prune')),
@@ -147,22 +151,25 @@ def prepare(q, retry_failed):
 def databases(q, jobs):
     """Build (or find) the database of every job: once per (mods input, DLL) through dbcache."""
     out = {}
+    cfg = q.cfg
     for job in jobs:
-        if job.get('db'):
-            out[job['name']] = job['db']
+        if job.get('db') or cfg.db:
+            out[job['name']] = str(Path(job.get('db') or cfg.db).resolve())
             continue
-        key = (job['modsDir'], job['modsDb'], job['dll'], job.get('exe'))
+        dll = job.get('dll') or cfg.require('dll')
+        key = (job.get('modsDir'), job.get('modsDb'), dll, job.get('exe'))
         if key not in out:
             t = time.monotonic()
-            db, inputs, k = dbcache.get_db(job['modsDir'], job['modsDb'], job['dll'], job.get('exe'), log=q.log)
+            db, info = dbcache.database(cfg, mods_dir=job.get('modsDir'), mods_db=job.get('modsDb'), dll=dll, exe=job.get('exe'),
+                                        log=q.log)
             out[key] = str(db)
-            q.log(f'database {k} for {Path(job["dll"]).parent.name}/{Path(job["dll"]).name}: {db} ({time.monotonic() - t:.1f} s)')
+            q.log(f'database {info.get("cacheKey")} for {Path(dll).parent.name}/{Path(dll).name}: {db} ({time.monotonic() - t:.1f} s)')
         out[job['name']] = out[key]
     return out
 
 
-def run(args):
-    q = Queue(args.queue)
+def run(args, cfg):
+    q = Queue(args.queue, cfg)
     q.out.mkdir(parents=True, exist_ok=True)
     workers = args.workers or int(q.queue.get('workers', 8))
     mode = args.affinity or q.queue.get('affinity', 'p-first')
@@ -189,10 +196,10 @@ def run(args):
                 st.update(state='running', worker=slot, started=utc(), attempts=st.get('attempts', 0) + 1,
                           affinity=hex(masks[slot]) if masks[slot] else None)
                 q.save()
-            q.log(f"[w{slot}] start {job['name']} ({job['turns']} turns, {Path(job['dll']).parent.name})")
+            q.log(f"[w{slot}] start {job['name']} ({job['turns']} turns, {Path(job.get('dll') or cfg.dll or '?').parent.name})")
             t = time.monotonic()
             try:
-                code = hhbench.newgame(job_args(job, q.run_dir(job), dbs[job['name']], masks[slot]), quiet=True)
+                code = host_run.newgame(job_args(job, q.run_dir(job), dbs[job['name']], masks[slot]), quiet=True, cfg=cfg)
             except KeyboardInterrupt:
                 code = None
             except BaseException as error:  # noqa: BLE001
@@ -268,50 +275,68 @@ def summary(q, batch_seconds=None):
               f"{r['hostSeconds'] or '':>8}{r['cpuSeconds'] or '':>8}{r['peakWorkingSetMB'] or '':>8}  {r['endReason'] or ''}"
               + (f"  {r['error']}" if r['error'] else ''))
     print('totals: ' + json.dumps(totals))
-    hhbench.write(q.qpath.with_suffix('.summary.json'), dict(utc=utc(), out=str(q.out), totals=totals, jobs=rows))
+    host_run.write(q.qpath.with_suffix('.summary.json'), dict(utc=utc(), out=str(q.out), totals=totals, jobs=rows))
     return 0 if totals['failed'] == 0 and totals['pending'] == 0 else 1
 
 
-def compare(args):
-    """samerun.py for each seed's variant pair, then abcompare.py and compare.py over the completed runs."""
-    q = Queue(args.queue)
+def compare(args, cfg):
+    """Each seed's variants against its first one (per-turn digests; transients that heal within --heal-turns are
+    reported apart). With --vpbench DIR (a folder with Vox Populi's samerun.py, abcompare.py and compare.py), also
+    samerun per seed pair, abcompare over the batch and compare for the first runs."""
+    q = Queue(args.queue, cfg)
     done = [j for j in q.jobs if q.status(j).get('state') == 'completed']
-    tools = ROOT / 'work/vpbench'
     by_seed = collections.defaultdict(list)
     for j in done:
         by_seed[json.dumps(j.get('seeds'), sort_keys=True)].append(j)
-    if (tools / 'samerun.py').is_file():
+    results, same = [], True
+    for seed, js in by_seed.items():
+        for other in js[1:]:
+            a, b = q.run_dir(js[0]) / 'Logs/HeadlessDigest.log', q.run_dir(other) / 'Logs/HeadlessDigest.log'
+            if not (a.is_file() and b.is_file()):
+                print(f"{js[0]['name']} / {other['name']}: no digest (a DLL without the digest additions)")
+                continue
+            r = digest.compare(a, b, heal_turns=args.heal_turns)
+            same &= r['identical']
+            results.append(dict(a=js[0]['name'], b=other['name'], **r))
+            print(f"{js[0]['name']} / {other['name']}: {digest.summary(r)}")
+    if results:
+        host_run.write(q.qpath.with_suffix('.compare.json'), results)
+    tools = Path(args.vpbench) if args.vpbench else None
+    if tools and (tools / 'samerun.py').is_file():
         for seed, js in by_seed.items():
             for other in js[1:]:
                 print(f"\nsamerun {js[0]['name']} {other['name']}:", flush=True)
                 subprocess.run([sys.executable, '-B', str(tools / 'samerun.py'), str(q.run_dir(js[0])), str(q.run_dir(other))])
     turns = sorted({int(j['turns']) for j in done})
-    if (tools / 'abcompare.py').is_file() and done:
+    if tools and (tools / 'abcompare.py').is_file() and done:
         marks = [t for t in (50, 100, 150, 200, 250) if t <= max(turns)]
         print('\nabcompare:', flush=True)
         subprocess.run([sys.executable, '-B', str(tools / 'abcompare.py')] + [str(q.run_dir(j)) for j in done]
                        + ['--turns', ','.join(map(str, marks)), '--json', str(q.qpath.with_suffix('.abcompare.json'))])
-    if args.compare_runs and done:
+    if tools and args.compare_runs and done:
         print('\ncompare:', flush=True)
         subprocess.run([sys.executable, '-B', str(tools / 'compare.py')] + [str(q.run_dir(j)) for j in done[:args.compare_runs]])
-    return 0
+    return 0 if same else 1
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv=None, cfg=None):
+    p = argparse.ArgumentParser(prog='c5h queue', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest='command', required=True)
     r = sub.add_parser('run'); r.add_argument('queue')
     r.add_argument('--workers', type=int); r.add_argument('--affinity', choices=['p-first', 'none'])
     r.add_argument('--retry-failed', action='store_true')
     s = sub.add_parser('status'); s.add_argument('queue')
     c = sub.add_parser('compare'); c.add_argument('queue')
-    c.add_argument('--compare-runs', type=int, default=4, help='also print compare.py for the first N runs (0: no)')
-    a = p.parse_args()
+    c.add_argument('--heal-turns', type=int, default=2, help='differences that heal within this many turns are transients')
+    c.add_argument('--vpbench', help="folder with Vox Populi's samerun.py, abcompare.py and compare.py")
+    c.add_argument('--compare-runs', type=int, default=4, help='with --vpbench: also print compare.py for the first N runs (0: no)')
+    a = p.parse_args(argv)
+    cfg = cfg or config.load()
     if a.command == 'run':
-        return run(a)
+        return run(a, cfg)
     if a.command == 'status':
-        return summary(Queue(a.queue))
-    return compare(a)
+        return summary(Queue(a.queue, cfg))
+    return compare(a, cfg)
 
 
 if __name__ == '__main__':

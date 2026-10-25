@@ -1,7 +1,9 @@
 """Build the modded game database without the game (headless host, plan section 4.5, M4).
 
-  python work/headless/build_db.py --mods-dir MODS [--mods-db Civ5ModsDatabase.db] [--mod ID[:VER]]...
-                                   --out BUILT.db [--snapshot DLC.db] [--path-as DIR] [--oracle REF.db]
+  c5h dbbuild --mods-dir MODS [--mods-db Civ5ModsDatabase.db] [--mod ID[:VER]]...
+              --out BUILT.db [--snapshot DLC.db] [--path-as DIR] [--oracle REF.db]
+
+--game-dir, --snapshot, --exe and --dll default to the configuration (civ5headless.toml or discovery; c5h doctor).
 
 Steps:
   1. Read every .modinfo below --mods-dir. The activated mods are the --mod arguments, or the
@@ -19,7 +21,7 @@ Steps:
 
 Map script FileName values are absolute paths into the MODS folder, as the game records them.
 --path-as gives the MODS folder to record instead of --mods-dir (default: the user's real
-MODS folder, so a build from a pinned copy matches the game's database).
+MODS folder, MODS in user_dir, so a build from a pinned copy matches the game's database).
 """
 from __future__ import annotations
 import argparse
@@ -33,14 +35,7 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
-sys.dont_write_bytecode = True
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
-DEFAULT_GAME = Path(r"E:\SteamLibrary\steamapps\common\Sid Meier's Civilization V")
-DOCS_MODS = Path.home() / "Documents/My Games/Sid Meier's Civilization 5/MODS"
-# Local inputs live in the main checkout's work/headless/db (a worktree is at <main>/work/wt/<name>).
-MAIN = ROOT.parents[2] if ROOT.parent.name == 'wt' else ROOT
-DEFAULT_SNAPSHOT = MAIN / 'work/headless/db/dlc-snapshot-CBF411E4.db'
+from . import config, dbdiff
 
 # Schema of the game's localization database (Localization-Merged.db): Language_en_US is a view
 # over LocalizedText with INSTEAD OF triggers. The game resolves mods' Language_* statements
@@ -277,15 +272,6 @@ def snapshot_staleness(game: Path, snapshot: Path, manifest_path):
     return notes
 
 
-def latest_exe():
-    marker = ROOT / 'work/latest-headless-build-path.txt'
-    if marker.is_file():
-        exe = Path(marker.read_text(encoding='utf-8').strip()) / 'civ5headless.exe'
-        if exe.is_file():
-            return exe
-    raise SystemExit('no civ5headless.exe: build it with python work/build-headless.py, or pass --exe')
-
-
 def sha256(path):
     h = hashlib.sha256()
     with open(path, 'rb') as f:
@@ -294,17 +280,18 @@ def sha256(path):
     return h.hexdigest().upper()
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv=None, cfg=None):
+    cfg = cfg or config.load()
+    ap = argparse.ArgumentParser(prog='c5h dbbuild', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--mods-dir', type=Path, help='MODS folder (or a pinned copy) holding the .modinfo files')
     ap.add_argument('--mods-db', type=Path, help='Civ5ModsDatabase.db: activated mods (Activated = 1) and a cross-check')
     ap.add_argument('--mod', action='append', default=[], help='activated mod GUID[:version] (repeatable; overrides --mods-db)')
     ap.add_argument('--out', type=Path, help='database to write')
-    ap.add_argument('--snapshot', type=Path, default=DEFAULT_SNAPSHOT, help='DLC snapshot (Civ5DebugDatabase.db, no mods)')
+    ap.add_argument('--snapshot', type=Path, default=cfg.snapshot, help='DLC snapshot (Civ5DebugDatabase.db, no mods; default: config snapshot)')
     ap.add_argument('--path-as', type=Path, help='MODS folder recorded in MapScripts.FileName (default: the real MODS folder)')
-    ap.add_argument('--game-dir', type=Path, default=DEFAULT_GAME)
+    ap.add_argument('--game-dir', type=Path, default=cfg.game_dir, help='game folder (default: config game_dir)')
     ap.add_argument('--dll', type=Path, help='game DLL for post-processing (default: the CP mod folder\'s CvGameCore_Expansion2.dll)')
-    ap.add_argument('--exe', type=Path, help='civ5headless.exe (default: the latest work/build-headless.py output)')
+    ap.add_argument('--exe', type=Path, default=cfg.exe, help='civ5headless.exe (default: config exe)')
     ap.add_argument('--no-postprocess', action='store_true', help='skip PerformDatabasePostProcessing')
     ap.add_argument('--oracle', type=Path, help='reference database to compare with (dbdiff.py)')
     ap.add_argument('--dlc-manifest', type=Path,
@@ -312,12 +299,18 @@ def main(argv=None):
     ap.add_argument('--write-dlc-manifest', type=Path, help='write the current DLC manifest here and exit')
     a = ap.parse_args(argv)
     t0 = time.monotonic()
+    if a.game_dir is None:
+        ap.error('game_dir is not set: pass --game-dir or set game_dir in civ5headless.toml')
     if a.write_dlc_manifest:
         a.write_dlc_manifest.write_text(json.dumps(dlc_manifest(a.game_dir), indent=1) + '\n', encoding='utf-8')
         print('wrote', a.write_dlc_manifest)
         return 0
     if not a.mods_dir or not a.out:
         ap.error('--mods-dir and --out are required')
+    if a.snapshot is None:
+        ap.error('no DLC snapshot: pass --snapshot or set snapshot in civ5headless.toml')
+    if a.exe is None:
+        ap.error('no civ5headless.exe: build it (python tools/build_host.py), pass --exe or set exe in civ5headless.toml')
 
     mods_dir = a.mods_dir.resolve()
     out = a.out.resolve()
@@ -336,7 +329,7 @@ def main(argv=None):
         raise SystemExit('give --mod or --mods-db')
     ordered = order_mods(mods, wanted)
     notes = check_registry(a.mods_db, ordered) if a.mods_db else []
-    path_as = (a.path_as or DOCS_MODS)
+    path_as = a.path_as or (cfg.user_dir / 'MODS' if cfg.user_dir else mods_dir)
     path_as = str(path_as).rstrip('\\/')
 
     blocked = []
@@ -395,7 +388,7 @@ def main(argv=None):
     plan_path = run / 'plan.txt'
     plan_path.write_text('\n'.join(plan) + '\n', encoding='utf-8')
 
-    exe = (a.exe or latest_exe()).resolve()
+    exe = a.exe.resolve()
     cmd = [str(exe), 'builddb', '--game-dir', str(a.game_dir), '--plan', str(plan_path), '--out', str(out), '--run', str(run)]
     if dll and not a.no_postprocess:
         cmd += ['--dll', str(Path(dll).resolve())]
@@ -416,8 +409,6 @@ def main(argv=None):
         'exe': str(exe), 'dll': str(dll) if dll else None, 'snapshot': str(a.snapshot.resolve()),
     }
     if a.oracle:
-        sys.path.insert(0, str(HERE))
-        import dbdiff
         diff = dbdiff.diff(a.oracle, out)
         (run / 'dbdiff.json').write_text(json.dumps(diff, indent=1, default=str) + '\n', encoding='utf-8')
         summary['oracle'] = str(a.oracle)
@@ -434,7 +425,7 @@ def main(argv=None):
         print(f"  error in {s.get('kind')} {s.get('path')}: {s.get('note', '')} {(s.get('errors') or [''])[0]}")
     if a.oracle:
         print('oracle:', 'identical' if summary['identical'] else 'DIFFERENT (' + ', '.join(summary['tables_differ'][:12]) + ')')
-        print(f'  details: python work/headless/dbdiff.py "{a.oracle}" "{out}"')
+        print(f'  details: c5h dbdiff "{a.oracle}" "{out}"')
     ok = summary['status'] == 'built' and (not a.oracle or summary['identical'])
     return 0 if ok else 1
 

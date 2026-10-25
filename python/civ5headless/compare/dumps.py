@@ -1,21 +1,21 @@
-#!/usr/bin/env python3
 """Compare two digest dumps (Game.DumpHeadlessState folders) section by section.
 
-  parity_t000.py REF HOST [--fields DIR] [--mask-normalised] [--runs N]
+  c5h dumps REF HOST [--fields DIR] [--mask-normalised] [--runs N]
 
 REF and HOST are dump folders (<section>.bin + digest.txt) or run folders containing dump-t000\\. For every
 section the report says identical, or gives the sizes, the number of differing byte runs and the first differing
-offset. With a field map (<section>.fields.txt, written by a DLL built with tools/headless/fieldmap_transform.py;
+offset. With a field map (<section>.fields.txt, written by a field-map build of the DLL;
 --fields DIR, or found next to HOST's or REF's .bin files) each differing run is attributed to the Serialize call
 that wrote it, and the distinct fields are listed.
 
 --mask-normalised: differences inside the fields the current DLL normalises in the digest (docs/
-headless-dll-additions.md, "Unstable bytes") are counted as masked, for references recorded with a DLL that
+dll-additions.md, "Unstable bytes") are counted as masked, for references recorded with a DLL that
 predates the normalisation. Needs a field map. A section whose differences are all masked is reported as
 "identical (masked)".
 
 savedb is not part of the digest total; it is compared and reported but does not affect the exit code.
 Exit code 0 when every section in the total is identical (or masked), 1 otherwise.
+compare_dumps(ref, host, ...) returns (ok, report lines) for other tools.
 """
 import argparse
 import bisect
@@ -95,15 +95,12 @@ def is_normalised(field):
     return field is not None and any(n in field for n in NORMALISED)
 
 
-def main(argv):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('ref')
-    ap.add_argument('host')
-    ap.add_argument('--fields', help='folder with <section>.fields.txt (default: HOST, then REF)')
-    ap.add_argument('--mask-normalised', action='store_true')
-    ap.add_argument('--runs', type=int, default=3, help='differing fields listed per section (default 3)')
-    args = ap.parse_args(argv)
-    ref, host = dump_dir(args.ref), dump_dir(args.host)
+def compare_dumps(ref, host, fields=None, mask_normalised=False, runs=3):
+    """(ok, report lines): ok when every section in the total is identical (or masked)."""
+    lines = []
+    out = lines.append
+    args = argparse.Namespace(fields=fields, mask_normalised=mask_normalised, runs=runs)  # the names below reuse fields, runs
+    ref, host = dump_dir(str(ref)), dump_dir(str(host))
     field_dirs = [args.fields, host, ref]
     sections = sorted({f[:-4] for d in (ref, host) for f in os.listdir(d) if f.endswith('.bin')})
     ok = True
@@ -112,13 +109,13 @@ def main(argv):
         pa, pb = os.path.join(ref, sec + '.bin'), os.path.join(host, sec + '.bin')
         tag = '' if sec not in NOT_IN_TOTAL else ' (not in total)'
         if not os.path.exists(pa) or not os.path.exists(pb):
-            print('%-12s missing in %s%s' % (sec, 'REF' if not os.path.exists(pa) else 'HOST', tag))
+            out('%-12s missing in %s%s' % (sec, 'REF' if not os.path.exists(pa) else 'HOST', tag))
             ok = ok and sec in NOT_IN_TOTAL
             summary['different'] += 1
             continue
         a, b = open(pa, 'rb').read(), open(pb, 'rb').read()
         if a == b:
-            print('%-12s identical (%d bytes)%s' % (sec, len(a), tag))
+            out('%-12s identical (%d bytes)%s' % (sec, len(a), tag))
             summary['identical'] += 1
             continue
         runs = diff_runs(a, b)
@@ -126,14 +123,14 @@ def main(argv):
         attributed = [(s, e, field_at(fields, s)) for s, e in runs]
         real = [r for r in attributed if not (args.mask_normalised and is_normalised(r[2]))]
         if args.mask_normalised and fields and not real and len(a) == len(b):
-            print('%-12s identical (masked: %d runs in normalised fields)%s' % (sec, len(runs), tag))
+            out('%-12s identical (masked: %d runs in normalised fields)%s' % (sec, len(runs), tag))
             summary['masked'] += 1
             continue
         summary['different'] += 1
         if sec not in NOT_IN_TOTAL:
             ok = False
         s0 = real[0][0] if real else runs[0][0]
-        print('%-12s DIFFERENT sizes %d/%d, %d runs (%d not masked), first at %d%s' % (
+        out('%-12s DIFFERENT sizes %d/%d, %d runs (%d not masked), first at %d%s' % (
             sec, len(a), len(b), len(runs), len(real), s0, tag))
         shown = {}
         for s, e, f in (real if real else attributed):
@@ -141,13 +138,27 @@ def main(argv):
             shown.setdefault(key, []).append((s, e))
         for key, lst in list(shown.items())[:args.runs]:
             s, e = lst[0]
-            print('    %s x%d, first %d-%d REF %s HOST %s' % (key, len(lst), s, e, a[s:min(e, s + 12)].hex(),
+            out('    %s x%d, first %d-%d REF %s HOST %s' % (key, len(lst), s, e, a[s:min(e, s + 12)].hex(),
                                                             b[s:min(e, s + 12)].hex()))
         if len(shown) > args.runs:
-            print('    ... %d more fields' % (len(shown) - args.runs))
-    print('summary: %(identical)d identical, %(masked)d identical after masking, %(different)d different' % summary)
+            out('    ... %d more fields' % (len(shown) - args.runs))
+    out('summary: %(identical)d identical, %(masked)d identical after masking, %(different)d different' % summary)
+    return ok, lines
+
+
+def main(argv=None, cfg=None):
+    ap = argparse.ArgumentParser(prog='c5h dumps', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('ref')
+    ap.add_argument('host')
+    ap.add_argument('--fields', help='folder with <section>.fields.txt (default: HOST, then REF)')
+    ap.add_argument('--mask-normalised', action='store_true')
+    ap.add_argument('--runs', type=int, default=3, help='differing fields listed per section (default 3)')
+    args = ap.parse_args(argv)
+    ok, lines = compare_dumps(args.ref, args.host, args.fields, args.mask_normalised, args.runs)
+    for line in lines:
+        print(line)
     return 0 if ok else 1
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main())
