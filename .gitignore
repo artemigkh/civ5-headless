@@ -8,5 +8,7 @@
 # Per-machine configuration and run data
 /civ5headless.toml
 /runs/
+/cache/
 __pycache__/
+*.egg-info/
 *.pyc

@@ -1,6 +1,6 @@
 """Compare two Civilization V game databases: schema, indexes, triggers and every row.
 
-  python work/headless/dbdiff.py REFERENCE.db CANDIDATE.db [--rows 5] [--json OUT.json] [--data-only]
+  c5h dbdiff REFERENCE.db CANDIDATE.db [--rows 5] [--json OUT.json] [--data-only]
 
 The oracle for the headless database builder (plan section 4.5): REFERENCE is the game's own
 Civ5DebugDatabase.db, CANDIDATE the tool-built one. Rows are compared as multisets (row order and
@@ -58,14 +58,14 @@ def diff(ref_path, cand_path, show=5, data_only=False):
     return out
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv=None, cfg=None):
+    ap = argparse.ArgumentParser(prog='c5h dbdiff', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('reference', type=Path)
     ap.add_argument('candidate', type=Path)
     ap.add_argument('--rows', type=int, default=5, help='example rows to show per differing table')
     ap.add_argument('--json', type=Path)
     ap.add_argument('--data-only', action='store_true')
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     out = diff(a.reference, a.candidate, a.rows, a.data_only)
     if a.json:
         a.json.write_text(json.dumps(out, indent=1, default=str) + '\n', encoding='utf-8')

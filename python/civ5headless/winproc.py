@@ -1,4 +1,4 @@
-"""Windows process helpers for the headless tooling (ctypes only; no psutil).
+"""Windows process helpers for the host tooling (ctypes only; no psutil).
 
 - Job objects: per-run memory limit, CPU affinity, kill-on-close (a killed runner takes its hosts with it),
   job accounting (CPU time, peak commit).
@@ -8,7 +8,7 @@
 import ctypes
 import os
 import struct
-import subprocess
+import time
 from ctypes import wintypes
 
 kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -194,11 +194,6 @@ kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
 kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
 
 
-if __name__ == '__main__':
-    for eff, mask in cores():
-        print(f'efficiency class {eff}: mask {mask:#x}')
-
-
 # ---- background load (measurements must say what else ran) ----
 class PROCESSENTRY32W(ctypes.Structure):
     _fields_ = [('dwSize', wintypes.DWORD), ('cntUsage', wintypes.DWORD), ('th32ProcessID', wintypes.DWORD),
@@ -265,4 +260,6 @@ class LoadMeter:
                     gameRunning=bool(g1), gameBusyCores=round(game, 2))
 
 
-import time  # noqa: E402
+if __name__ == '__main__':
+    for eff, mask in cores():
+        print(f'efficiency class {eff}: mask {mask:#x}')

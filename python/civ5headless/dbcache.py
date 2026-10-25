@@ -1,24 +1,25 @@
-"""Game database cache for headless runs: one build per (mods input, game DLL, snapshot, builder exe).
+"""Game database cache for host runs: one build per (mods input, game DLL, snapshot, builder exe).
 
-  python work/headless/dbcache.py --mods-dir MODS --mods-db Civ5ModsDatabase.db --dll DLL [--exe EXE]
+  c5h dbcache [--mods-dir MODS] [--mods-db Civ5ModsDatabase.db] [--dll DLL] [--exe EXE] [--snapshot DB] [--cache DIR]
 
-prints the path of the cached database, building it with build_db.py on a miss (about 3 s).
+prints the path of the cached database, building it with dbbuild.py on a miss (about 3 s). Every input defaults to
+the configuration (c5h doctor).
 
 The key hashes the contents of every .modinfo/.xml/.sql/.lua file below the MODS folder (the only files the
 builder reads), the mods database, the DLL (its post-processing runs on the database), the DLC snapshot and
-the builder exe. Entries live in <cache>/<key>/built.db with build_db.py's report next to it
+the builder exe. Entries live in <db_cache>/<key>/built.db with dbbuild.py's report next to it
 (built.db.build/) and an inputs.json; a finished entry has built.db.ok.
+
+database(cfg, ...) is what the run, queue and comparison tools use: a database given explicitly, else the configured
+one (db), else the cached build for the mods and DLL.
 """
 from pathlib import Path
 import argparse, hashlib, json, os, subprocess, sys, time
 
-HERE = Path(__file__).resolve().parent
-ROOT = HERE.parents[1]
-sys.path.insert(0, str(HERE))
-import build_db  # noqa: E402  (DEFAULT_SNAPSHOT, find_exe)
+from . import config
 
-DEFAULT_CACHE = ROOT / 'work/headless/cache/db'
 SOURCE_EXT = {'.modinfo', '.xml', '.sql', '.lua'}
+PACKAGE_PARENT = Path(__file__).resolve().parents[1]
 _sha_memo = {}
 
 
@@ -46,25 +47,16 @@ def mods_hash(mods_dir):
     return h.hexdigest().upper(), len(files)
 
 
-def find_exe(exe=None):
+def find_exe(exe=None, cfg=None):
     if exe:
         return Path(exe).resolve()
-    marker = ROOT / 'work/latest-headless-build-path.txt'
-    if marker.is_file():
-        p = Path(marker.read_text(encoding='utf-8').strip())
-        p = p / 'civ5headless.exe' if p.is_dir() else p
-        if p.is_file():
-            return p
-    builds = sorted((ROOT / 'work/headless-output/Release').glob('*/civ5headless.exe'))
-    if builds:
-        return builds[-1]
-    raise SystemExit('no civ5headless.exe: build it with python work/build-headless.py, or pass --exe')
+    cfg = cfg or config.load()
+    return cfg.require('exe', 'pass --exe (build it with python tools/build_host.py)').resolve()
 
 
-def get_db(mods_dir, mods_db, dll, exe=None, snapshot=None, cache=None, log=print):
-    """Path of the built database for these inputs; builds it on a miss."""
-    exe = find_exe(exe)
-    snapshot = Path(snapshot or build_db.DEFAULT_SNAPSHOT)
+def get_db(mods_dir, mods_db, dll, exe, snapshot, cache, game_dir, log=print, config_file=None):
+    """Path of the built database for these inputs; builds it on a miss. Returns (db, inputs, key)."""
+    exe, snapshot = Path(exe).resolve(), Path(snapshot)
     mhash, nfiles = mods_hash(mods_dir)
     inputs = dict(modsDir=str(Path(mods_dir).resolve()), modsFiles=nfiles, modsSHA256=mhash,
                   modsDb=str(Path(mods_db).resolve()), modsDbSHA256=sha256_file(mods_db),
@@ -73,16 +65,19 @@ def get_db(mods_dir, mods_db, dll, exe=None, snapshot=None, cache=None, log=prin
                   exe=str(exe), exeSHA256=sha256_file(exe))
     key = hashlib.sha256('|'.join(inputs[k] for k in ('modsSHA256', 'modsDbSHA256', 'dllSHA256', 'snapshotSHA256', 'exeSHA256'))
                          .encode()).hexdigest()[:16].upper()
-    entry = Path(cache or DEFAULT_CACHE) / key
+    entry = Path(cache) / key
     db = entry / 'built.db'
     if (entry / 'built.db.ok').is_file() and db.is_file():
         return db, inputs, key
     entry.mkdir(parents=True, exist_ok=True)
     (entry / 'inputs.json').write_text(json.dumps(inputs, indent=1) + '\n', encoding='utf-8')
     t = time.monotonic()
-    cmd = [sys.executable, '-B', str(HERE / 'build_db.py'), '--mods-dir', str(mods_dir), '--mods-db', str(mods_db),
-           '--dll', str(dll), '--exe', str(exe), '--snapshot', str(snapshot), '--out', str(db)]
-    r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    cmd = [sys.executable, '-B', '-m', 'civ5headless.dbbuild', '--mods-dir', str(mods_dir), '--mods-db', str(mods_db),
+           '--dll', str(dll), '--exe', str(exe), '--snapshot', str(snapshot), '--game-dir', str(game_dir), '--out', str(db)]
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(PACKAGE_PARENT)] + [p for p in [os.environ.get('PYTHONPATH')] if p]))
+    if config_file:
+        env['C5H_CONFIG'] = str(config_file)  # the child reads the same file for anything not on its command line
+    r = subprocess.run(cmd, capture_output=True, text=True, stdin=subprocess.DEVNULL, env=env)
     (entry / 'build_db.out.txt').write_text(r.stdout + r.stderr, encoding='utf-8')
     if r.returncode or not db.is_file():
         raise RuntimeError(f'database build failed (exit {r.returncode}); see {entry / "build_db.out.txt"}')
@@ -91,18 +86,38 @@ def get_db(mods_dir, mods_db, dll, exe=None, snapshot=None, cache=None, log=prin
     return db, inputs, key
 
 
-def main():
-    a = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    a.add_argument('--mods-dir', required=True)
-    a.add_argument('--mods-db', required=True)
-    a.add_argument('--dll', required=True)
-    a.add_argument('--exe')
-    a.add_argument('--snapshot')
-    a.add_argument('--cache', default=str(DEFAULT_CACHE))
-    args = a.parse_args()
-    db, inputs, key = get_db(args.mods_dir, args.mods_db, args.dll, args.exe, args.snapshot, args.cache, log=lambda m: print(m, file=sys.stderr))
+def database(cfg, db=None, mods_dir=None, mods_db=None, dll=None, exe=None, log=print):
+    """(database, info): db if given, else cfg.db, else the cached build for the mods and DLL (built on a miss)."""
+    if db or cfg.db:
+        p = Path(db or cfg.db).resolve()
+        return p, dict(db=str(p))
+    hint = 'or pass --db with a built database'
+    path, inputs, key = get_db(mods_dir or cfg.require('mods_dir', 'pass --mods-dir'),
+                               mods_db or cfg.require('mods_db', 'pass --mods-db'),
+                               dll or cfg.require('dll', 'pass --dll'),
+                               find_exe(exe, cfg), cfg.require('snapshot', hint), cfg.require('db_cache'),
+                               cfg.require('game_dir'), log=log, config_file=cfg.file)
+    return path, dict(inputs, db=str(path), cacheKey=key)
+
+
+def main(argv=None, cfg=None):
+    cfg = cfg or config.load()
+    a = argparse.ArgumentParser(prog='c5h dbcache', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    a.add_argument('--mods-dir', default=cfg.mods_dir)
+    a.add_argument('--mods-db', default=cfg.mods_db)
+    a.add_argument('--dll', default=cfg.dll)
+    a.add_argument('--exe', default=cfg.exe)
+    a.add_argument('--snapshot', default=cfg.snapshot)
+    a.add_argument('--cache', default=cfg.db_cache)
+    args = a.parse_args(argv)
+    missing = [k for k in ('mods_dir', 'mods_db', 'dll', 'exe', 'snapshot', 'cache') if getattr(args, k) is None]
+    if missing:
+        a.error('not set: ' + ', '.join('--' + k.replace('_', '-') for k in missing) + ' (or set them in civ5headless.toml)')
+    db, inputs, key = get_db(args.mods_dir, args.mods_db, args.dll, args.exe, args.snapshot, args.cache,
+                             cfg.require('game_dir'), log=lambda m: print(m, file=sys.stderr), config_file=cfg.file)
     print(db)
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

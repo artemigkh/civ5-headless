@@ -1,13 +1,20 @@
-#!/usr/bin/env python3
-"""Helpers for the DLL's headless-host state digest (docs/headless-dll-additions.md).
+"""The DLL's per-turn state digest (docs/dll-additions.md): reading, comparing, verifying.
 
-  hhdigest.py verify DUMP_FOLDER        recompute section hashes of a Game.DumpHeadlessState folder
-  hhdigest.py compare LOG_A LOG_B       first turn/section where two HeadlessDigest.log files differ
-  hhdigest.py hash FILE...              xxHash64 (seed 0) of files
+  c5h compare A B [--heal-turns 2] [--json OUT]   two runs (run folders or HeadlessDigest.log files)
+  c5h digest verify DUMP_FOLDER                    recompute section hashes of a Game.DumpHeadlessState folder
+  c5h digest compare LOG_A LOG_B                   as c5h compare
+  c5h digest hash FILE...                          xxHash64 (seed 0) of files
 
 The hash is xxHash64 with seed 0; the total is xxHash64 over, for each section in the total,
 its name, a NUL byte and its 8-byte little-endian hash.
+
+compare(a, b, heal_turns=2) is the comparison the parity tools and the verification suite use: the first differing
+digest point, the differing sections per turn, and runs of differences, a run that heals (the digests are equal
+again) within heal_turns turns being a transient. savedb (UI state the host does not reproduce) is outside the total
+and never a difference; the first turn it differs is reported apart.
 """
+import argparse
+import json
 import struct
 import sys
 from pathlib import Path
@@ -117,6 +124,7 @@ def cmd_verify(folder):
 
 
 def digest_lines(path):
+    """{(point, turn): (fields, field order)} of the HHDIGEST lines of a HeadlessDigest.log."""
     out = {}
     for line in Path(path).read_text(errors='replace').splitlines():
         if line.startswith('HHDIGEST|'):
@@ -125,27 +133,118 @@ def digest_lines(path):
     return out
 
 
-def cmd_compare(a, b):
-    da, db = digest_lines(a), digest_lines(b)
+def log_path(run):
+    """A HeadlessDigest.log, or the one in a run folder (Logs/), a real-game reference folder or a Logs folder."""
+    p = Path(run)
+    if p.is_file():
+        return p
+    for candidate in (p / 'Logs/HeadlessDigest.log', p / 'HeadlessDigest.log'):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f'no HeadlessDigest.log in {p}')
+
+
+def differing_sections(fa, oa, fb, ob):
+    """Sections (savedb included) whose hashes differ, in A's order then B's extra ones."""
+    diff = [n for n in oa if n not in META and fa.get(n) != fb.get(n)]
+    return diff + [n for n in ob if n not in META and n not in fa]
+
+
+def compare(a, b, heal_turns=2):
+    """Compare two HeadlessDigest.log files (or two parsed digest_lines dicts) point by point.
+
+    Returns a dict:
+      identical          no common point differs (savedb aside)
+      common, onlyA, onlyB, lastTurnA, lastTurnB
+      first              {turn, point, sections} of the first differing point, or None
+      differing          {turn: [sections]} for every differing turn
+      runs               [{turn, point, until, sections}]: consecutive differing points; until is the turn of the
+                         next equal point, or None when the run lasts to the last common point
+      transients         the runs that healed within heal_turns turns (until - turn <= heal_turns)
+      divergence         the first run that is not a transient, as {turn, point, until, sections}, or None
+      lastPointIdentical the last common point is equal
+      savedbFirstTurn    first turn savedb differs (not a difference), or None
+    """
+    da = a if isinstance(a, dict) else digest_lines(a)
+    db = b if isinstance(b, dict) else digest_lines(b)
     keys = sorted(set(da) & set(db), key=lambda k: (k[1], k[0] or ''))
+    differing, runs, open_run, savedb = {}, [], None, None
     for key in keys:
         fa, oa = da[key]
         fb, ob = db[key]
-        if fa['total'] != fb['total'] or any(fa.get(n) != fb.get(n) for n in set(oa) | set(ob) if n not in META):
-            diff = [n for n in oa if n not in META and fa.get(n) != fb.get(n)]
-            diff += [n for n in ob if n not in META and n not in fa]
-            print(f'first difference: turn {key[1]} point {key[0]}: sections {", ".join(diff)}')
-            return 1
-    print(f'identical on {len(keys)} common digest points'
-          f' (only in A: {len(set(da) - set(db))}, only in B: {len(set(db) - set(da))})')
-    return 0
+        diff = differing_sections(fa, oa, fb, ob)
+        if 'savedb' in diff and savedb is None:
+            savedb = key[1]
+        diff = [n for n in diff if n not in EXCLUDED]
+        if fa.get('total') != fb.get('total') or diff:
+            differing.setdefault(key[1], [])
+            differing[key[1]] += [n for n in diff if n not in differing[key[1]]]
+            if open_run is None:
+                open_run = dict(turn=key[1], point=key[0], until=None, sections=[])
+            open_run['sections'] += [n for n in diff if n not in open_run['sections']]
+        elif open_run is not None:
+            open_run['until'] = key[1]
+            runs.append(open_run)
+            open_run = None
+    if open_run is not None:
+        runs.append(open_run)
+    transients = [r for r in runs if r['until'] is not None and r['until'] - r['turn'] <= heal_turns]
+    divergence = next((r for r in runs if r not in transients), None)
+    first = None
+    if runs:
+        t = runs[0]['turn']
+        first = dict(turn=t, point=runs[0]['point'], sections=differing[t])
+    return dict(identical=not runs, common=len(keys), onlyA=len(set(da) - set(db)), onlyB=len(set(db) - set(da)),
+                lastTurnA=max((k[1] for k in da), default=None), lastTurnB=max((k[1] for k in db), default=None),
+                first=first, differing=differing, runs=runs, transients=transients, divergence=divergence,
+                lastPointIdentical=bool(keys) and (not runs or runs[-1]['until'] is not None), savedbFirstTurn=savedb,
+                healTurns=heal_turns)
 
 
-def main(argv):
+def summary(r):
+    """One line for a compare() result."""
+    if r['identical']:
+        return (f"identical on {r['common']} common digest points (only in A: {r['onlyA']}, only in B: {r['onlyB']})"
+                + (f"; last turns {r['lastTurnA']}/{r['lastTurnB']}" if r['lastTurnA'] != r['lastTurnB'] else ''))
+    f = r['first']
+    text = f"first difference: turn {f['turn']} point {f['point']}: sections {', '.join(f['sections'])}"
+    if r['divergence']:
+        d = r['divergence']
+        if d is not r['runs'][0]:
+            text += f"; diverges at turn {d['turn']}: {', '.join(d['sections'][:12])}"
+    else:
+        text += f" (transient: equal again at turn {r['runs'][0]['until']})"
+    if r['transients']:
+        text += f"; {len(r['transients'])} transient(s) healed within {r['healTurns']} turns"
+    return text + f"; {len(r['differing'])} differing turns of {r['common']} points"
+
+
+def cmd_compare(a, b, heal_turns=2, json_out=None):
+    r = compare(log_path(a), log_path(b), heal_turns)
+    print(summary(r))
+    if json_out:
+        Path(json_out).write_text(json.dumps(r, indent=1) + '\n', encoding='utf-8')
+    return 0 if r['identical'] else 1
+
+
+def compare_main(argv=None, cfg=None):
+    """c5h compare A B."""
+    ap = argparse.ArgumentParser(prog='c5h compare', description='Compare two runs\' per-turn state digests '
+                                 '(run folders or HeadlessDigest.log files). Exit code 0 when identical.')
+    ap.add_argument('a')
+    ap.add_argument('b')
+    ap.add_argument('--heal-turns', type=int, default=2, help='a difference that heals within this many turns is a transient')
+    ap.add_argument('--json', help='write the full comparison here')
+    a = ap.parse_args(argv)
+    return cmd_compare(a.a, a.b, a.heal_turns, a.json)
+
+
+def main(argv=None, cfg=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
     if len(argv) >= 2 and argv[0] == 'verify':
         return cmd_verify(argv[1])
     if len(argv) >= 3 and argv[0] == 'compare':
-        return cmd_compare(argv[1], argv[2])
+        return compare_main(argv[1:])
     if len(argv) >= 2 and argv[0] == 'hash':
         for name in argv[1:]:
             print('%016x  %s' % (xxh64(Path(name).read_bytes()), name))
@@ -155,4 +254,4 @@ def main(argv):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main())

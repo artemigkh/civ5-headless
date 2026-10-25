@@ -1,7 +1,7 @@
 """Game specs: one description of a new game for both the headless host and real-game reference runs.
 
-  python work/headless/gamespec.py resolve SPEC.json [--db DB] [--out RESOLVED.json]
-  python work/headless/gamespec.py lua SPEC.json [--db DB]
+  c5h spec resolve SPEC.json [--db DB] [--out RESOLVED.json]
+  c5h spec lua SPEC.json [--db DB]
 
 A spec is JSON that mirrors the single-player setup screens (plan section 4.4):
 
@@ -21,7 +21,8 @@ A spec is JSON that mirrors the single-player setup screens (plan section 4.4):
   spec seed, so the resolved spec is fully explicit; the reference run uses the resolved spec.
 - Seeds default to fresh random values; the resolved spec records them.
 
-`resolve` validates names against a game database and writes the resolved spec (IDs included) that
+`resolve` validates names against a game database (--db; default: the configured database, or the
+cached build for the configured mods and DLL) and writes the resolved spec (IDs included) that
 the host consumes. `lua` prints the front-end Lua that sets the same pregame state in the real game
 (run in the ModsSinglePlayer context before Events.SerialEventStartGame).
 
@@ -32,8 +33,8 @@ before this pin: civ5headless.exe --pregame-turn-timer N reproduces them). The h
 from pathlib import Path
 import argparse, json, random, secrets, sqlite3, sys
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DB = ROOT / 'work/headless/db/mods-reference-08D19878.db'
+from . import config, dbcache
+
 MAX_MAJOR_CIVS = 22
 DEFAULTS = {'speed': 'GAMESPEED_STANDARD', 'era': 'ERA_ANCIENT', 'difficulty': 'HANDICAP_EMPEROR',
             'map': {'script': 'Assets\\Maps\\Continents.lua', 'size': 'WORLDSIZE_STANDARD'}}
@@ -65,7 +66,8 @@ def _find_file(db, sql, name, what):
     return found[0]
 
 
-def resolve(spec, db_path=DEFAULT_DB):
+def resolve(spec, db_path):
+    """The resolved spec: names checked and IDs looked up in the game database at db_path."""
     db = sqlite3.connect(f'file:{Path(db_path).as_posix()}?mode=ro', uri=True)
     seeds = dict(spec.get('seeds') or {})
     seeds.setdefault('map', secrets.randbelow(2**31 - 1) + 1)
@@ -183,15 +185,16 @@ def pregame_lua(r):
     return '\n'.join(L)
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv=None, cfg=None):
+    ap = argparse.ArgumentParser(prog='c5h spec', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('command', choices=['resolve', 'lua'])
     ap.add_argument('spec', type=Path)
-    ap.add_argument('--db', type=Path, default=DEFAULT_DB)
+    ap.add_argument('--db', type=Path, help='game database (default: the configured db, or the cached build)')
     ap.add_argument('--out', type=Path)
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    db = a.db or dbcache.database(cfg or config.load(), log=lambda m: print(m, file=sys.stderr))[0]
     try:
-        r = resolve(json.loads(a.spec.read_text(encoding='utf-8')), a.db)
+        r = resolve(json.loads(a.spec.read_text(encoding='utf-8')), db)
     except SpecError as e:
         print(f'spec error: {e}', file=sys.stderr)
         return 2
