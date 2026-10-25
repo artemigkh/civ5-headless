@@ -168,6 +168,8 @@ commit it with the change it describes.
   (`work/stage_vp.py --dll/--pdb`, `--verify`, `work/deploy-vp.ps1`), host_first for m5-long and the 7 remaining
   m5-batch2 cases, then record host-first with rolling dumps (remove `work/test-runs/hh-m5b-matrix.stop` and
   `hh-m5l-matrix.stop`; m5-long with `--retry-failed`).
+- **Not scheduled:** moving the host to its own repository, for sharing with other mod developers: notes in
+  [headless-repo-migration.md](headless-repo-migration.md). The user will decide later; not a plan step.
 - **User rule (2026-10-25): UI-only state is not a difference.** Anything that cannot affect the game (notification
   `m_bDismissed`, the era-start initial unit selection, and any other purely UI field) is normalised out of the digest
   (`HH_DIGEST_NORM`, digest-only, result-neutral). On resume, before the next DLL build: the host agent audits the
