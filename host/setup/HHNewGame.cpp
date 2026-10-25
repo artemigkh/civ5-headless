@@ -145,6 +145,12 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// MapScriptOptions defaults by this string, and LoadFile resolves it.
 	HH_STEP(HHFormat("setMapScriptName(\"%s\")", mapFile.c_str()), pg->setMapScriptName(CvString(mapFile.c_str())));
 	HH_STEP(HHFormat("setGameSpeed(%d)", kSpec["speed"]["id"].AsInt()), pg->setGameSpeed((GameSpeedTypes)kSpec["speed"]["id"].AsInt()));
+	// PreGame state the spec does not set: the real exe keeps it from the previous game of the session
+	// (setGameSpeed sets no turn timer for Marathon). --pregame-* reproduces such a reference.
+	if(HHGetOptions().pregameTurnTimer >= 0)
+		HH_STEP(HHFormat("setTurnTimer(%d)", HHGetOptions().pregameTurnTimer), pg->setTurnTimer((TurnTimerTypes)HHGetOptions().pregameTurnTimer));
+	if(HHGetOptions().pregameSeaLevel >= 0)
+		HH_STEP(HHFormat("setSeaLevel(%d)", HHGetOptions().pregameSeaLevel), pg->setSeaLevel((SeaLevelTypes)HHGetOptions().pregameSeaLevel));
 	HH_STEP(HHFormat("setEra(%d)", kSpec["era"]["id"].AsInt()), pg->setEra((EraTypes)kSpec["era"]["id"].AsInt()));
 	HH_STEP(HHFormat("setHandicap(0, %d)", kSpec["difficulty"]["id"].AsInt()),
 	        pg->setHandicap((PlayerTypes)0, (HandicapTypes)kSpec["difficulty"]["id"].AsInt()));

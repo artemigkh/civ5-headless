@@ -82,6 +82,9 @@ namespace
 		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
 		"  --heap-perturb <seed> address-perturbation self-test (results must not change): random heap spacer\n"
 		"                       allocations interleaved with the DLL's allocations, and the game DLL rebased\n"
+		"  --pregame-turn-timer <id>  newgame: PreGame turn timer after setGameSpeed (the real exe keeps the previous\n"
+		"                       game's value for Marathon, which sets none)\n"
+		"  --pregame-sea-level <id>  newgame: PreGame sea level (the real exe keeps it across games)\n"
 		"  --game-log-flags <m> with game logging: 1 AILog, 2 AIPerfLog, 4 BuilderAILog, 8 PlayerAndCityAILogSplit\n"
 		"                       (default 15, as the reference profile; diagnostics of log-dependent results)\n"
 		"  --rand-log <flags>   config.ini RandLog: 5 = every synced RNG call incl. map generation (Logs\\RandCalls.csv)\n"
@@ -217,6 +220,8 @@ namespace
 			else if(a == "--checkpoint-every") { o.checkpointEvery = atoi(v.c_str()); ++i; }
 			else if(a == "--rand-log") { o.randLog = atoi(v.c_str()); ++i; }
 			else if(a == "--game-log-flags") { o.gameLogFlags = atoi(v.c_str()); ++i; }
+			else if(a == "--pregame-turn-timer") { o.pregameTurnTimer = atoi(v.c_str()); ++i; }
+			else if(a == "--pregame-sea-level") { o.pregameSeaLevel = atoi(v.c_str()); ++i; }
 			else if(a == "--heap-perturb") { o.heapPerturb = (unsigned int)strtoul(v.c_str(), NULL, 10); ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
