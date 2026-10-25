@@ -1255,6 +1255,17 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	const int kMaxUpdatesPerTurn = 2000;
 	for(;;)
 	{
+		// --frame-skew K: one extra Update (an engine frame without the UI frame) before every K-th one, so the
+		// turn slice (+1 per Update) advances differently. Results must not depend on it (frame-count dependence).
+		if(o.frameSkew > 0 && kResult.iUpdates % o.frameSkew == o.frameSkew - 1)
+		{
+			kIf.pEngine->SetInGameCoreUpdate(true);
+			kIf.pGame->Update();
+			kIf.pEngine->SetInGameCoreUpdate(false);
+			kIf.pEngine->EndOfUpdate();
+			HHDeliverNetMessages(kIf);
+			CloseDeadCityStateSlots(kIf);
+		}
 		kIf.pEngine->SetInGameCoreUpdate(true);
 		kIf.pGame->Update();
 		kIf.pEngine->SetInGameCoreUpdate(false);

@@ -68,6 +68,7 @@ namespace
 		"  --no-game-logging    newgame: no DLL logs (default: the reference profile's logging; older DLLs' AI results depend on it)\n"
 		"  --turns <n>          newgame: autoplay n turns after T000 (ARM + CONTINUE as game_probe), then dump-t<n>\n"
 		"  --idle-updates <k>   newgame: Updates after autoplay ends, in the human turn (default 10)\n"
+		"  --frame-skew <k>     newgame: an extra Update (no UI frame) before every k-th one; results must not change\n"
 		"  --dump-turns <a:b>   newgame: the DLL dumps the state at doTurnBegin of turns a..b (Logs\\HeadlessDumps)\n"
 		"  --no-ui-frame        newgame: no UI frame emulation after each Update (civ ribbon, notification aging,\n"
 		"                       popups, human-turn unit cycle)\n"
@@ -222,6 +223,7 @@ namespace
 			else if(a == "--pregame-turn-timer") { o.pregameTurnTimer = atoi(v.c_str()); ++i; }
 			else if(a == "--heap-perturb") { o.heapPerturb = (unsigned int)strtoul(v.c_str(), NULL, 10); ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
+			else if(a == "--frame-skew") { o.frameSkew = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-srand") { o.crtSrand = _strtoi64(v.c_str(), NULL, 10); ++i; }
