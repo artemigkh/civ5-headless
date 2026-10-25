@@ -183,11 +183,13 @@ The suite answers three questions for the user's DLL, mods and maps. It uses onl
   - the performance table and the history trend.
 - The exit code reflects the verdict, for scripts and CI.
 
-## 6. Decisions needed (recommendation first)
+## 6. Decisions (all approved as recommended, 2026-10-25)
 
-1. **Repository:** `ruskyandrei/civ5-headless`, private until phase F.
+1. **Repository:** `ruskyandrei/civ5-headless`, private until phase F. Local only for now; the GitHub repository is
+   created when the user says so.
 2. **SDK files:** vendor only the interface headers and import libraries the host needs, with the SDK licence text,
-   as VP's repository does (check `License.rtf` first). The alternative is to point the build at a VP or SDK checkout.
+   as VP's repository does. `License.rtf` is the Community Patch Project's GPL v3 licence, so this repository is
+   GPL v3 too ([LICENSE](../LICENSE), [sdk/README.md](../sdk/README.md)).
 3. **Python:** one package, Python 3.11 or newer, standard library only. The report is a self-contained HTML page.
 4. **Toolchain:** VC9 to build, because of the CRT ABI that crosses the DLL interfaces; users get prebuilt binaries.
 5. **Supported DLLs:** any SDK-derived DLL for running games. Exact checks need `config.ini` seeding (stock code) and
@@ -211,3 +213,82 @@ real game, F 1–2 days; G runs in parallel. Real-game time is needed only for C
 | SDK header redistribution terms | Decision 2; fall back to pointing at an SDK or VP checkout |
 | VC9 hard to obtain | Prebuilt binaries; document where VC9 comes from |
 | Non-deterministic DLLs make exact checks meaningless | The verdict is relative to the DLL's own reproducibility (A/A), and the statistical tier stands on its own |
+
+## 9. Work breakdown and shared interfaces (2026-10-25)
+
+Phase A was done by hand (see [ledger.md](ledger.md)). Phases B, C and D then run as three workstreams on their own
+branches, merged into `main` one at a time. Each owns its files; anything outside them is changed only by agreement
+(through the ledger).
+
+| Workstream | Branch | Owns |
+|---|---|---|
+| Platform (phase B, real-game automation) | `c5h-platform` | `python/civ5headless/` except the files below, `tools/get_toolchain.py`, `examples/`, `pyproject.toml`, `docs/user-guide.md`, `README.md` |
+| Any DLL, any mod (phase C) | `c5h-anydll` | `host/`, `profiles/`, `probes/`, `python/civ5headless/fingerprint.py`, `python/civ5headless/hazards.py`, `python/civ5headless/data/`, `docs/engine-contract.md`, `docs/profiles.md` |
+| Verification suite (phase D) | `c5h-verify` | `python/civ5headless/verify/`, `docs/verification.md` |
+
+Tests live next to what they test, under `tests/<workstream area>/`.
+
+### 9.1 Package layout (platform)
+
+```
+python/civ5headless/
+  cli.py                c5h entry point; subcommands doctor, run, queue, compare, verify (from verify/), bench, dbbuild
+  config.py             civ5headless.toml plus discovery (Steam library, My Games, MODS, cache, active mods, host exe)
+  spec.py               game specs (was gamespec.py)
+  dbbuild.py, dbcache.py, dbdiff.py
+  run.py                one host game (was hhbench.py); queue.py (was runner.py); winproc.py
+  compare/              digest.py (hhdigest), dumps.py (parity_t000), parity.py (parity_run, host_first), skew.py
+  realgame/             tuner.py, launch.py, mods.py, seeds.py (config.ini), session.py, probe.py, record.py, dbcapture.py
+  fingerprint.py        (any-DLL workstream)
+  hazards.py            (any-DLL workstream)
+  verify/               (verification workstream)
+```
+
+`config.load(path=None) -> Config` returns resolved, absolute paths with the source of each value (file, discovery or
+default), so `c5h doctor` can print where everything came from.
+
+### 9.2 Host options and run report (any-DLL)
+
+- `--lua-probe FILE` (repeatable): runs FILE in the in-game Lua context once the game has started and before turn 0
+  is processed, as the real-game session injects it through FireTuner.
+- `--heap-perturb N`: shifts the host's heap layout (allocations of seeded random sizes before the DLL loads), for the
+  verification suite's address-dependence check. N = 0 is off; the same N gives the same layout.
+- `--profiles DIR`: the UI emulation profiles folder (default: `profiles/` next to the repository root or the exe).
+- Every run writes `<run>/host-report.json`: host version, DLL path and hash, active mods, profiles selected (and why),
+  UI add-ins run, failed or skipped, unknown UI files, stubbed engine calls with counts (and whether each is on the
+  known-harmless list), Lua errors with file and line, turns played, wall time per turn, peak memory.
+
+### 9.3 Lua fingerprint (any-DLL)
+
+`probes/fingerprint.lua` runs identically in the real game (injected through FireTuner into the InGame context) and in
+the host (`--lua-probe`). On the first `GameEvents.PlayerDoTurn` of each game turn it prints, through `print`, lines
+that start with `C5HFP|` or `C5HM|`, which end up in `Lua.log` in both. The exact format is the any-DLL workstream's,
+documented in `fingerprint.py`, which also parses it:
+
+- `fingerprint.read(path) -> Fingerprint` with `.sections: dict[int, dict[str, str]]` (turn to section to hash),
+  `.metrics: dict[int, dict[int, dict[str, float]]]` (turn to player to metric to value, major civs) and `.meta`;
+- `fingerprint.compare(a, b, heal_turns=2) -> dict`: first differing turn, differing sections per turn, and transients
+  (differences that heal within `heal_turns`), like the digest comparison.
+
+It uses only plain stored-value getters that exist in the stock Firaxis Lua API, so it works with every SDK-derived
+DLL. The metrics feed the statistical tier: at least score, gold, cities, population, techs, policies, units, culture,
+faith, wonders, religions founded, wars and cities captured.
+
+### 9.4 Real-game session (platform)
+
+`realgame.session.RealGameSession` drives one Civ V process through FireTuner:
+
+```
+s = RealGameSession(config, run_dir)
+s.launch()                                 # start Civ V with the tuner on; wait for the main menu; launch timings
+s.set_mods(mod_ids)                        # activate exactly these mods (empty: none)
+s.start_game(spec, map_seed, sync_seed, lua_probes=[...])   # config.ini seeding, setup, start, inject probes, continue
+s.autoplay(turns, max_seconds=None)        # observer autoplay; per-turn wall times; stops at victory
+s.to_main_menu()                           # for the next setup in the same session
+s.collect_logs(dest)                       # Lua.log and, if present, the digest logs
+s.process_stats()                          # peak working set, peak private bytes, CPU seconds
+s.quit()
+```
+
+The verification suite codes against this interface; until it exists it uses a fake with the same methods. The host
+side is `run.play(...)` (one game, returns the run folder and its report) and `queue` for many.

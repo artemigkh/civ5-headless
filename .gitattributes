@@ -1,0 +1,15 @@
+* text=auto
+*.h         eol=crlf
+*.inl       eol=crlf
+*.cpp       eol=crlf
+*.asm       eol=crlf
+*.def       eol=crlf
+*.lua       eol=crlf
+*.xml       eol=crlf
+*.sql       eol=crlf
+*.bat       eol=crlf
+*.ps1       eol=crlf
+*.lib       binary
+*.dll       binary
+*.exe       binary
+*.db        binary
