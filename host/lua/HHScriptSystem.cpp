@@ -162,8 +162,9 @@ namespace
 // Assumption until the M0 trace: indices are 0-based and Push returns the new count.
 unsigned int HHScriptArgs::Add(const Arg& a)
 {
+	// The engine returns the 0-based index of the pushed argument (contract G9).
 	m_args.push_back(a);
-	return (unsigned int)m_args.size();
+	return (unsigned int)m_args.size() - 1;
 }
 
 const HHScriptArgs::Arg* HHScriptArgs::At(unsigned int argIndex) const

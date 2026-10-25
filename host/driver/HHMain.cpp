@@ -49,8 +49,11 @@ namespace
 		"  --no-mods            no activated mods (no mod files in the VFS, IsModActivated false)\n"
 		"  --no-lua-debug       remove the debug library from Lua's globals\n"
 		"  --exe-seed <n>       the engine's own pregame seeds before Game.Init (random civs and city-states);\n"
-		"                       a real run's HHSEEDS exeMap reproduces its choice (default: the spec's map seed)\n"
-		"  --player-option <TYPE=0|1>  engine user setting for a player option (repeatable; default: database defaults)\n"
+		"                       a real run's HHSEEDS exeMap reproduces its choice (default: the spec's map seed);\n"
+		"                       a DLL that pins the seeds at setGameStarted uses the spec's map seed instead\n"
+		"  --crt-srand <n>      srand(n) before the new game: Lua's math.random state for map scripts that use it\n"
+		"  --player-option <TYPE=0|1>  engine user setting for a player option (repeatable; default: database defaults\n"
+		"                       plus the reference profile's PLAYEROPTION_SAFE_AUTOMATION=1)\n"
 		"  --db <path>          game database to copy (default: <Documents>\\My Games\\Sid Meier's\n"
 		"                       Civilization 5\\cache\\Civ5DebugDatabase.db)\n"
 		"  --loc-db <path>      localization database to copy (default: Localization-Merged.db\n"
@@ -177,6 +180,8 @@ namespace
 			else if(a == "--mods-db") { o.modsDbPath = v; ++i; }
 			else if(a == "--player-option") { o.playerOptions.push_back(v); ++i; }
 			else if(a == "--exe-seed") { o.exeSeed = _strtoi64(v.c_str(), NULL, 10); ++i; }
+			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
+			else if(a == "--crt-srand") { o.crtSrand = _strtoi64(v.c_str(), NULL, 10); ++i; }
 			else if(a == "--mod")
 			{
 				HHModRef m;
@@ -559,6 +564,9 @@ namespace
 			if(dbs.GetGame()->Execute(kOptions, "SELECT ID, Type, \"Default\" FROM PlayerOptions ORDER BY ID"))
 				while(kOptions.Step())
 					pEngine->AddPlayerOption(kOptions.GetText(1), kOptions.GetInt(0), kOptions.GetInt(2) != 0);
+			// The reference profile's user setting (contract 1.4: getPlayerOption answers true for
+			// WAIT_END_TURN, the DB default, and SAFE_AUTOMATION, a user setting); --player-option overrides.
+			pEngine->SetPlayerOptionValue("PLAYEROPTION_SAFE_AUTOMATION", true);
 			for(size_t i = 0; i < o.playerOptions.size(); ++i)
 			{
 				const std::string& v = o.playerOptions[i];
@@ -693,9 +701,32 @@ namespace
 			if(HHApplyPregame(kSpec, nif, ng))
 			{
 				HHSetPhase("start");
+				// Lua's math.random is the CRT rand() of the calling thread (MSVCR90, per-thread state,
+				// seeded 1); map scripts that use it (Continental_Drift) depend on that state, which in
+				// the real game is whatever the UI thread's earlier rand() calls left.
+				if(o.fpuPrecision)
+				{
+					unsigned int cw = 0;
+					const unsigned int pc = o.fpuPrecision == 24 ? _PC_24 : o.fpuPrecision == 64 ? _PC_64 : _PC_53;
+					_controlfp_s(&cw, pc, _MCW_PC);
+					HHLog("x87 precision %d bits for the new game (--fpu-precision): control word %08x", o.fpuPrecision, cw);
+				}
+				if(o.crtSrand >= 0)
+				{
+					// lua51_Win32.dll has its own MSVCR90 instance: seed through Lua itself.
+					const std::string chunk = HHFormat("math.randomseed(%u)", (unsigned int)o.crtSrand);
+					if(lua_State* L = pScripts->CreateLuaThread("Headless randomseed"))
+					{
+						if(luaL_loadbuffer(L, chunk.c_str(), chunk.size(), "randomseed") == 0)
+							pScripts->CallFunction(L, 0, 0);
+						pScripts->FreeLuaThread(L);
+					}
+					HHLog("Lua math.randomseed(%u) (--crt-srand)", (unsigned int)o.crtSrand);
+				}
 				if(HHStartNewGame(kSpec, nif, ng))
 				{
 					HHSetPhase("t000");
+					HHLoadScreen(nif, ng);
 					HHWriteT000(kSpec, nif, ng);
 				}
 			}

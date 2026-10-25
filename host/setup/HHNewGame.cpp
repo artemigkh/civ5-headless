@@ -379,17 +379,10 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 		}
 	}
 
-	// 2. closeInactiveSlots marks the game started, which runs VP's CvPreGame::onGameStarted:
-	//    random civilizations for slots without one and the city-state selection, drawn with
-	//    the pregame map seed (CvGame::urandLimitExclusive) - in the real game the engine's
-	//    own seed, before the spec seeds are pinned. Then open slots are closed and player
-	//    info is sent (no-op single player).
-	HH_STEP("closeInactiveSlots()", pg->closeInactiveSlots());
-	kResult.timings.push_back(std::make_pair(std::string("launch"), Now() - t0));
-
-	// 3. Seeds. The real driver writes <cache>\HeadlessSeeds.txt and the DLL pins the spec
-	//    seeds at the start of CvGame::init (HHSEEDS source=file). A DLL without seed pinning
-	//    gets them in pregame directly, just before Init.
+	// 2. Seeds. The real driver writes <cache>\HeadlessSeeds.txt before the game starts; the DLL
+	//    applies it at setGameStarted(true) (just before onGameStarted, HHSEEDS point=gameStarted,
+	//    255e26ba2) and consumes it at the start of CvGame::init (point=gameInit). A DLL without
+	//    seed pinning gets the seeds in pregame directly, just before closeInactiveSlots.
 	const unsigned int uiMapSeed = SeedValue(kSpec["seeds"]["map"]);
 	const unsigned int uiSyncSeed = SeedValue(kSpec["seeds"]["sync"]);
 	if(DllHasSeedPinning(HHGetOptions().dllPath))
@@ -406,6 +399,13 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 		HH_STEP(HHFormat("setSyncRandomSeed(%u)", uiSyncSeed), pg->setSyncRandomSeed(uiSyncSeed));
 		kResult.seedMode = "pregame";
 	}
+
+	// 3. closeInactiveSlots marks the game started, which runs VP's CvPreGame::onGameStarted:
+	//    random civilizations for slots without one and the city-state selection, drawn with
+	//    the pregame map seed (CvGame::urandLimitExclusive), i.e. the spec's map seed. Then open slots are closed and player
+	//    info is sent (no-op single player).
+	HH_STEP("closeInactiveSlots()", pg->closeInactiveSlots());
+	kResult.timings.push_back(std::make_pair(std::string("launch"), Now() - t0));
 
 	// 4. ICvGame1::Init(handicap of the active player): reset, RNGs from the pregame seeds,
 	//    game id, start turn and max turns.
@@ -461,22 +461,53 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	HH_STEP("SetGameOption(\"GAMEOPTION_DYNAMIC_TURNS\", 0)", pg->SetGameOption("GAMEOPTION_DYNAMIC_TURNS", 0));
 	HH_STEP("SetGameOption(\"GAMEOPTION_SIMULTANEOUS_TURNS\", 0)", pg->SetGameOption("GAMEOPTION_SIMULTANEOUS_TURNS", 0));
 	HH_STEP("SetGameOption(\"GAMEOPTION_PITBOSS\", 0)", pg->SetGameOption("GAMEOPTION_PITBOSS", 0));
+	// Trace S1/S3b (contract 5.1, 5.4 step 7): the exe switches the DLL to graphical mode and
+	// sets up every player's graphics before DoGameStarted; the visual OUT calls are no-ops here.
+	HH_STEP("GameContext.SetGraphicsInitialized(true)", kIf.pContext->SetGraphicsInitialized(true));
+	for(int i = 0; i < MAX_PLAYERS; ++i)
+	{
+		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer((PlayerTypes)i);
+		if(pPlayer)
+		{
+			pPlayer->SetupGraphical();
+			pPlayer->Destroy();
+		}
+	}
+	kResult.steps.push_back(HHFormat("for i = 0..%d: Game.GetPlayer(i).SetupGraphical()", MAX_PLAYERS - 1));
 	HH_STEP("Game.DoGameStarted()", kIf.pGame->DoGameStarted());
 	// Trace S1, before the first ICvGame1::Update: NetMessageStaticsReset, then
 	// SendPlayerOptions(true) (the DLL reads each option from the engine and sends it), and
-	// the engine delivers the sent values back as NetMessageHandler::ResponsePlayerOption
-	// for the active player. (The network-sync delta clears and the UI's SelectSettler and
-	// RebroadcastNotifications that follow do not change saved state and are skipped.)
+	// the engine clears the network-sync deltas and delivers the sent values back as
+	// NetMessageHandler::ResponsePlayerOption for the active player (same frame).
 	if(ICvGame2* pGame2 = kIf.pGame->QueryInterface<ICvGame2>())
 		HH_STEP("Game.NetMessageStaticsReset()", pGame2->NetMessageStaticsReset());
 	HH_STEP("Game.SendPlayerOptions(true)", kIf.pGame->SendPlayerOptions(true));
+	if(ICvNetworkSyncronization1* pSync = kIf.pContext->GetNetworkSyncronizer())
+	{
+		pSync->ClearCityDeltas();
+		pSync->ClearRandomDeltas();
+		pSync->ClearPlayerDeltas();
+		pSync->ClearPlotDeltas();
+		pSync->ClearUnitDeltas();
+		pSync->Destroy();
+		kResult.steps.push_back("NetworkSyncronizer.Clear{City,Random,Player,Plot,Unit}Deltas()");
+	}
 	if(kIf.pEngine)
 	{
 		ICvNetMessageHandler1* pHandler = kIf.pContext->GetNetMessageHandler();
 		const size_t nOptions = kIf.pEngine->GetPendingPlayerOptionCount();
 		if(pHandler)
 			kIf.pEngine->DeliverPlayerOptions(pHandler, pg->activePlayer());
-		kResult.steps.push_back(HHFormat("NetMessageHandler.ResponsePlayerOption(%d, i, value) x%u", (int)pg->activePlayer(), (unsigned)nOptions));
+		kResult.steps.push_back(HHFormat("NetMessageHandler.ResponsePlayerOption(%d, option, value) x%u", (int)pg->activePlayer(), (unsigned)nOptions));
+	}
+	// The in-game UI's first frame (trace S1/S3b): SelectSettler (selects the active player's
+	// settler: increments its serialized m_iEverSelectedCount) and the active player's
+	// RebroadcastNotifications.
+	HH_STEP("Game.SelectSettler()", kIf.pGame->SelectSettler());
+	if(ICvPlayer1* pActive = kIf.pGame->GetPlayer(pg->activePlayer()))
+	{
+		HH_STEP(HHFormat("Game.GetPlayer(%d).RebroadcastNotifications()", (int)pg->activePlayer()), pActive->RebroadcastNotifications());
+		pActive->Destroy();
 	}
 	kResult.timings.push_back(std::make_pair(std::string("game_started"), Now() - t0));
 
@@ -623,6 +654,46 @@ namespace
 	}
 }
 
+//------------------------------------------------------------------------------
+// The load screen: the state the reference runs dump as dump-t000
+//------------------------------------------------------------------------------
+namespace
+{
+	// UI Lua that runs while the load screen is up and leaves serialized state behind (contract
+	// sections 1 and 2; no boundary trace, found by comparing dump-t000 with the host's):
+	// - VP's Demographics.lua BuildTables (players 0..MAX_MAJOR_CIVS inclusive) calls the lazy
+	//   might getters, which cache m_iMilitaryMight & co. with m_iTurnSliceMightRecomputed = turn.
+	//   ASSUMPTION (dump): the same getters in the same order; only the might cache is stateful.
+	const char* kLoadScreenUiLua =
+		"local n = 0\n"
+		"for i = 0, GameDefines.MAX_MAJOR_CIVS do\n"
+		"  local p = Players[i]\n"
+		"  if p ~= nil then\n"
+		"    p:GetRealPopulation(); p:CalculateTotalYield(YieldTypes.YIELD_FOOD); p:CalculateTotalYield(YieldTypes.YIELD_PRODUCTION)\n"
+		"    p:CalculateGrossGold(); p:GetNumPlots(); p:GetMilitaryMight(); p:GetExcessHappiness()\n"
+		"    n = n + 1\n"
+		"  end\n"
+		"end\n"
+		"return n\n";
+}
+
+bool HHLoadScreen(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+{
+	ICvPreGame1* pg = kIf.pPreGame;
+	// LoadScreen.lua: Game.SetPausePlayer(Game.GetActivePlayer()) once the game is initialised
+	// (contract 1.10); Game.SetPausePlayer(-1) only on "continue", after the reference dump.
+	HH_STEP(HHFormat("Game.SetPausePlayer(%d)", (int)pg->activePlayer()), kIf.pGame->SetPausePlayer(pg->activePlayer()));
+	bool bOk = true;
+	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless load-screen UI", kLoadScreenUiLua))
+	{
+		kResult.steps.push_back(HHFormat("UI Lua (Demographics BuildTables getters) for %d players", (int)lua_tointeger(L, -1)));
+		kIf.pScripts->FreeLuaThread(L);
+	}
+	else
+		bOk = false;
+	return bOk;
+}
+
 bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 {
 	UNUSED_VARIABLE(kSpec);
@@ -630,31 +701,9 @@ bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult&
 	const std::string run = HHGetPaths().run;
 	bool bOk = true;
 
-	// t000-map.json: deterministic (no times); identical across runs of the same spec.
-	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless T000 map", kMapLua))
-	{
-		if(lua_istable(L, -1))
-			bOk &= HHWriteTextFile(run + "t000-map.json", MapJson(L, lua_gettop(L)));
-		else
-			bOk = false;
-		kIf.pScripts->FreeLuaThread(L);
-	}
-	else
-		bOk = false;
-
-	// checkpoints/turn-0000.json: vpbench's CHECKPOINT result, wrapped as vpbench writes it.
-	HHEnsureDirectory(run + "checkpoints");
-	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless checkpoint", kCheckpointLua))
-	{
-		const std::string json = "{\n \"utc\": \"" + UtcNow() + "\",\n \"data\": " + HHLuaToJson(L, -1, 0) + "\n}\n";
-		bOk &= HHWriteTextFile(run + "checkpoints\\turn-0000.json", json);
-		kIf.pScripts->FreeLuaThread(L);
-	}
-	else
-		bOk = false;
-
 	// ------------------------------------------------------------------------------------
-	// HEADLESS DIGEST: Game.GetHeadlessDigest() at T000 (DLL additions D2). Written to
+	// HEADLESS DIGEST: Game.GetHeadlessDigest() at T000 (DLL additions D2), first: the
+	// map summary and the checkpoint below call lazy getters that can change state. Written to
 	// t000-digest.json when the DLL provides it; the total goes into newgame-report.json.
 	// ------------------------------------------------------------------------------------
 	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless digest", kDigestLua))
@@ -679,6 +728,29 @@ bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult&
 		if(lua_State* L = RunReturning(*kIf.pScripts, "Headless dump", chunk.c_str()))
 			kIf.pScripts->FreeLuaThread(L);
 	}
+
+	// t000-map.json: deterministic (no times); identical across runs of the same spec.
+	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless T000 map", kMapLua))
+	{
+		if(lua_istable(L, -1))
+			bOk &= HHWriteTextFile(run + "t000-map.json", MapJson(L, lua_gettop(L)));
+		else
+			bOk = false;
+		kIf.pScripts->FreeLuaThread(L);
+	}
+	else
+		bOk = false;
+
+	// checkpoints/turn-0000.json: vpbench's CHECKPOINT result, wrapped as vpbench writes it.
+	HHEnsureDirectory(run + "checkpoints");
+	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless checkpoint", kCheckpointLua))
+	{
+		const std::string json = "{\n \"utc\": \"" + UtcNow() + "\",\n \"data\": " + HHLuaToJson(L, -1, 0) + "\n}\n";
+		bOk &= HHWriteTextFile(run + "checkpoints\\turn-0000.json", json);
+		kIf.pScripts->FreeLuaThread(L);
+	}
+	else
+		bOk = false;
 
 	kResult.timings.push_back(std::make_pair(std::string("t000_outputs"), Now() - t0));
 	kResult.bOutputsOk = bOk;

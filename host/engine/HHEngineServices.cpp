@@ -23,7 +23,7 @@ namespace
 // HHEngineUtility
 //------------------------------------------------------------------------------
 HHEngineUtility::HHEngineUtility(ICvEngineScriptSystem1* pScriptSystem)
-	: m_pScriptSystem(pScriptSystem), m_bDone(false)
+	: m_pScriptSystem(pScriptSystem), m_bDone(false), m_iLockDepth(0), m_bInGameCoreUpdate(false)
 {
 	m_strCacheFolder = HHGetPaths().cache;
 }
@@ -195,7 +195,11 @@ void HHEngineUtility::sendPlayerOption(PlayerOptionTypes eOption, bool bValue)
 		HHLogError("sendPlayerOption: unknown option hash %d", (int)eOption);
 		return;
 	}
-	m_pendingOptions.push_back(std::make_pair(it->second.index, bValue));
+	// Measured (S3b): the engine answers with its own option index for the 11 options it knows
+	// (the base game's PlayerOptions rows 0..10) and with the type hash for any other row
+	// (PLAYEROPTION_QUICK_SELECTION_ADVANCE, row 11, arrives as -542730216).
+	const int iDelivered = (it->second.index >= 0 && it->second.index < kEngineKnownPlayerOptions) ? it->second.index : (int)eOption;
+	m_pendingOptions.push_back(std::make_pair(iDelivered, bValue));
 }
 
 void HHEngineUtility::DeliverPlayerOptions(ICvNetMessageHandler1* pHandler, PlayerTypes ePlayer)
@@ -225,15 +229,26 @@ int HHEngineUtility::GetAudioTagIndex(const char*, int)
 }
 
 bool HHEngineUtility::TunerConnected() { HH_IMPL_CALL("ICvEngineUtility1::TunerConnected"); return false; }
-bool HHEngineUtility::TunerEverConnected() { HH_IMPL_CALL("ICvEngineUtility1::TunerEverConnected"); return false; }
+// The reference runs drive the game through FireTuner (contract G12; the DLL stores it in a
+// normalised field only).
+bool HHEngineUtility::TunerEverConnected() { HH_IMPL_CALL("ICvEngineUtility1::TunerEverConnected"); return true; }
 
-// Single-threaded host: the game core runs on the calling thread and the lock is never held,
-// so code that yields to the UI while holding it skips the yield.
-void HHEngineUtility::GetGameCoreLock() { HH_IMPL_CALL("ICvEngineUtility1::GetGameCoreLock"); }
-void HHEngineUtility::ReleaseGameCoreLock() { HH_IMPL_CALL("ICvEngineUtility1::ReleaseGameCoreLock"); }
-bool HHEngineUtility::TryGameCoreLock() { HH_IMPL_CALL("ICvEngineUtility1::TryGameCoreLock"); return true; }
-bool HHEngineUtility::HasGameCoreLock() { HH_IMPL_CALL("ICvEngineUtility1::HasGameCoreLock"); return false; }
-bool HHEngineUtility::IsGameCoreThread() { HH_IMPL_CALL("ICvEngineUtility1::IsGameCoreThread"); return true; }
+// Single-threaded host emulating the engine's roles (contract section 2): the game core lock is a
+// recursive depth counter (the DLL's CvDll* wrappers take it in their constructors, so the exe
+// holds it while it holds any wrapper), and the "game core thread" is whoever is inside
+// ICvGame1::Update (SetInGameCoreUpdate); the new game and the UI run as the UI thread.
+void HHEngineUtility::GetGameCoreLock() { HH_IMPL_CALL("ICvEngineUtility1::GetGameCoreLock"); ++m_iLockDepth; }
+void HHEngineUtility::ReleaseGameCoreLock()
+{
+	HH_IMPL_CALL("ICvEngineUtility1::ReleaseGameCoreLock");
+	if(m_iLockDepth > 0)
+		--m_iLockDepth;
+	else
+		HHLogError("ReleaseGameCoreLock without a matching GetGameCoreLock");
+}
+bool HHEngineUtility::TryGameCoreLock() { HH_IMPL_CALL("ICvEngineUtility1::TryGameCoreLock"); ++m_iLockDepth; return true; }
+bool HHEngineUtility::HasGameCoreLock() { HH_IMPL_CALL("ICvEngineUtility1::HasGameCoreLock"); return m_iLockDepth > 0; }
+bool HHEngineUtility::IsGameCoreThread() { HH_IMPL_CALL("ICvEngineUtility1::IsGameCoreThread"); return m_bInGameCoreUpdate; }
 bool HHEngineUtility::IsGameCoreExecuting() { HH_IMPL_CALL("ICvEngineUtility1::IsGameCoreExecuting"); return false; }
 
 bool HHEngineUtility::ShouldValidateGameDatabase() const
@@ -302,7 +317,8 @@ bool HHUserInterface::isFocusedWidget() { HH_IMPL_CALL("ICvUserInterface1::isFoc
 bool HHUserInterface::IsPopupQueueEmpty() { HH_IMPL_CALL("ICvUserInterface1::IsPopupQueueEmpty"); return true; }
 bool HHUserInterface::IsModalStackEmpty() { HH_IMPL_CALL("ICvUserInterface1::IsModalStackEmpty"); return true; }
 bool HHUserInterface::IsDontShowPopups() const { HH_IMPL_CALL("ICvUserInterface1::IsDontShowPopups"); return true; }
-bool HHUserInterface::IsOptionNoRewardPopups() { HH_IMPL_CALL("ICvUserInterface1::IsOptionNoRewardPopups"); return true; }
+// The user setting is off in the reference profile (contract G10).
+bool HHUserInterface::IsOptionNoRewardPopups() { HH_IMPL_CALL("ICvUserInterface1::IsOptionNoRewardPopups"); return false; }
 bool HHUserInterface::IsLoadedGame() const { HH_IMPL_CALL("ICvUserInterface1::IsLoadedGame"); return false; }
 bool HHUserInterface::isInAdvancedStart() const { HH_IMPL_CALL("ICvUserInterface1::isInAdvancedStart"); return false; }
 bool HHUserInterface::IsDealInTransit() { HH_IMPL_CALL("ICvUserInterface1::IsDealInTransit"); return false; }
@@ -323,6 +339,17 @@ void HHEngineUtility::GameplayMetTeam(TeamTypes eMyTeam, TeamTypes eTheirTeam) {
 void HHEngineUtility::GameplayWarStateChanged(TeamTypes eTeam1, TeamTypes eTeam2, bool bWar) { HH_IMPL_CALL("ICvEngineUtility1::GameplayWarStateChanged"); }
 void HHEngineUtility::GameplayTechAcquired(TeamTypes eTeam, TechTypes eTech) { HH_IMPL_CALL("ICvEngineUtility1::GameplayTechAcquired"); }
 void HHEngineUtility::GameplayUnitShouldDimFlag(_In_ ICvUnit1* pThisUnit, bool bDim) { HH_IMPL_CALL("ICvEngineUtility1::GameplayUnitShouldDimFlag"); }
+// Graphics mode (SetGraphicsInitialized(true)) and the UI's SelectSettler: unit visuals and selection
+void HHEngineUtility::GameplayUnitCreated(_In_ ICvUnit1*) { HH_IMPL_CALL("ICvEngineUtility1::GameplayUnitCreated"); }
+void HHEngineUtility::GameplayUnitDestroyed(_In_ ICvUnit1*) { HH_IMPL_CALL("ICvEngineUtility1::GameplayUnitDestroyed"); }
+void HHEngineUtility::GameplayUnitFortify(_In_ ICvUnit1*, bool) { HH_IMPL_CALL("ICvEngineUtility1::GameplayUnitFortify"); }
+void HHEngineUtility::GameplayUnitVisibility(_In_ ICvUnit1*, bool, bool, const float) { HH_IMPL_CALL("ICvEngineUtility1::GameplayUnitVisibility"); }
+void HHEngineUtility::GameplayMinimapUnitSelect(int, int) { HH_IMPL_CALL("ICvEngineUtility1::GameplayMinimapUnitSelect"); }
+void HHEngineUtility::TradeVisuals_DeactivatePopupRoute() { HH_IMPL_CALL("ICvEngineUtility3::TradeVisuals_DeactivatePopupRoute"); }
+void HHUserInterface::makeSelectionListDirty() { HH_IMPL_CALL("ICvUserInterface1::makeSelectionListDirty"); }
+void HHUserInterface::ClearSelectionList() { HH_IMPL_CALL("ICvUserInterface1::ClearSelectionList"); }
+void HHUserInterface::InsertIntoSelectionList(ICvUnit1*, bool, bool, bool, bool, bool) { HH_IMPL_CALL("ICvUserInterface1::InsertIntoSelectionList"); }
+void HHUserInterface::clearSelectedCities() { HH_IMPL_CALL("ICvUserInterface1::clearSelectedCities"); }
 void HHUserInterface::PublishEndTurnDirty() const { HH_IMPL_CALL("ICvUserInterface1::PublishEndTurnDirty"); }
 void HHUserInterface::PublishPlayerTurnStatus(CvDLLInterfaceIFaceBase::TURN_STATUS_TYPE eStatus, PlayerTypes ePlayer, const char* pszTag) { HH_IMPL_CALL("ICvUserInterface1::PublishPlayerTurnStatus"); }
 void HHUserInterface::setCycleSelectionCounter(int iNewValue) { HH_IMPL_CALL("ICvUserInterface1::setCycleSelectionCounter"); }

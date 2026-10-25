@@ -21,6 +21,10 @@ public:
 	// The engine's loopback of sendPlayerOption: ResponsePlayerOption for each sent value.
 	void DeliverPlayerOptions(ICvNetMessageHandler1* pHandler, PlayerTypes ePlayer);
 	size_t GetPendingPlayerOptionCount() const { return m_pendingOptions.size(); }
+	// Engine roles: IsGameCoreThread answers true only inside ICvGame1::Update.
+	void SetInGameCoreUpdate(bool bInUpdate) { m_bInGameCoreUpdate = bInUpdate; }
+	int GetGameCoreLockDepth() const { return m_iLockDepth; }
+	static const int kEngineKnownPlayerOptions = 11;
 
 	explicit HHEngineUtility(ICvEngineScriptSystem1* pScriptSystem);
 
@@ -73,6 +77,12 @@ public:
 	void GameplayWarStateChanged(TeamTypes eTeam1, TeamTypes eTeam2, bool bWar);
 	void GameplayTechAcquired(TeamTypes eTeam, TechTypes eTech);
 	void GameplayUnitShouldDimFlag(_In_ ICvUnit1* pThisUnit, bool bDim);
+	void GameplayUnitCreated(_In_ ICvUnit1* pThisUnit);
+	void GameplayUnitDestroyed(_In_ ICvUnit1* pThisUnit);
+	void GameplayUnitFortify(_In_ ICvUnit1* pThisUnit, bool bFortify);
+	void GameplayUnitVisibility(_In_ ICvUnit1* pThisUnit, bool bVisible, bool bChangeInvisibility, const float fBlendTime);
+	void GameplayMinimapUnitSelect(int iX, int iY);
+	void TradeVisuals_DeactivatePopupRoute();
 
 	// Network (single player: no-ops)
 	void sendPlayerInfo(PlayerTypes eActivePlayer);
@@ -85,6 +95,8 @@ private:
 	bool m_bDone;
 	std::map<unsigned int, HHPlayerOption> m_playerOptions;   // FStringHash(type) -> option
 	std::vector<std::pair<int, bool> > m_pendingOptions;     // sent, not yet delivered
+	int m_iLockDepth;
+	bool m_bInGameCoreUpdate;
 };
 
 class HHUserInterface : public HHStubUserInterface
@@ -123,6 +135,10 @@ public:
 
 	// Turn and end-turn notifications for the screen: counted no-ops.
 	void PublishEndTurnDirty() const;
+	void makeSelectionListDirty();
+	void ClearSelectionList();
+	void InsertIntoSelectionList(ICvUnit1* pUnit, bool bClear, bool bToggle, bool bGroup, bool bSound, bool bMinimalChange);
+	void clearSelectedCities();
 	void PublishPlayerTurnStatus(CvDLLInterfaceIFaceBase::TURN_STATUS_TYPE eStatus, PlayerTypes ePlayer, const char* pszTag);
 	void setCycleSelectionCounter(int iNewValue);
 	void PublishActivePlayerTurnStart();
