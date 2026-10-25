@@ -65,7 +65,7 @@ namespace
 		"  --mod <guid[:ver]>   activated mod for IsModActivated (repeatable)\n"
 		"  --dlc <guid>         valid DLC for IsDLCValid (repeatable; default: every DLC valid)\n"
 		"  --game-logging       ICvGameContext1::SetLogging(true) (the DLL's own logs)\n"
-		"  --no-game-logging    newgame: no DLL logs (default: the reference profile's logging, which changes AI results)\n"
+		"  --no-game-logging    newgame: no DLL logs (default: the reference profile's logging; older DLLs' AI results depend on it)\n"
 		"  --turns <n>          newgame: autoplay n turns after T000 (ARM + CONTINUE as game_probe), then dump-t<n>\n"
 		"  --idle-updates <k>   newgame: Updates after autoplay ends, in the human turn (default 10)\n"
 		"  --dump-turns <a:b>   newgame: the DLL dumps the state at doTurnBegin of turns a..b (Logs\\HeadlessDumps)\n"
@@ -237,8 +237,8 @@ namespace
 			}
 			o.specPath = HHFullPath(o.specPath);
 			// The reference profile's config.ini has LoggingEnabled, AILog, AIPerfLog, BuilderAILog and
-			// PlayerAndCityAILogSplit on, and the DLL's AI logging changes results (CvPlayer::GetBestSettlePlot
-			// computes fresh found values when logging), so newgame logs like the reference by default.
+			// PlayerAndCityAILogSplit on. DLLs before the logging fixes (GetBestSettlePlot, PlotPillageMoves) give
+			// different AI results without AI logging, so newgame logs like the reference by default.
 			if(!o.noGameLogging)
 				o.gameLogging = true;
 			if(o.gameDir.empty()) o.gameDir = "E:\\SteamLibrary\\steamapps\\common\\Sid Meier's Civilization V";
