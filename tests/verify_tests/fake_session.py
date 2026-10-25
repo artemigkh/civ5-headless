@@ -74,6 +74,7 @@ class FakeRealGameSession:
         self.turns = turns
         for t in range(turns):
             self.digest.append(self.game.digest_line(t))
+        for t in range(turns + 1):  # the probe also prints the state after the last turn
             if self.fingerprint:
                 self.lua += self.game.fingerprint_lines(t)
         return dict(startTurn=0, endTurn=turns, turns=turns, endReason='turns', victory=None,

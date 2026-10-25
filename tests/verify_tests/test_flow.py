@@ -280,6 +280,24 @@ class FlowTest(unittest.TestCase):
         self.run_suite('host-only', pin_minor_civs=False)
         self.assertEqual(self.status('setup.civ-choice'), 'warn')
 
+    def test_dll_without_digests(self):
+        # the fingerprint compares; the probe-off reference takes sparse fingerprints against the dense ones
+        os.environ['C5H_FAKE_NO_DIGEST'] = '1'
+        os.environ['C5H_FAKE_SYNC_MATTERS'] = '1'
+        doc = self.run_suite('host-only', sparse_every=4)
+        self.assertEqual(self.status('trajectory.aa'), 'pass')
+        self.assertEqual(self.checks['trajectory.aa']['details']['method'], 'fingerprint')
+        self.assertIn('12 of 12 turns', self.checks['trajectory.aa']['summary'])  # 13 states, 12 turns
+        self.assertEqual(self.status('trajectory.probe-neutral'), 'pass', self.checks['trajectory.probe-neutral']['summary'])
+        self.assertIn('dense and sparse fingerprints (every 4 turns) agree at 4 sampled turns',
+                      self.checks['trajectory.probe-neutral']['summary'])
+        self.assertIn('12 (A/A)', doc['headline'])
+        self.assertEqual(self.checks['statistics.ensemble']['details']['vary'], 'sync')
+        os.environ['C5H_FAKE_PROBE_DIVERGE'] = '3'
+        self.run_suite('host-only', sparse_every=4)
+        self.assertEqual(self.status('trajectory.probe-neutral'), 'fail')
+        self.assertIn('per-turn fingerprint probe changes the game', self.checks['trajectory.probe-neutral']['summary'])
+
     def test_ui_hazards_by_reach(self):
         os.environ['C5H_FAKE_HOST_REPORT'] = '1'
         self.run_suite('host-only', caps=dict(hazards=FakeHazards))

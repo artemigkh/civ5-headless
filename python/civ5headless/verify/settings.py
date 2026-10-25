@@ -96,6 +96,7 @@ class Settings:
                                         # its turn-0 fingerprint); host-only, minor_civs in every spec
     minor_civs: list = field(default_factory=lambda: list(DEFAULT_MINOR_CIVS))
     fingerprint: object = True          # the Lua fingerprint probe on both sides: true, or {every, turns, split}
+    sparse_every: int = 25              # DLLs without digests: the probe-off reference fingerprints every k turns
     mods: list | None = None            # the mod set as "ID[:VERSION]" strings (default: the configuration's)
     no_mods: bool = False               # no mods: host games, database and real game
     standard_spec: dict = field(default_factory=lambda: copy.deepcopy(DEFAULT_STANDARD_SPEC))

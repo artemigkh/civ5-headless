@@ -234,7 +234,9 @@ class Suite:
         self.phases = phases
 
     def between(self, phase):
-        """After the phase with the sync-seed probe: decide what the ensemble varies (ensemble_vary auto)."""
+        """After each phase: how the probe-off reference runs (decide_noprobe); after the phase with the sync-seed
+        probe: what the ensemble varies (ensemble_vary auto)."""
+        self.decide_noprobe(phase)
         if self.settings.ensemble_vary != 'auto' or not any(j.kind == 'probe' for j in phase.jobs):
             return
         jobs = {j.role: j for j in phase.jobs}
@@ -258,6 +260,26 @@ class Suite:
             self.vary_reason = (f'two games with different sync seeds differ ({how})' if same is False else
                                 'the sync-seed probe could not compare the games; sync seeds by default')
         self.log(f'ensemble varies the {self.vary} seed: {self.vary_reason}')
+
+    def decide_noprobe(self, phase):
+        """A DLL without state digests can only be compared through the fingerprint, so a game without any probe
+        cannot be compared with the trajectory game: the probe-off reference then takes sparse fingerprints instead
+        (every sparse_every turns), and dense against sparse tells whether the per-turn probe changes the game."""
+        if self.fingerprint is None or getattr(self, 'noprobe_decided', False):
+            return
+        done = [j for j in phase.jobs if j.state == 'completed' and j.run_dir]
+        if not done:
+            return
+        self.noprobe_decided = True
+        if any(exact.digest_log(j.run_dir) for j in done):
+            return
+        every = max(2, int(self.settings.sparse_every))
+        for p in self.phases:
+            for j in p.jobs:
+                if j.role == 'noprobe' and j.state == 'pending':
+                    j.fingerprint = dict(every=every, turns=[], split=None)
+                    self.log(f'{j.name}: no state digests from this DLL, so sparse fingerprints (every {every} turns) '
+                             'against the dense ones')
 
     def _prior_curves(self):
         """The base game's curve from this machine's history (same setup), as the cost model's prior."""
