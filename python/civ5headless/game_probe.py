@@ -26,6 +26,8 @@ DLL and --turns), point by point as the turns pass. A difference that matches ag
 <run>/divergence.json and quits, so a long reference costs real-game time only up to its divergence.
 --rolling-dumps K dumps every turn and keeps the last K turns plus K turns around every difference, so the run that
 finds a divergence also has the field-level dumps around it (about 85 MB per Tiny dump).
+--engine-seeds leaves the seeds to the engine (no map/sync in HeadlessSeeds.txt, so config.ini MapRandSeed/SyncRandSeed
+or the clock): the HHSEEDS lines the DLL logged go to <run>/seeds-observed.json. It tests seeding with a stock DLL.
 """
 from pathlib import Path
 import argparse, json, re, shutil, subprocess, sys, time
@@ -125,6 +127,7 @@ def main():
                     'stop --diverge-turns turns after the first difference')
     ap.add_argument('--diverge-turns', type=int, default=2)
     ap.add_argument('--rolling-dumps', type=int, default=0, help='With --spec: dump every turn, keep the last K')
+    ap.add_argument('--engine-seeds', action='store_true', help='With --spec: do not pin the seeds (engine/config.ini seeds)')
     args = ap.parse_args()
     if args.rolling_dumps and args.dump_from is None: args.dump_from, args.dump_to = 0, 100000
     if args.host_digest and not (args.spec and args.turns > 0 and args.digest): ap.error('--host-digest needs --spec, --turns and the digest')
@@ -186,12 +189,18 @@ def main():
             write(b.run / 'pregame.json', b.call('ModsSinglePlayer', gamespec.pregame_lua(resolved), 'pregame-setup'))
             seeds = resolved['seeds']
             dump_range = f"dumpfrom={args.dump_from}\ndumpto={args.dump_to}\n" if args.dump_from is not None else ''
-            vpbench.HEADLESS_SEEDS.write_text(f"map={seeds['map']}\nsync={seeds['sync']}\ndigest={int(args.digest)}\nnormalise=1\n{dump_range}",
-                                              encoding='ascii')
+            pinned = '' if args.engine_seeds else f"map={seeds['map']}\nsync={seeds['sync']}\n"
+            vpbench.HEADLESS_SEEDS.write_text(f"{pinned}digest={int(args.digest)}\nnormalise=1\n{dump_range}", encoding='ascii')
             b.call('ModsSinglePlayer', vpbench.START, 'start-game')
             b.wait_loaded()
             write(b.run / 'setup.json', b.call('InGame', vpbench.SETUP, 'setup-info'))
-            b.log('seeds_pinned', **vpbench.check_seeds(resolved))
+            if args.engine_seeds:
+                lines = [l for l in (vpbench.GAME_DOCS / 'Logs/HeadlessDigest.log').read_text(encoding='utf-8', errors='replace').splitlines()
+                         if l.startswith('HHSEEDS|')]
+                write(b.run / 'seeds-observed.json', [dict(f.partition('=')[::2] for f in l.split('|')[1:]) for l in lines])
+                b.log('seeds_engine', lines=len(lines))
+            else:
+                b.log('seeds_pinned', **vpbench.check_seeds(resolved))
             run_probes('start')
             if args.turns > 0:
                 b.call('InGame', ARM.format(turns=args.turns), 'arm-autoplay')
