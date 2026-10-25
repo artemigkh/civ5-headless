@@ -80,8 +80,11 @@ commit it with the change it describes.
 - **Real-game A/A is exact:** `hh-m2-aa100-a` vs `-b`: per-turn digests identical at all 100 points
   (`hhdigest.py compare`), and all 57 sections of the T100 dumps byte-identical (`parity_t000.py`). With the
   digest normalisation and the three fixes, the real game is a reproducible oracle for M3.
-- **Runs in flight:** `work/headless/record_matrix.py work/headless/matrix/m5-batch1.json` (58 cases, about
-  2.5 h; status `work/test-runs/hh-m5-matrix.json`, log `work/test-runs/hh-m5-matrix.log`). Stop it cleanly
+- **Runs in flight:** `work/headless/record_matrix.py work/headless/matrix/m5-batch1.json --retry-failed`
+  (58 cases; 30 done in the first pass; status `work/test-runs/hh-m5-matrix.json`, log
+  `work/test-runs/hh-m5-matrix.log`). First pass: case names with underscores were rejected by the launcher
+  (renamed with hyphens), and the Huge game ignored `UI.ExitGame`, blocking every later case (vpbench now ends
+  such a game after 120 s; the Huge data was complete). Stop it cleanly
   between cases by creating `work/test-runs/hh-m5-matrix.stop`; rerunning the same command resumes.
   The real-game config.ini is unchanged (`RandLog` was 5 for the cdrift run only; backup in
   `work/test-runs/hh-m3-cdrift-randlog-config/`).
@@ -128,3 +131,6 @@ commit it with the change it describes.
   resumed: hh-m2-aa100-b started, host agent continues M3 from its RESUME.md.
 - 2026-10-25: real-game A/A with the normalisation and fixes is byte-exact over 100 turns (hh-m2-aa100-a/-b).
 - 2026-10-25: M3 done and merged (73d4f1932); M5 (host agent) and M6 (tooling agent) started; matrix batch 1 recording.
+- 2026-10-25 ~02:40: both agents stopped on the session usage limit (work saved: hh-host with an uncommitted
+  experiment in HHScriptSystem.cpp, hh-tooling at b6769a7d2 plus RESUME.md); resumed with SendMessage after the
+  reset at 03:30.
