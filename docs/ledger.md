@@ -112,3 +112,5 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 - Open: `CalculateGoldRate` counts as fixed only for DLLs with the digest additions (no better marker yet); Squads
   reads its options from user mod data, which the host keeps empty; the hazard scan does not follow `include()`;
   installed-package data for `probes/` (only `data/*.json` ships).
+- Independent check after the merge: the 120-turn M5 replay with main's exe (out 20261025-211224) has digests identical
+  to the phase A run.
