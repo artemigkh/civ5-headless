@@ -142,11 +142,13 @@ commit it with the change it describes.
   with a trade connections version. Host `--frame-skew K` (8c4406842) adds an Update before every K-th one: a
   host-only detector of frame-dependent caches. Rule: no more real-game recording until skew vs no-skew is identical
   across the Tiny long games, the 100-turn Tiny cases and continents-s1/-s2 Standard (K=2 and K=7).
-- **Runs in flight:** the 9 Tiny map-option cases of `m5-batch2.json` (3 turns, no trade routes yet) on 6C73DC9A,
-  host-first; the recorder stops before the 100-turn cases (stop file `work/test-runs/hh-m5b-matrix.stop`). The host
-  agent runs the frame-skew sweep. Then: field-map build of the merged DLL, deploy, host_first for m5-long and the
-  rest of m5-batch2, record host-first with rolling dumps (m5-long: remove `work/test-runs/hh-m5l-matrix.stop`, add
-  `--retry-failed`). s1 dump re-record done: the real game is identical to itself T0–127 (A/A).
+- **Map options identical** (`hh-m5b-mapopt-*`, DLL 6C73DC9A, Tiny): Continents, Communitu_79a and Continental_Drift
+  with every option at min, max and random: 9/9 identical (digests T0–T2 and both dumps; `parity_run.py --matrix
+  work/test-runs/hh-m5b-matrix.json --tag b`). About 75 s of real time per case.
+- **Runs in flight:** none in the real game. The host agent runs the frame-skew sweep. Then: field-map build of the
+  merged DLL, deploy, host_first for m5-long and the rest of m5-batch2 (7 cases of 100 turns), record host-first with
+  rolling dumps (remove the stop files `work/test-runs/hh-m5b-matrix.stop` and `hh-m5l-matrix.stop`; m5-long also
+  `--retry-failed`).
 - **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: the s1 T124–127 dumps against the
   host's (and the A/A check); the late-game logging fix (the AI settle log called `GetDanger`, which rebuilds dirty
   danger plots; host logging on/off differed at T154, T209, T252–254, T292–294; the uncommitted fix clears T154 and

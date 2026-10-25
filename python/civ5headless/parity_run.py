@@ -109,7 +109,7 @@ def run_case(ref, a, quiet=False):
         import shutil
         shutil.rmtree(run)
     run.parent.mkdir(parents=True, exist_ok=True)
-    cmd = [str(a.exe or latest_exe()), 'newgame', '--spec', str(ref / 'spec-resolved.json'), '--out', str(run),
+    cmd = [str(Path(a.exe).resolve() if a.exe else latest_exe()), 'newgame', '--spec', str(ref / 'spec-resolved.json'), '--out', str(run),
            '--dll', str(Path(a.dll).resolve()), '--db', str(Path(a.db).resolve())]
     if a.mods_db: cmd += ['--mods-db', str(Path(a.mods_db).resolve())]
     if a.loc_db: cmd += ['--loc-db', str(Path(a.loc_db).resolve())]
