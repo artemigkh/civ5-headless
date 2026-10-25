@@ -25,7 +25,7 @@ import sys
 # Members the DLL normalises in the digest (substrings of the field-map argument text).
 NORMALISED = [
     'game.m_iTurnSlice', 'game.m_bTunerEverConnected', 'game.m_bSavedOnce', 'game.m_strGameId', 'map.m_guid',
-    'player.m_uiStartTime', 'unit.m_uiLastPathTurnSlice',
+    'player.m_uiStartTime', 'unit.m_uiLastPathTurnSlice', 'bHHNoHolyCity',
     'gameTrade.m_aaiTechDifference', 'gameTrade.m_aaiPolicyDifference', 's_aaiUnbuilt',
     'notification.m_iExtraGameData', 'notification.m_ePlayerID',
     'playerTraits.m_bHasYieldFromTileCultureBomb', 'playerTraits.m_bHasYieldFromTileEarn',
