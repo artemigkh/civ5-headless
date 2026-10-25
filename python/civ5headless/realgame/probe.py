@@ -1,11 +1,15 @@
 """Run Lua probes in the real game and save their results.
 
-  python work/headless/game_probe.py --run NAME --probe CONTEXT=FILE.lua [--probe ...] [--no-mods]
-  python work/headless/game_probe.py --run NAME --spec SPEC.json [--turns N] --probe CONTEXT[@WHEN]=FILE.lua ...
+NOT FUNCTIONAL YET: ported from the source repository, where it runs on that repository's vpbench module (launcher,
+FireTuner calls, mod activation). Milestone 2 rebuilds it on realgame/session.py. Until then main() stops with a
+message unless a vpbench module is importable (PYTHONPATH).
+
+  python -m civ5headless.realgame.probe --run NAME --probe CONTEXT=FILE.lua [--probe ...] [--no-mods]
+  python -m civ5headless.realgame.probe --run NAME --spec SPEC.json [--turns N] --probe CONTEXT[@WHEN]=FILE.lua ...
 
 Launches the game (vpbench launcher), activates the benchmark mods unless --no-mods, runs each probe
 in its Lua context (MainMenu, ModsSinglePlayer, InGame, ...) through the tuner, writes the returned
-values to work/test-runs/NAME/probe-<n>-<file stem>.json, and quits normally.
+values to <runs>/NAME/probe-<n>-<file stem>.json, and quits normally.
 
 With --spec the probes can also run inside a game started from that spec (seeds pinned and the
 per-turn digest on, as vpbench newgame --spec). WHEN picks the moment:
@@ -32,13 +36,11 @@ or the clock): the HHSEEDS lines the DLL logged go to <run>/seeds-observed.json.
 from pathlib import Path
 import argparse, json, re, shutil, subprocess, sys, time
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'work/vpbench'))
-sys.path.insert(0, str(ROOT / 'work/headless'))
-sys.path.insert(0, str(ROOT / 'tools/headless'))
-import vpbench, gamespec, hhdigest
-from vpbench import write, utc
-from db_capture import INSTALLED_DLL, sha256
+from .. import config
+from .. import spec as gamespec
+from ..compare import digest as hhdigest
+from ..run import utc, write
+from .dbcapture import sha256, vpbench_module
 
 ARM = ("assert(not PreGame.IsMultiplayerGame());local p=Players[0];assert(p and p:IsAlive() and not p:IsMinorCiv());"
        "Game.SetOption('GAMEOPTION_QUICK_COMBAT',true);Game.SetOption('GAMEOPTION_QUICK_MOVEMENT',true);"
@@ -108,13 +110,15 @@ class LiveDigest:
         return self.open
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv=None, cfg=None):
+    cfg = cfg or config.load()
+    ap = argparse.ArgumentParser(prog='python -m civ5headless.realgame.probe', description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--run', required=True)
     ap.add_argument('--probe', action='append', default=[], help='CONTEXT[@setup|start|end]=path/to/probe.lua')
     ap.add_argument('--no-mods', action='store_true')
     ap.add_argument('--dll-sha')
-    ap.add_argument('--spec', help='Start a game from this spec (work/headless/gamespec.py)')
+    ap.add_argument('--spec', help='Start a game from this spec (spec.py)')
     ap.add_argument('--turns', type=int, default=0, help='With --spec: autoplay this many turns before the @end probes '
                     '(a game that ends earlier, with a winner or a game state other than ON, stops there)')
     ap.add_argument('--max-seconds', type=int, default=10800, help='Overall cap on the autoplay (default 3 h)')
@@ -128,7 +132,9 @@ def main():
     ap.add_argument('--diverge-turns', type=int, default=2)
     ap.add_argument('--rolling-dumps', type=int, default=0, help='With --spec: dump every turn, keep the last K')
     ap.add_argument('--engine-seeds', action='store_true', help='With --spec: do not pin the seeds (engine/config.ini seeds)')
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
+    vpbench = vpbench_module('realgame.probe')
+    installed_dll = cfg.require('dll')
     if args.rolling_dumps and args.dump_from is None: args.dump_from, args.dump_to = 0, 100000
     if args.host_digest and not (args.spec and args.turns > 0 and args.digest): ap.error('--host-digest needs --spec, --turns and the digest')
     if args.dump_from is not None and args.dump_to is None: args.dump_to = args.dump_from
@@ -149,10 +155,10 @@ def main():
     b = vpbench.Bench(args.run)
     since = time.time()
     if args.no_mods:
-        dll_sha = args.dll_sha or sha256(INSTALLED_DLL)
+        dll_sha = args.dll_sha or sha256(installed_dll)
         log = b.run.parent / (args.run + '-launch.log')
         with log.open('wb') as stream:
-            code = subprocess.run([vpbench.PWSH, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(ROOT / 'work/vpbench/vpbench-launch.ps1'),
+            code = subprocess.run([vpbench.PWSH, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(Path(vpbench.__file__).parent / 'vpbench-launch.ps1'),
                                    '-RunName', args.run, '-ExpectedDLLSHA', dll_sha, '-MaximumSeconds', '1800'],
                                   stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT).returncode
         if code: raise RuntimeError(f'Launch failed; see {log}')
@@ -164,7 +170,7 @@ def main():
             time.sleep(2)
     else:
         # The launch guard ends the game after this many seconds: room for the autoplay cap plus setup.
-        b.launch(args.dll_sha or sha256(INSTALLED_DLL), min(43200, max(3600, args.max_seconds + 900)))
+        b.launch(args.dll_sha or sha256(installed_dll), min(43200, max(3600, args.max_seconds + 900)))
     counter = [0]
 
     def run_probes(when):
@@ -184,7 +190,7 @@ def main():
     try:
         run_probes('setup')
         if args.spec:
-            resolved = gamespec.resolve(json.loads(Path(args.spec).read_text(encoding='utf-8')))
+            resolved = gamespec.resolve(json.loads(Path(args.spec).read_text(encoding='utf-8')), cfg.require('db'))
             write(b.run / 'spec-resolved.json', resolved)
             write(b.run / 'pregame.json', b.call('ModsSinglePlayer', gamespec.pregame_lua(resolved), 'pregame-setup'))
             seeds = resolved['seeds']

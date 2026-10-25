@@ -1,6 +1,8 @@
-"""Seconds per turn by game phase for vpbench run folders (real or headless) and boundary traces.
+"""Seconds per turn by game phase for run folders (c5h run, or real-game vpbench runs) and boundary traces.
 
-  python work/headless/phase_speed.py RUN_OR_TRACE [...] [--bucket 25] [--label NAME=PATH ...] [--json OUT]
+  python tools/phase_speed.py RUN_OR_TRACE [...] [--bucket 25] [--label NAME=PATH ...] [--json OUT]
+
+Development tool (standard library only, no package import).
 
 - A run folder is read through turn-seen.json (vpbench: 5-second polls; headless: exact turn changes).
 - A HeadlessTrace-*.log (trace DLL, real game) is read through its PublishNewGameTurn rows (exact).

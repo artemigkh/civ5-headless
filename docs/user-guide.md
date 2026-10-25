@@ -1,5 +1,23 @@
 # Headless host: user guide
 
+> This guide predates the standalone repository and is being rewritten around `c5h`. Until then, read its commands
+> through this table; inputs that were machine paths (game folder, MODS, databases, host build) now come from
+> `civ5headless.toml` or discovery (`c5h doctor`), and run folders go to `runs/`.
+>
+> | In this guide | Now |
+> |---|---|
+> | `work/headless/hhbench.py newgame --run N --spec S --target-turn T ...` | `c5h run S --turns T --run N ...` |
+> | `work/headless/runner.py run\|status\|compare Q` | `c5h queue run\|status\|compare Q` (relative paths in Q are relative to Q) |
+> | `work/headless/gamespec.py resolve\|lua S` | `c5h spec resolve\|lua S` |
+> | `work/headless/build_db.py`, `dbcache.py`, `dbdiff.py` | `c5h dbbuild`, `c5h dbcache`, `c5h dbdiff` |
+> | `tools/headless/hhdigest.py compare A B` | `c5h compare A B` (run folders or logs) |
+> | `tools/headless/hhdigest.py verify\|hash` | `c5h digest verify\|hash` |
+> | `tools/headless/parity_t000.py` | `c5h dumps` |
+> | `work/headless/parity_run.py`, `host_first.py`, `skew_sweep.py` | `c5h parity`, `c5h host-first`, `c5h skew` |
+> | `work/headless/phase_speed.py` | `python tools/phase_speed.py` |
+> | `work/build-headless.py` | `python tools/build_host.py` |
+> | `work/vpbench/vpbench.py`, `game_probe.py`, `record_matrix.py` (real game) | not yet: `realgame/` (milestone 2) |
+
 `civ5headless.exe` plays Vox Populi AI autoplay games with the unchanged game DLL and without Civilization V. A
 game from a spec is the same game the real game plays from that spec: per-turn state digests are identical
 (100-turn Continents reference, `hh-m2-aa100-a`). It is several times faster than the real game, needs about

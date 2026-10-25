@@ -1,6 +1,10 @@
 """Capture the game's databases for the headless host, and check them against the live game.
 
-  python work/headless/db_capture.py --run NAME [--dll-sha SHA]
+NOT FUNCTIONAL YET: ported from the source repository, where it runs on that repository's vpbench module (launcher,
+FireTuner calls, mod activation). Milestone 2 rebuilds it on realgame/session.py. Until then main() stops with a
+message unless a vpbench module is importable (PYTHONPATH).
+
+  python -m civ5headless.realgame.dbcapture --run NAME [--dll-sha SHA]
 
 Launches the game (vpbench launcher: tuner service and CPU guard), then:
   1. Main menu, no mods active: copies cache/Civ5DebugDatabase.db (the expansion/DLC snapshot the
@@ -10,19 +14,24 @@ Launches the game (vpbench launcher: tuner service and CPU guard), then:
   3. Quits normally and compares each copy with its in-memory export, table by table.
 
 The in-memory export runs in-game: ATTACH a new file and CREATE TABLE ... AS SELECT for every table.
-Results go to work/test-runs/NAME (dlc-debug.db, dlc-ingame.db, mods-debug.db, mods-ingame.db,
+Results go to <runs>/NAME (dlc-debug.db, dlc-ingame.db, mods-debug.db, mods-ingame.db,
 db-capture.json).
 """
 from pathlib import Path
 import argparse, hashlib, json, shutil, sqlite3, subprocess, sys, time
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / 'work/vpbench'))
-import vpbench
-from vpbench import tuner, write, utc
+from .. import config
+from ..run import utc, write
 
-CACHE = Path.home() / "Documents/My Games/Sid Meier's Civilization 5/cache"
-INSTALLED_DLL = Path.home() / "Documents/My Games/Sid Meier's Civilization 5/MODS/(1) Community Patch/CvGameCore_Expansion2.dll"
+
+def vpbench_module(what):
+    """The source repository's vpbench module, which realgame/session.py replaces (milestone 2)."""
+    try:
+        import vpbench
+    except ImportError:
+        raise SystemExit(f'{what} is not functional yet: it needs the real-game session (realgame/session.py, '
+                         'milestone 2), or the source repository\'s vpbench module on PYTHONPATH') from None
+    return vpbench
 
 EXPORT = r'''
 local path=%s
@@ -49,9 +58,9 @@ def sha256(path):
     return h.hexdigest().upper()
 
 
-def wait_db_written(after, label, b, timeout=300):
+def wait_db_written(cache, after, label, b, timeout=300):
     """Wait until Civ5DebugDatabase.db is newer than `after` and unchanged for 5 s; return its mtime."""
-    db = CACHE / 'Civ5DebugDatabase.db'
+    db = cache / 'Civ5DebugDatabase.db'
     deadline = time.monotonic() + timeout
     last = None
     while time.monotonic() < deadline:
@@ -85,17 +94,21 @@ def compare(cached, ingame):
             'only_ingame': sorted(tb - ta), 'differing': diffs}
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(argv=None, cfg=None):
+    cfg = cfg or config.load()
+    ap = argparse.ArgumentParser(prog='python -m civ5headless.realgame.dbcapture', description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--run', required=True)
     ap.add_argument('--dll-sha')
-    args = ap.parse_args()
-    dll_sha = args.dll_sha or sha256(INSTALLED_DLL)
+    args = ap.parse_args(argv)
+    vpbench = vpbench_module('realgame.dbcapture')
+    cache = cfg.require('cache_dir')
+    dll_sha = args.dll_sha or sha256(cfg.require('dll'))
     b = vpbench.Bench(args.run)
     started = time.time()
     log = b.run.parent / (args.run + '-launch.log')
     with log.open('wb') as stream:
-        code = subprocess.run([vpbench.PWSH, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(ROOT / 'work/vpbench/vpbench-launch.ps1'),
+        code = subprocess.run([vpbench.PWSH, '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(Path(vpbench.__file__).parent / 'vpbench-launch.ps1'),
                                '-RunName', args.run, '-ExpectedDLLSHA', dll_sha, '-MaximumSeconds', '1800'],
                               stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT).returncode
     if code: raise RuntimeError(f'Launch failed; see {log}')
@@ -108,25 +121,25 @@ def main():
         while not ({'MainMenu', 'LegalScreen', 'ModsBrowser'} & b.states()):
             if time.monotonic() >= deadline: raise TimeoutError('Main menu did not appear')
             time.sleep(2)
-        wait_db_written(started, 'dlc', b)
-        shutil.copy2(CACHE / 'Civ5DebugDatabase.db', b.run / 'dlc-debug.db')
+        wait_db_written(cache, started, 'dlc', b)
+        shutil.copy2(cache / 'Civ5DebugDatabase.db', b.run / 'dlc-debug.db')
         out = str((b.run / 'dlc-ingame.db').resolve()).replace('\\', '/')
-        result['dlcExport'] = b.call('MainMenu', EXPORT % tuner.lua_string(out), 'export-dlc', timeout=120)
+        result['dlcExport'] = b.call('MainMenu', EXPORT % vpbench.tuner.lua_string(out), 'export-dlc', timeout=120)
         if not (b.run / 'ensure-mods-result.json').exists():
-            code = subprocess.run([vpbench.PY, '-B', '-u', str(ROOT / 'work/ensure-benchmark-mods.py'), '--run-dir', str(b.run),
+            code = subprocess.run([vpbench.PY, '-B', '-u', str(Path(vpbench.__file__).parents[1] / 'ensure-benchmark-mods.py'), '--run-dir', str(b.run),
                                    '--expected-mods-json', str(vpbench.MODS)], stdin=subprocess.DEVNULL, capture_output=True, text=True)
             if code.returncode: raise RuntimeError('Benchmark mods could not be verified: ' + code.stdout[-400:])
             b.call('LegalScreen', 'UIManager:DequeuePopup(ContextPtr)', 'dismiss-legal')
-        before_mods = (CACHE / 'Civ5DebugDatabase.db').stat().st_mtime
+        before_mods = (cache / 'Civ5DebugDatabase.db').stat().st_mtime
         b.call('ModsBrowser', "assert(#Modding.GetEnabledModsByActivationOrder()>0,'No mods enabled');OnNextButtonClicked();return 'activated'", 'activate-mods')
         deadline = time.monotonic() + 240
         while 'ModsSinglePlayer' not in b.states():
             if time.monotonic() >= deadline: raise TimeoutError('Mod activation did not complete')
             time.sleep(1)
-        wait_db_written(before_mods, 'mods', b)
-        shutil.copy2(CACHE / 'Civ5DebugDatabase.db', b.run / 'mods-debug.db')
+        wait_db_written(cache, before_mods, 'mods', b)
+        shutil.copy2(cache / 'Civ5DebugDatabase.db', b.run / 'mods-debug.db')
         out = str((b.run / 'mods-ingame.db').resolve()).replace('\\', '/')
-        result['modsExport'] = b.call('ModsSinglePlayer', EXPORT % tuner.lua_string(out), 'export-mods', timeout=120)
+        result['modsExport'] = b.call('ModsSinglePlayer', EXPORT % vpbench.tuner.lua_string(out), 'export-mods', timeout=120)
     finally:
         b.quit()
     for phase in ('dlc', 'mods'):
