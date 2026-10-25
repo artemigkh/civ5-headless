@@ -145,6 +145,10 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// MapScriptOptions defaults by this string, and LoadFile resolves it.
 	HH_STEP(HHFormat("setMapScriptName(\"%s\")", mapFile.c_str()), pg->setMapScriptName(CvString(mapFile.c_str())));
 	HH_STEP(HHFormat("setGameSpeed(%d)", kSpec["speed"]["id"].AsInt()), pg->setGameSpeed((GameSpeedTypes)kSpec["speed"]["id"].AsInt()));
+	// PreGame state the spec does not set: the real exe keeps it from the previous game of the session
+	// (setGameSpeed sets no turn timer for Marathon). --pregame-turn-timer reproduces such a reference.
+	if(HHGetOptions().pregameTurnTimer >= 0)
+		HH_STEP(HHFormat("setTurnTimer(%d)", HHGetOptions().pregameTurnTimer), pg->setTurnTimer((TurnTimerTypes)HHGetOptions().pregameTurnTimer));
 	HH_STEP(HHFormat("setEra(%d)", kSpec["era"]["id"].AsInt()), pg->setEra((EraTypes)kSpec["era"]["id"].AsInt()));
 	HH_STEP(HHFormat("setHandicap(0, %d)", kSpec["difficulty"]["id"].AsInt()),
 	        pg->setHandicap((PlayerTypes)0, (HandicapTypes)kSpec["difficulty"]["id"].AsInt()));
@@ -192,10 +196,11 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 		const SlotStatus eStatus = status == "taken" ? SS_TAKEN : (status == "computer" ? SS_COMPUTER : SS_CLOSED);
 		const char* szStatus = eStatus == SS_TAKEN ? "SS_TAKEN" : (eStatus == SS_COMPUTER ? "SS_COMPUTER" : "SS_CLOSED");
 		HH_STEP(HHFormat("setSlotStatus(%d, %s)", (int)p, szStatus), pg->setSlotStatus(p, eStatus));
-		// ASSUMPTION (trace): the setup screen leaves active slots assigned and closed slots
-		// unassigned (resetSlots does this for the world's default slots; the advanced setup
-		// adds AI players the same way).
-		const SlotClaim eClaim = eStatus == SS_CLOSED ? SLOTCLAIM_UNASSIGNED : SLOTCLAIM_ASSIGNED;
+		// Claims: closing a slot unassigns it; opening one keeps its claim, so only the world's
+		// default slots (resetSlots in setWorldSize) are assigned. M5 references: majors2 has slots
+		// 2-7 unassigned, majors12 (standard world, 8 default players) slots 8-11 unassigned.
+		const bool bUnassign = eStatus == SS_CLOSED;
+		const SlotClaim eClaim = bUnassign ? SLOTCLAIM_UNASSIGNED : pg->slotClaim(p);
 		if(pg->slotClaim(p) != eClaim)
 			HH_STEP(HHFormat("setSlotClaim(%d, %s)", (int)p, eClaim == SLOTCLAIM_ASSIGNED ? "SLOTCLAIM_ASSIGNED" : "SLOTCLAIM_UNASSIGNED"),
 			        pg->setSlotClaim(p, eClaim));
@@ -470,6 +475,22 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 		}
 	}
 	kResult.steps.push_back(HHFormat("for i = 0..%d: Game.GetPlayer(i).LaterInit()", MAX_PLAYERS - 1));
+	// ASSUMPTION (M5 references vp-ring, vp-north-vs-south, players-cs41): the exe closes the slots of
+	// city-states that did not survive map generation (AssignStartingPlots discards them when no site is
+	// left); the real pregame has SS_CLOSED there. CvGame looks for SS_CLOSED minor slots when it creates
+	// a city-state later in the game.
+	for(int i = kMaxMajorCivs; i < MAX_CIV_PLAYERS; ++i)
+	{
+		const PlayerTypes p = (PlayerTypes)i;
+		if(pg->slotStatus(p) != SS_COMPUTER)
+			continue;
+		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(p);
+		const bool bAlive = pPlayer && pPlayer->IsAlive();
+		if(pPlayer)
+			pPlayer->Destroy();
+		if(!bAlive)
+			HH_STEP(HHFormat("setSlotStatus(%d, SS_CLOSED) /* city-state not alive after map generation */", i), pg->setSlotStatus(p, SS_CLOSED));
+	}
 	const int iPlots = kIf.pMap->NumPlots();
 	HH_STEP(HHFormat("Game.InitTacticalAnalysisMap(%d)", iPlots), kIf.pGame->InitTacticalAnalysisMap(iPlots));
 	// ASSUMPTION (trace): the in-game UI's start-up sets these three options to 0 (S1 shows

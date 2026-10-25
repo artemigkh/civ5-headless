@@ -145,7 +145,16 @@ namespace
 		unsigned int i = PerturbNext() % kPerturbSlots;
 		if(s_apPerturb[i])
 			free(s_apPerturb[i]);
-		s_apPerturb[i] = (PerturbNext() & 1) ? malloc(PerturbSize()) : NULL;
+		s_apPerturb[i] = NULL;
+		if(PerturbNext() & 1)
+		{
+			// Poison the spacer: a DLL block that reuses this memory later sees non-zero garbage
+			// in members it fails to initialise (the CRT heap does not clear freed memory).
+			const size_t n = PerturbSize();
+			s_apPerturb[i] = malloc(n);
+			if(s_apPerturb[i])
+				memset(s_apPerturb[i], 0x5A + (int)(s_uPerturbState & 0x0F), n);
+		}
 	}
 	void PerturbStep()
 	{
@@ -171,7 +180,12 @@ void HHExportsInit()
 		s_uPerturbState = uSeed;
 		// Start with a heap full of holes of random sizes.
 		for(int i = 0; i < kPerturbSlots; ++i)
-			s_apPerturb[i] = malloc(PerturbSize());
+		{
+			const size_t n = PerturbSize();
+			s_apPerturb[i] = malloc(n);
+			if(s_apPerturb[i])
+				memset(s_apPerturb[i], 0x5A, n);
+		}
 		for(int i = 0; i < kPerturbSlots * 2; ++i)
 			PerturbSlot();
 		s_bPerturb = true;
