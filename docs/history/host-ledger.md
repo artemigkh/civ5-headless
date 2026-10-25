@@ -115,9 +115,17 @@ commit it with the change it describes.
   source = headless-host c08b24207: artifact pick, trade stats and unit maintenance fixes, UI-only digest
   normalisation). Earlier references (`hh-m5`, `hh-m5f`, `hh-m5g`: 89F146A7; `hh-m5b-mapopt-*`: 6C73DC9A) compare
   against their own DLLs.
-- **Final game in flight:** `m5-final.json` (`hh-m5z-continents-s1`, Standard Emperor 1001/2002, maxTurns 400): host
-  first (exe `work/wt/hh-host/work/headless-output/Release/20261025-075337`), real game host-first with rolling dumps,
-  then `parity_run.py hh-m5z-continents-s1 --turns 400 --tag final`. Identical closes M5.
+- **Final game, first attempt** (`hh-m5z-continents-s1`, DLL CB6B0BED, host-first): identical to the host T0–T140
+  (past the old T125 divergence: the three DLL fixes hold). From T141 only `pregame` differs (game, map, players
+  identical through T143); the real game stopped at T144 with dumps T137–143. Cause: one slot's status (two arrays,
+  pregame offsets 718 and 11271): real SS_COMPUTER, host SS_CLOSED: the host's "dead city-state slots closed" emulation
+  closes a slot the real engine kept open. With the host agent (find the engine's real rule, fix, verify). Then the
+  final game is recorded again.
+- **Seeding with a stock DLL works (2026-10-25):** `config.ini` `MapRandSeed`/`SyncRandSeed` (Firaxis
+  `CvPreGame::loadFromIni`) pin a menu-started game's seeds before the random civs are drawn. Two real Tiny launches
+  without our seeds file (`game_probe --engine-seeds`, runs `hh-seedtest-a/-b`) were identical (civs, all 33 turn-0
+  sections, digests T0–T2); clock-seeded controls (`hh-seedtest-clock-a/-b`) differed everywhere; the host with the
+  same seeds matched the real game. The future test suite's exact checks therefore work with any SDK-derived DLL.
 - **Archaeology was nondeterministic in the real game too:** `CultureHelpers::GetArtifact` chose the dug-up great
   work with SQLite `order by Random()`, which SQLite seeds from the OS, so no run (real or host) reproduced past the
   first dig. Fixed in 6d42ad0c5 (candidates by ID, picked with `urandLimitExclusive` and a plot/class/era seed; a
