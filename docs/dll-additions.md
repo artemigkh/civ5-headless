@@ -15,7 +15,8 @@ manager must return a real path from `FILogFile::GetFileName()`.
 
 - `HeadlessDigest.log`: seeds, pregame snapshot and initial RNG states at every game init (always on);
   per-turn digests when digest logging is on; digests requested from Lua.
-- `HeadlessRuntime.log`: one line at the first `CvGame::update` of the process (always on).
+- `HeadlessRuntime.log`: one line at the first `CvGame::update` of the process (game core thread) and one at every
+  `CvGame::init` (`point=gameInit`, the thread that generates the map), always on.
 
 Every line is `KIND|key=value|...`. In values, `|`, `%`, `=` and control characters are percent-encoded
 (`%7C`, `%25`, `%3D`, ...).
