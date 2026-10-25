@@ -41,9 +41,10 @@ then `... compare runs/baseline runs/NAME` (config and baselines are under the i
 - Milestone 5 (committed): plain VP coverage (runs/vpdet: MODS copy, DLL copy, registry from the .modinfo files by
   the scratch script make_modsdb.py, vpdet.db by c5h dbbuild --mod ...; probe_check 3 games x 100 turns passed,
   runs/vpdet/check1); `hazards scan --unknown-only`; engine-contract 15 plain VP note.
-- Next: final invariant on the final exe, then the final report (SubagentHandback).
+- Final invariant on exe 20261025-201024 (HEAD 3d0c578 sources): 8 of 8 identical (runs/final). Work order done;
+  the final report went to the coordinator.
 
 ## Build and run
 
-- `set C5H_TOOLCHAIN=E:\Projects\Civ5StackMod\work\toolchain\sdk`, `python tools/build_host.py`.
+- `set C5H_TOOLCHAIN=<the VC9/SDK toolchain folder>`, `python tools/build_host.py`.
 - Baseline exe copy: `runs/baseline/exe/civ5headless.exe`.
