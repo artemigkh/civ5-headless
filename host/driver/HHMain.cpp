@@ -26,6 +26,9 @@
 #include "setup/HHNewGame.h"
 #include "lua/HHLuaGlobals.h"
 #include "setup/HHDbBuilder.h"
+#include "setup/HHProfiles.h"
+#include "setup/HHAddins.h"
+#include "engine/HHSha256.h"
 #include <float.h>
 #include <psapi.h>
 
@@ -43,7 +46,8 @@ namespace
 		"       civ5headless.exe newgame --spec <resolved.json> --out <run dir> [--dll <path>] [--game-dir <path>]\n"
 		"                        [--mods-dir <path>] [options]\n"
 		"  --spec <path>        resolved game spec (python work/headless/gamespec.py resolve SPEC --out FILE)\n"
-		"  --game-dir <path>    game folder (newgame default: E:\\SteamLibrary\\steamapps\\common\\Sid Meier's Civilization V)\n"
+		"  --game-dir <path>    game folder (default: found through the registry: Civ V's Steam uninstall entry, then\n"
+		"                       the Steam libraries)\n"
 		"  --dll <path>         game DLL (newgame default: CvGameCore_Expansion2.dll in MODS\\(1) Community Patch)\n"
 		"  --mods-dir <path>    deployed MODS folder, read only (default: <Documents>\\My Games\\...\\MODS)\n"
 		"  --mods-db <path>     mods database to copy (default: <Documents>\\My Games\\...\\cache\\Civ5ModsDatabase.db)\n"
@@ -83,6 +87,12 @@ namespace
 		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
 		"  --heap-perturb <seed> address-perturbation self-test (results must not change): random heap spacer\n"
 		"                       allocations interleaved with the DLL's allocations, and the game DLL rebased\n"
+		"  --profiles <dir>     newgame: UI emulation profiles (default: profiles\\ next to the exe or above it)\n"
+		"  --no-profiles        newgame: no UI emulation profiles\n"
+		"  --skip-addin <file>  newgame: do not run this InGameUIAddin (file name, with or without extension; repeatable)\n"
+		"  --no-addins          newgame: run no InGameUIAddin\n"
+		"  --lua-probe <file>   newgame: run a Lua file in an InGame context after the T000 outputs, before autoplay is\n"
+		"                       armed (repeatable, in order, one shared context; e.g. probes\\fingerprint.lua)\n"
 		"  --pregame-turn-timer <id>  newgame: PreGame turn timer after setGameSpeed (the real exe keeps the previous\n"
 		"                       game's value for Marathon, which sets none)\n"
 		"  --game-log-flags <m> with game logging: 1 AILog, 2 AIPerfLog, 4 BuilderAILog, 8 PlayerAndCityAILogSplit\n"
@@ -90,7 +100,8 @@ namespace
 		"  --rand-log <flags>   config.ini RandLog: 5 = every synced RNG call incl. map generation (Logs\\RandCalls.csv)\n"
 		"  --strict             abort on the first unimplemented engine call\n"
 		"  --verbose            log the first call of every implemented engine method too\n"
-		"  --keep-dll-loaded    skip FreeLibrary of the game DLL at shutdown\n";
+		"  --keep-dll-loaded    skip FreeLibrary of the game DLL at shutdown\n"
+		"Every newgame run writes <run>\\host-report.json (docs/engine-contract.md, run report).\n";
 
 	struct InfoCount
 	{
@@ -173,6 +184,101 @@ namespace
 		return s;
 	}
 
+	std::string RegString(HKEY hRoot, const wchar_t* szKey, const wchar_t* szValue, REGSAM eView)
+	{
+		HKEY h;
+		if(RegOpenKeyExW(hRoot, szKey, 0, KEY_READ | eView, &h) != ERROR_SUCCESS)
+			return std::string();
+		wchar_t buf[2048];
+		DWORD cb = sizeof(buf) - sizeof(wchar_t);
+		DWORD type = 0;
+		std::string out;
+		if(RegQueryValueExW(h, szValue, NULL, &type, (LPBYTE)buf, &cb) == ERROR_SUCCESS && (type == REG_SZ || type == REG_EXPAND_SZ))
+		{
+			buf[cb / sizeof(wchar_t)] = 0;
+			out = HHNarrow(buf);
+		}
+		RegCloseKey(h);
+		return out;
+	}
+
+	bool IsGameDir(const std::string& dir)
+	{
+		return !dir.empty() && HHFileExists(dir + "\\CvGameDatabaseWin32Final Release.dll");
+	}
+
+	// The game folder without --game-dir: Civ V's Steam uninstall entry (app 8930), then every Steam library
+	// (the Steam folder and the libraries of steamapps\libraryfolders.vdf). Empty when none has the game.
+	std::string DiscoverGameDir(std::string& strSource)
+	{
+		const wchar_t* kUninstall = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Steam App 8930";
+		const REGSAM views[] = { KEY_WOW64_64KEY, KEY_WOW64_32KEY };
+		for(int i = 0; i < 2; ++i)
+		{
+			const std::string dir = StripSlash(RegString(HKEY_LOCAL_MACHINE, kUninstall, L"InstallLocation", views[i]));
+			if(IsGameDir(dir))
+			{
+				strSource = "registry: Steam App 8930 InstallLocation";
+				return dir;
+			}
+		}
+		std::vector<std::string> steams;
+		steams.push_back(RegString(HKEY_CURRENT_USER, L"Software\\Valve\\Steam", L"SteamPath", 0));
+		steams.push_back(RegString(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Valve\\Steam", L"InstallPath", KEY_WOW64_32KEY));
+		steams.push_back(RegString(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Valve\\Steam", L"InstallPath", KEY_WOW64_64KEY));
+		std::vector<std::string> libraries;
+		for(size_t i = 0; i < steams.size(); ++i)
+		{
+			if(steams[i].empty())
+				continue;
+			const std::string steam = StripSlash(steams[i]);
+			libraries.push_back(steam);
+			// libraryfolders.vdf: "path" "D:\\SteamLibrary" (newer) or "1" "D:\\SteamLibrary" (older).
+			std::string vdf;
+			if(!HHReadTextFile(steam + "\\steamapps\\libraryfolders.vdf", vdf))
+				continue;
+			size_t pos = 0;
+			while(pos < vdf.size())
+			{
+				size_t eol = vdf.find('\n', pos);
+				if(eol == std::string::npos)
+					eol = vdf.size();
+				const std::string line = vdf.substr(pos, eol - pos);
+				pos = eol + 1;
+				std::vector<std::string> tokens;
+				size_t q = 0;
+				while((q = line.find('"', q)) != std::string::npos)
+				{
+					const size_t e = line.find('"', q + 1);
+					if(e == std::string::npos)
+						break;
+					tokens.push_back(line.substr(q + 1, e - q - 1));
+					q = e + 1;
+				}
+				if(tokens.size() != 2 || !(tokens[0] == "path" || (!tokens[0].empty() && isdigit((unsigned char)tokens[0][0]))))
+					continue;
+				std::string path;
+				for(size_t k = 0; k < tokens[1].size(); ++k)
+				{
+					if(tokens[1][k] == '\\' && k + 1 < tokens[1].size() && tokens[1][k + 1] == '\\')
+						++k;
+					path += tokens[1][k];
+				}
+				libraries.push_back(StripSlash(path));
+			}
+		}
+		for(size_t i = 0; i < libraries.size(); ++i)
+		{
+			const std::string dir = libraries[i] + "\\steamapps\\common\\Sid Meier's Civilization V";
+			if(IsGameDir(dir))
+			{
+				strSource = "registry: Steam library " + libraries[i];
+				return dir;
+			}
+		}
+		return std::string();
+	}
+
 	bool ParseArgs(int argc, wchar_t** argv, HHOptions& o)
 	{
 		if(argc < 2)
@@ -191,7 +297,12 @@ namespace
 			else if(a == "--keep-dll-loaded") o.freeLibrary = false;
 			else if(a == "--no-mods") o.noMods = true;
 			else if(a == "--no-lua-debug") o.luaDebugLibrary = false;
+			else if(a == "--no-profiles") o.noProfiles = true;
+			else if(a == "--no-addins") o.noAddins = true;
 			else if(!bHasValue) { fprintf(stderr, "missing value for %s\n", a.c_str()); return false; }
+			else if(a == "--profiles") { o.profilesDir = StripSlash(HHFullPath(v)); ++i; }
+			else if(a == "--skip-addin") { o.skipAddins.push_back(v); ++i; }
+			else if(a == "--lua-probe") { o.luaProbes.push_back(HHFullPath(v)); ++i; }
 			else if(a == "--game-dir") { o.gameDir = StripSlash(v); ++i; }
 			else if(a == "--dll") { o.dllPath = v; ++i; }
 			else if(a == "--db") { o.dbPath = v; ++i; }
@@ -259,12 +370,22 @@ namespace
 			// different AI results without AI logging, so newgame logs like the reference by default.
 			if(!o.noGameLogging)
 				o.gameLogging = true;
-			if(o.gameDir.empty()) o.gameDir = "E:\\SteamLibrary\\steamapps\\common\\Sid Meier's Civilization V";
 			if(o.dllPath.empty()) o.dllPath = o.modsDir + "\\(1) Community Patch\\CvGameCore_Expansion2.dll";
 		}
-		if(o.gameDir.empty() || o.dllPath.empty() || o.outDir.empty())
+		if(!o.gameDir.empty())
+			o.gameDirSource = "--game-dir";
+		else
 		{
-			fprintf(stderr, "--game-dir, --dll and --out are required\n");
+			o.gameDir = DiscoverGameDir(o.gameDirSource);
+			if(o.gameDir.empty())
+			{
+				fprintf(stderr, "the game folder was not found in the registry; pass --game-dir\n");
+				return false;
+			}
+		}
+		if(o.dllPath.empty() || o.outDir.empty())
+		{
+			fprintf(stderr, "--dll and --out are required\n");
 			return false;
 		}
 		o.modsDir = HHFullPath(o.modsDir);
@@ -431,6 +552,253 @@ namespace
 		HHWriteTextFile(strPath, body + add);
 	}
 
+	std::string Q(const std::string& s)
+	{
+		return "\"" + HHJsonEscape(s) + "\"";
+	}
+
+	std::string ExePath()
+	{
+		wchar_t sz[MAX_PATH];
+		const DWORD n = GetModuleFileNameW(NULL, sz, MAX_PATH);
+		return n ? HHNarrow(std::wstring(sz, n)) : std::string();
+	}
+
+	std::string FileBase(const std::string& path)
+	{
+		const size_t slash = path.find_last_of("\\/");
+		return slash == std::string::npos ? path : path.substr(slash + 1);
+	}
+
+	// UI Lua files of the run that are not the base game's: InGameUIAddin contexts, mod and DLC files that override a
+	// base-game UI file, and every Lua file of a DLC package that is not an official one (EUI and the like). A file is
+	// known when a selected profile was selected by it (same hash) or known-ui-files.json lists it.
+	std::string UIFilesJson(const HHNewGameResult& ng)
+	{
+		HHVfs& kVfs = HHGetVfs();
+		HHProfiles& kProfiles = HHGetProfiles();
+		std::vector<std::string> paths = kVfs.AllPaths();
+		std::string unknown, known;
+		int nKnown = 0, nUnknown = 0;
+		std::set<std::string> seen;
+		struct Item { std::string name, path, source, kind; };
+		std::vector<Item> items;
+		for(size_t i = 0; i < ng.uiAddins.size(); ++i)
+			if(!ng.uiAddins[i].path.empty())
+			{
+				Item it = { FileBase(ng.uiAddins[i].path), ng.uiAddins[i].path, "addin:" + ng.uiAddins[i].mod, "addin" };
+				items.push_back(it);
+			}
+		for(size_t i = 0; i < paths.size(); ++i)
+		{
+			const std::vector<HHVfsEntry>* pFound = kVfs.Find(FileBase(paths[i]));
+			if(!pFound || pFound->empty())
+				continue;
+			const HHVfsEntry& e = pFound->front();
+			if(e.tier == 0)
+				continue;
+			std::string dlcFolder;
+			if(e.tier == 1)
+			{
+				dlcFolder = e.source.substr(4, e.source.find('/') == std::string::npos ? std::string::npos : e.source.find('/') - 4);
+				if(kProfiles.IsOfficialDlc(dlcFolder))
+					continue;
+			}
+			bool bOverridesUI = false;
+			for(size_t k = 1; k < pFound->size(); ++k)
+			{
+				const std::string lower = HHLower((*pFound)[k].path);
+				if(lower.find("\\ui\\") != std::string::npos && ((*pFound)[k].tier == 0 ||
+				   ((*pFound)[k].tier == 1 && kProfiles.IsOfficialDlc((*pFound)[k].source.substr(4, (*pFound)[k].source.find('/') - 4)))))
+					bOverridesUI = true;
+			}
+			if(!bOverridesUI && e.tier != 1)
+				continue;
+			Item it = { FileBase(e.path), e.path, e.source, bOverridesUI ? "override" : "dlc-ui" };
+			items.push_back(it);
+		}
+		for(size_t i = 0; i < items.size(); ++i)
+		{
+			if(!seen.insert(HHLower(items[i].path)).second)
+				continue;
+			const std::string hash = HHSha256File(items[i].path);
+			std::string by;
+			const std::string json = "{\"name\": " + Q(items[i].name) + ", \"kind\": " + Q(items[i].kind) + ", \"source\": " + Q(items[i].source) +
+				", \"path\": " + Q(items[i].path) + ", \"sha256\": " + Q(hash);
+			if(kProfiles.IsKnownFile(items[i].name, hash, &by))
+			{
+				known += std::string(nKnown ? ",\n" : "\n") + "      " + json + ", \"knownBy\": " + Q(by) + "}";
+				++nKnown;
+			}
+			else
+			{
+				unknown += std::string(nUnknown ? ",\n" : "\n") + "      " + json + "}";
+				++nUnknown;
+			}
+		}
+		return HHFormat("{\"knownListLoaded\": %s, \"known\": %d, \"unknownCount\": %d,\n    \"unknown\": [", kProfiles.HasKnownList() ? "true" : "false",
+		                nKnown, nUnknown) + unknown + (nUnknown ? "\n    ]" : "]") + ",\n    \"knownFiles\": [" + known + (nKnown ? "\n    ]}" : "]}");
+	}
+
+	// <run>\host-report.json (plan 9.2): what ran, how, and everything a reader needs to judge the run.
+	void WriteHostReport(const BootState& s, const HHNewGameResult& ng, int iLuaErrors, const std::string& strContextRecords,
+	                     const HHScriptSystem* pScripts, double dTotalSeconds, const std::string& strPath)
+	{
+		const HHOptions& o = HHGetOptions();
+		std::string r = "{\n  \"format\": \"civ5headless-host-report/1\",\n";
+		r += "  \"status\": " + Q(s.status) + ",\n  \"error\": " + Q(s.error) + ",\n";
+		// Host
+		{
+			const std::string exe = ExePath();
+			std::string gitHead, gitDirty = "null";
+			HHJson kBuild;
+			std::string err;
+			const size_t slash = exe.find_last_of('\\');
+			if(slash != std::string::npos && HHJson::ParseFile(exe.substr(0, slash) + "\\build-result.json", kBuild, err))
+			{
+				gitHead = kBuild["git_head"].AsString();
+				gitDirty = kBuild["git_dirty_paths"].Size() ? "true" : "false";
+			}
+			r += "  \"host\": {\"exe\": " + Q(exe) + ", \"sha256\": " + Q(HHSha256File(exe)) + ", \"gitHead\": " + Q(gitHead) +
+				", \"gitDirty\": " + gitDirty + "},\n";
+		}
+		r += "  \"command\": " + Q(o.command) + ",\n  \"gameDir\": " + Q(o.gameDir) + ",\n  \"gameDirSource\": " + Q(o.gameDirSource) + ",\n";
+		r += "  \"dll\": {\"path\": " + Q(o.dllPath) + ", \"sha256\": " + Q(HHSha256File(o.dllPath)) + ", \"version\": " + Q(s.dllVersion) +
+			", \"digestAdditions\": " + (ng.digestTotal.empty() ? "false" : "true") + ", \"seedMode\": " + Q(ng.seedMode) + "},\n";
+		r += "  \"database\": {\"game\": " + Q(o.dbPath) + ", \"localization\": " + Q(o.locDbPath) + ", \"modsDb\": " + Q(o.noMods ? std::string() : o.modsDbPath) +
+			", \"modsDir\": " + Q(o.modsDir) + "},\n";
+		r += "  \"spec\": " + Q(o.specPath) + ",\n";
+		r += HHFormat("  \"options\": {\"turns\": %d, \"heapPerturb\": %u, \"frameSkew\": %d, \"noUiFrame\": %s, \"gameLogging\": %s, \"gameLogFlags\": %d, "
+		              "\"idleUpdates\": %d, \"noMods\": %s, \"noProfiles\": %s, \"noAddins\": %s, \"skipAddins\": [",
+		              o.turns, o.heapPerturb, o.frameSkew, o.noUiFrame ? "true" : "false", o.gameLogging ? "true" : "false", o.gameLogFlags,
+		              o.idleUpdates, o.noMods ? "true" : "false", o.noProfiles ? "true" : "false", o.noAddins ? "true" : "false");
+		for(size_t i = 0; i < o.skipAddins.size(); ++i)
+			r += (i ? ", " : "") + Q(o.skipAddins[i]);
+		r += "], \"luaProbes\": [";
+		for(size_t i = 0; i < o.luaProbes.size(); ++i)
+			r += (i ? ", " : "") + Q(o.luaProbes[i]);
+		r += "]},\n";
+		// Mods
+		r += "  \"mods\": [";
+		for(size_t i = 0; i < HHGetVfs().GetMods().size(); ++i)
+		{
+			const HHActivatedMod& m = HHGetVfs().GetMods()[i];
+			r += std::string(i ? "," : "") + "\n    {\"id\": " + Q(m.id) + HHFormat(", \"version\": %d", m.version) + ", \"name\": " + Q(m.name) +
+				", \"folder\": " + Q(m.folder) + "}";
+		}
+		r += HHGetVfs().GetMods().empty() ? "],\n" : "\n  ],\n";
+		// Profiles
+		{
+			const HHProfiles& kProfiles = HHGetProfiles();
+			r += "  \"profiles\": {\"dir\": " + Q(kProfiles.GetDir()) + ", \"loadErrors\": [";
+			for(size_t i = 0; i < kProfiles.GetLoadErrors().size(); ++i)
+				r += (i ? ", " : "") + Q(kProfiles.GetLoadErrors()[i]);
+			std::string sel, notSel;
+			for(size_t i = 0; i < kProfiles.GetProfiles().size(); ++i)
+			{
+				const HHProfile& p = kProfiles.GetProfiles()[i];
+				std::string item = "\n      {\"name\": " + Q(p.name) + ", \"hook\": " + Q(p.hook) + ", \"reason\": " + Q(p.reason);
+				if(p.selected)
+				{
+					item += HHFormat(", \"calls\": %ld, \"failures\": %ld", p.calls, p.failures) + ", \"description\": " + Q(p.description) + "}";
+					sel += (sel.empty() ? "" : ",") + item;
+				}
+				else
+					notSel += (notSel.empty() ? "" : ",") + item + "}";
+			}
+			r += "],\n    \"selected\": [" + sel + (sel.empty() ? "]" : "\n    ]") + ",\n    \"notSelected\": [" + notSel + (notSel.empty() ? "]" : "\n    ]") + "},\n";
+		}
+		// UI add-ins
+		{
+			int nRun = 0, nFailed = 0, nSkipped = 0;
+			std::string list;
+			for(size_t i = 0; i < ng.uiAddins.size(); ++i)
+			{
+				const HHAddinContext& c = ng.uiAddins[i];
+				nRun += c.status == "run";
+				nFailed += c.status == "failed";
+				nSkipped += c.status == "skipped";
+				list += std::string(i ? "," : "") + "\n      {\"context\": " + Q(c.context) + ", \"mod\": " + Q(c.mod) + ", \"entry\": " + Q(c.entry) +
+					", \"parent\": " + Q(c.parent) + ", \"status\": " + Q(c.status) + ", \"error\": " + Q(c.error) + ", \"hidden\": " +
+					(c.hidden ? "true" : "false") + ", \"path\": " + Q(c.path) + ", \"sha256\": " + Q(c.sha256) + "}";
+			}
+			r += HHFormat("  \"addins\": {\"run\": %d, \"failed\": %d, \"skipped\": %d, \"contexts\": [", nRun, nFailed, nSkipped) + list +
+				(list.empty() ? "]" : "\n    ]") + ",\n    \"listeners\": " + (strContextRecords.empty() ? std::string("{}") : strContextRecords) + "},\n";
+		}
+		r += "  \"uiFiles\": " + UIFilesJson(ng) + ",\n";
+		// Engine calls the host only stubs
+		{
+			std::vector<HHCallRecord> calls = HHGetCallRecords();
+			std::string list;
+			int nUnknown = 0, n = 0;
+			for(size_t i = 0; i < calls.size(); ++i)
+			{
+				if(!calls[i].stub)
+					continue;
+				std::string why;
+				const bool bHarmless = HHIsHarmlessStub(calls[i].name, &why);
+				nUnknown += !bHarmless;
+				list += std::string(n++ ? "," : "") + "\n      {\"method\": " + Q(calls[i].name) + HHFormat(", \"count\": %ld", calls[i].count) +
+					", \"firstPhase\": " + Q(calls[i].phase) + ", \"knownHarmless\": " + (bHarmless ? "true" : "false") + ", \"why\": " + Q(why) + "}";
+			}
+			r += HHFormat("  \"stubCalls\": {\"unknownCount\": %d, \"calls\": [", nUnknown) + list + (list.empty() ? "]}" : "\n    ]}") + ",\n";
+		}
+		// Lua errors
+		{
+			r += HHFormat("  \"luaErrors\": {\"failing\": %d, \"total\": %d, \"list\": [", iLuaErrors, pScripts ? pScripts->GetErrorTotal() : 0);
+			if(pScripts)
+				for(size_t i = 0; i < pScripts->GetErrorRecords().size(); ++i)
+				{
+					const HHLuaErrorRecord& e = pScripts->GetErrorRecords()[i];
+					r += std::string(i ? "," : "") + "\n      {\"context\": " + Q(e.context) + ", \"file\": " + Q(e.file) + HHFormat(", \"line\": %d", e.line) +
+						", \"message\": " + Q(e.message) + ", \"phase\": " + Q(e.phase) + ", \"counted\": " + (e.counted ? "true" : "false") + "}";
+				}
+			r += pScripts && !pScripts->GetErrorRecords().empty() ? "\n    ]},\n" : "]},\n";
+		}
+		// Turns, time, memory
+		{
+			double dAutoplay = 0.0;
+			std::string perTurn;
+			for(size_t i = 0; i < ng.turnSeconds.size(); ++i)
+			{
+				dAutoplay += ng.turnSeconds[i].second;
+				perTurn += HHFormat("%s\"%d\": %.3f", i ? ", " : "", ng.turnSeconds[i].first, ng.turnSeconds[i].second);
+			}
+			r += HHFormat("  \"turns\": {\"played\": %d, \"updates\": %d, \"autoplaySeconds\": %.3f, \"secondsPerTurn\": {", ng.iTurnsPlayed, ng.iUpdates, dAutoplay) +
+				perTurn + "}},\n";
+			r += "  \"timings\": {";
+			for(size_t i = 0; i < s.timings.size(); ++i)
+				r += HHFormat("%s\"%s\": %.3f", i ? ", " : "", s.timings[i].first.c_str(), s.timings[i].second);
+			r += HHFormat("},\n  \"wallSeconds\": %.3f,\n", dTotalSeconds);
+			PROCESS_MEMORY_COUNTERS pmc;
+			memset(&pmc, 0, sizeof(pmc));
+			pmc.cb = sizeof(pmc);
+			GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc));
+			FILETIME c, e, k, u;
+			double dCpu = 0.0;
+			if(GetProcessTimes(GetCurrentProcess(), &c, &e, &k, &u))
+				dCpu = ((double)(((unsigned __int64)k.dwHighDateTime << 32) | k.dwLowDateTime) +
+				        (double)(((unsigned __int64)u.dwHighDateTime << 32) | u.dwLowDateTime)) / 1e7;
+			r += HHFormat("  \"memory\": {\"peakWorkingSetMB\": %.1f, \"peakPrivateMB\": %.1f, \"cpuSeconds\": %.2f}\n}\n",
+			              pmc.PeakWorkingSetSize / 1048576.0, pmc.PeakPagefileUsage / 1048576.0, dCpu);
+		}
+		HHWriteTextFile(strPath, r);
+	}
+
+	// The listener registrations per context (HHLuaGlobals.cpp __HHContextRecords) as JSON; before Lua shuts down.
+	std::string ContextRecordsJson(HHScriptSystem& kScripts)
+	{
+		std::string json;
+		lua_State* L = kScripts.CreateLuaThread("Headless report");
+		if(!L)
+			return json;
+		const char* szChunk = "return __HHContextRecords";
+		if(luaL_loadbuffer(L, szChunk, strlen(szChunk), "=Headless report") == 0 && kScripts.CallFunction(L, 0, 1) && lua_istable(L, -1))
+			json = HHLuaToJson(L, -1, 0);
+		kScripts.FreeLuaThread(L);
+		return json;
+	}
+
 	void LogCallSummary()
 	{
 		std::vector<HHCallRecord> calls = HHGetCallRecords();
@@ -479,7 +847,7 @@ namespace
 		const std::string reportPath = p.run + (o.command == "newgame" ? "newgame-report.json" : "boot-report.json");
 
 		HHLog("civ5headless boot");
-		HHLog("  game dir  %s", o.gameDir.c_str());
+		HHLog("  game dir  %s (%s)", o.gameDir.c_str(), o.gameDirSource.c_str());
 		HHLog("  dll       %s", o.dllPath.c_str());
 		HHLog("  db        %s", o.dbPath.c_str());
 		HHLog("  loc db    %s", o.locDbPath.c_str());
@@ -569,6 +937,16 @@ namespace
 				}
 		}
 		HH_TIMING("vfs");
+		// UI emulation profiles (selected once the game has started).
+		if(bNewGame && !o.noProfiles)
+		{
+			if(o.profilesDir.empty())
+				o.profilesDir = HHDefaultProfilesDir();
+			HHGetProfiles().Load(o.profilesDir);
+			HHLog("profiles: %s (%u)", o.profilesDir.empty() ? "(none found)" : o.profilesDir.c_str(), (unsigned)HHGetProfiles().GetProfiles().size());
+			for(size_t i = 0; i < HHGetProfiles().GetLoadErrors().size(); ++i)
+				HHLogError("profiles: %s", HHGetProfiles().GetLoadErrors()[i].c_str());
+		}
 
 
 		HHScriptSystem* pScripts = new HHScriptSystem();
@@ -794,6 +1172,9 @@ namespace
 		nif.pDbUtil = pDbUtil;
 		nif.pEngine = pEngine;
 		nif.pUI = pUI;
+		nif.pDb = dbs.GetGame();
+		nif.iMaxMajorCivs = HHQueryMaxMajorCivs(*dbs.GetGame());
+		HHLog("MAX_MAJOR_CIVS (Defines): %d", nif.iMaxMajorCivs);
 		pUI->SetGame(nif.pGame);
 		pEngine->SetPreGame(nif.pPreGame);
 		const int iLuaErrorsBefore = pScripts->GetErrorCount();
@@ -847,13 +1228,21 @@ namespace
 				}
 				if(HHStartNewGame(kSpec, nif, ng))
 				{
+					// The in-game UI as the game loads it: emulation profiles, the load screen (pause, load-screen
+					// profiles), the InGameUIAddin contexts; then the T000 outputs (the reference dump-t000 point).
+					HHSetPhase("ui");
+					HHStartUI(nif, ng);
 					HHSetPhase("t000");
 					HHLoadScreen(nif, ng);
+					HHSetPhase("addins");
+					HHLoadUIAddinsStep(nif, ng);
+					HHSetPhase("t000");
 					HHWriteT000(kSpec, nif, ng);
+					HHSetPhase("probes");
+					HHRunLuaProbes(nif, ng);
 					if(o.turns > 0)
 					{
 						HHSetPhase("autoplay");
-						HHLoadGameplayAddins(nif, ng);
 						HHRunAutoplay(nif, ng, o.turns, o.idleUpdates);
 					}
 				}
@@ -865,6 +1254,7 @@ namespace
 			tPhase = HHSeconds();
 		}
 		const int iLuaErrors = pScripts->GetErrorCount() - iLuaErrorsBefore;
+		const std::string contextRecords = bNewGame ? ContextRecordsJson(*pScripts) : std::string();
 
 		// Shutdown order: Lua first (its __gc metamethods include DLL and database code), then
 		// the game (newgame: pregame's started flag cleared first), the DLL's game data, the
@@ -905,7 +1295,10 @@ namespace
 		LogCallSummary();
 		WriteReport(s, reportPath);
 		if(bNewGame)
+		{
 			WriteNewGameSection(ng, iLuaErrors, reportPath);
+			WriteHostReport(s, ng, iLuaErrors, contextRecords, pScripts, HHSeconds() - t0, p.run + "host-report.json");
+		}
 		HHLog("%s %s in %.2f s; report %s", o.command.c_str(), s.status.c_str(), HHSeconds() - t0, reportPath.c_str());
 		HHLogFileMgr::Get().CloseAll();
 		HHLogClose();

@@ -1,17 +1,34 @@
 #include "setup/HHNewGame.h"
 #include "lua/HHScriptSystem.h"
+#include "lua/HHLuaGlobals.h"
 #include "engine/HHEngineServices.h"
 #include "engine/HHRuntime.h"
 #include "setup/HHVfs.h"
+#include "setup/HHAddins.h"
+#include "setup/HHProfiles.h"
 
 // Every engine-side call that changes DLL state is recorded in kResult.steps, so the run
 // folder documents the exact sequence (newgame-report.json "steps").
 #define HH_STEP(text, call) do { call; kResult.steps.push_back(text); } while(0)
 
+int HHQueryMaxMajorCivs(Database::Connection& kDb)
+{
+	// The setup screen loops over GameDefines.MAX_MAJOR_CIVS (Defines), which a DLL built for more majors (34, 43,
+	// 62) ships with its value; the DLL's own MAX_MAJOR_CIVS is compiled in and not readable through the interfaces.
+	int iValue = -1;
+	Database::Results kResults;
+	if(kDb.Execute(kResults, "SELECT Value FROM Defines WHERE Name = 'MAX_MAJOR_CIVS'") && kResults.Step())
+		iValue = kResults.GetInt(0);
+	if(iValue <= 0 || iValue > MAX_CIV_PLAYERS)
+	{
+		HHLogError("Defines.MAX_MAJOR_CIVS is %d; using 22", iValue);
+		iValue = 22;
+	}
+	return iValue;
+}
+
 namespace
 {
-	const int kMaxMajorCivs = 22; // MAX_MAJOR_CIVS
-
 	unsigned int SeedValue(const HHJson& j)
 	{
 		const double d = j.AsDouble(0.0);
@@ -125,12 +142,12 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	HH_STEP("setCivilizationDescription(0, \"\")", pg->setCivilizationDescription((PlayerTypes)0, CvString("")));
 	HH_STEP("setCivilizationShortDescription(0, \"\")", pg->setCivilizationShortDescription((PlayerTypes)0, CvString("")));
 	HH_STEP("setCivilizationAdjective(0, \"\")", pg->setCivilizationAdjective((PlayerTypes)0, CvString("")));
-	for(int i = 0; i < kMaxMajorCivs; ++i)
+	for(int i = 0; i < kIf.iMaxMajorCivs; ++i)
 	{
 		pg->setCivilization((PlayerTypes)i, NO_CIVILIZATION);
 		pg->setTeamType((PlayerTypes)i, (TeamTypes)i);
 	}
-	kResult.steps.push_back("for i = 0..21: setCivilization(i, -1); setTeamType(i, i)");
+	kResult.steps.push_back(HHFormat("for i = 0..%d: setCivilization(i, -1); setTeamType(i, i)", kIf.iMaxMajorCivs - 1));
 
 	const int iWorldSize = kSpec["worldSize"]["id"].AsInt(-1);
 	HH_STEP("setRandomWorldSize(false)", pg->setRandomWorldSize(false));
@@ -319,7 +336,7 @@ namespace
 		}
 		pRng->Init(pg->syncRandomSeed());
 		const int nLeaders = kIf.pContext->GetNumLeaderHeadInfos();
-		for(int i = 0; i < kMaxMajorCivs; ++i)
+		for(int i = 0; i < kIf.iMaxMajorCivs; ++i)
 		{
 			const PlayerTypes p = (PlayerTypes)i;
 			const SlotStatus eStatus = pg->slotStatus(p);
@@ -441,7 +458,7 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	if(kIf.pDbUtil)
 		HH_STEP("CacheGameDatabaseData()", kIf.pDbUtil->CacheGameDatabaseData());
 	ChooseLeaders(kIf, kResult);
-	for(int i = 0; i < kMaxMajorCivs; ++i)
+	for(int i = 0; i < kIf.iMaxMajorCivs; ++i)
 	{
 		const PlayerTypes p = (PlayerTypes)i;
 		if(pg->slotStatus(p) == SS_TAKEN || pg->slotStatus(p) == SS_COMPUTER)
@@ -482,7 +499,7 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// city-states that did not survive map generation (AssignStartingPlots discards them when no site is
 	// left); the real pregame has SS_CLOSED there. CvGame looks for SS_CLOSED minor slots when it creates
 	// a city-state later in the game.
-	for(int i = kMaxMajorCivs; i < MAX_CIV_PLAYERS; ++i)
+	for(int i = kIf.iMaxMajorCivs; i < MAX_CIV_PLAYERS; ++i)
 	{
 		const PlayerTypes p = (PlayerTypes)i;
 		if(pg->slotStatus(p) != SS_COMPUTER)
@@ -699,26 +716,17 @@ namespace
 }
 
 //------------------------------------------------------------------------------
-// The load screen: the state the reference runs dump as dump-t000
+// The in-game UI: emulation profiles, the load screen (the state the reference runs dump as dump-t000), UI add-ins
 //------------------------------------------------------------------------------
-namespace
+void HHStartUI(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 {
-	// UI Lua that runs while the load screen is up and leaves serialized state behind (contract
-	// sections 1 and 2; no boundary trace, found by comparing dump-t000 with the host's):
-	// - VP's Demographics.lua BuildTables (players 0..MAX_MAJOR_CIVS inclusive) calls the lazy
-	//   might getters, which cache m_iMilitaryMight & co. with m_iTurnSliceMightRecomputed = turn.
-	//   ASSUMPTION (dump): the same getters in the same order; only the might cache is stateful.
-	const char* kLoadScreenUiLua =
-		"local n = 0\n"
-		"for i = 0, GameDefines.MAX_MAJOR_CIVS do\n"
-		"  local p = Players[i]\n"
-		"  if p ~= nil then\n"
-		"    p:GetRealPopulation(); p:CalculateTotalYield(YieldTypes.YIELD_FOOD); p:CalculateTotalYield(YieldTypes.YIELD_PRODUCTION)\n"
-		"    p:CalculateGrossGold(); p:GetNumPlots(); p:GetMilitaryMight(); p:GetExcessHappiness()\n"
-		"    n = n + 1\n"
-		"  end\n"
-		"end\n"
-		"return n\n";
+	HHRegisterUIBindings(*kIf.pScripts, kIf.pGame, kIf.pPreGame, kIf.pUI);
+	HHProfiles& kProfiles = HHGetProfiles();
+	kProfiles.Select(kIf.pDb);
+	kProfiles.Start(*kIf.pScripts);
+	for(size_t i = 0; i < kProfiles.GetProfiles().size(); ++i)
+		if(kProfiles.GetProfiles()[i].selected)
+			kResult.steps.push_back("profile " + kProfiles.GetProfiles()[i].name + " (" + kProfiles.GetProfiles()[i].hook + ")");
 }
 
 bool HHLoadScreen(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
@@ -727,15 +735,47 @@ bool HHLoadScreen(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 	// LoadScreen.lua: Game.SetPausePlayer(Game.GetActivePlayer()) once the game is initialised
 	// (contract 1.10); Game.SetPausePlayer(-1) only on "continue", after the reference dump.
 	HH_STEP(HHFormat("Game.SetPausePlayer(%d)", (int)pg->activePlayer()), kIf.pGame->SetPausePlayer(pg->activePlayer()));
-	bool bOk = true;
-	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless load-screen UI", kLoadScreenUiLua))
-	{
-		kResult.steps.push_back(HHFormat("UI Lua (Demographics BuildTables getters) for %d players", (int)lua_tointeger(L, -1)));
-		kIf.pScripts->FreeLuaThread(L);
-	}
+	// UI Lua that runs while the load screen is up and leaves serialized state behind (contract sections 1 and 2):
+	// load-screen profiles (base game: Demographics.lua BuildTables).
+	const int iErrors = kIf.pScripts->GetErrorCount();
+	HHGetProfiles().RunHook(*kIf.pScripts, "load-screen", &kResult.steps);
+	return kIf.pScripts->GetErrorCount() == iErrors;
+}
+
+void HHLoadUIAddinsStep(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+{
+	if(HHGetOptions().noAddins)
+		kResult.steps.push_back("UI add-ins not loaded (--no-addins)");
 	else
-		bOk = false;
-	return bOk;
+	{
+		kResult.uiAddins = HHLoadUIAddins(*kIf.pScripts, HHGetOptions().skipAddins);
+		for(size_t i = 0; i < kResult.uiAddins.size(); ++i)
+		{
+			const HHAddinContext& c = kResult.uiAddins[i];
+			if(c.status == "run")
+				kResult.addins.push_back(c.path);
+			kResult.steps.push_back("InGameUIAddin " + c.context + ": " + c.status + (c.path.empty() ? std::string() : " " + c.path));
+		}
+	}
+	// The engine's event once the in-game UI has loaded (the load screen then offers "continue").
+	HHFireUIEvent(*kIf.pScripts, "SequenceGameInitComplete", std::string());
+}
+
+void HHRunLuaProbes(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+{
+	const std::vector<std::string>& probes = HHGetOptions().luaProbes;
+	if(probes.empty())
+		return;
+	// One InGame context for every probe file, in order, as FireTuner injects them into the in-game Lua state; kept for
+	// the game (the probes' listeners close over it).
+	lua_State* L = HHLuaCreateUIContext(*kIf.pScripts, "InGame", false);
+	for(size_t i = 0; i < probes.size() && L; ++i)
+	{
+		const bool bOk = kIf.pScripts->RunFile(L, probes[i]);
+		kResult.steps.push_back("--lua-probe " + probes[i] + (bOk ? " ok" : " failed"));
+		if(!bOk)
+			kResult.probeErrors.push_back(probes[i]);
+	}
 }
 
 bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
@@ -810,29 +850,10 @@ void HHEndNewGame(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 }
 
 //------------------------------------------------------------------------------
-// M3: gameplay add-ins and the autoplay turn loop
+// M3: the autoplay turn loop
 //------------------------------------------------------------------------------
 namespace
 {
-	// InGameUIAddin scripts that register gameplay GameEvents listeners and need no UI (plan M3.2,
-	// appendix C). Every other InGameUIAddin of the activated mods is UI-only and skipped (logged).
-	const char* kGameplayAddins[] = { "GlobalCityBombardRange.lua", "CBP_IncaFunctions.lua" };
-
-	std::string BaseName(const std::string& path)
-	{
-		const size_t slash = path.find_last_of("\/");
-		return slash == std::string::npos ? path : path.substr(slash + 1);
-	}
-
-	bool IsGameplayAddin(const std::string& file)
-	{
-		const std::string base = BaseName(file);
-		for(size_t i = 0; i < sizeof(kGameplayAddins) / sizeof(kGameplayAddins[0]); ++i)
-			if(_stricmp(base.c_str(), kGameplayAddins[i]) == 0)
-				return true;
-		return false;
-	}
-
 	int LuaInt(HHScriptSystem& kScripts, const char* szChunk, int iDefault)
 	{
 		int v = iDefault;
@@ -844,54 +865,6 @@ namespace
 		}
 		return v;
 	}
-
-	// The stateful part of one in-game UI frame of the reference profile (EUI, DLC\UI_bc1). Run after
-	// every game core Update, when the real UI gets a frame with the core idle.
-	// - NotificationPanel.lua UpdateCivListNow (the civ ribbon; refreshed on AIProcessingStarted/Ended,
-	//   SerialEventCityInfoDirty and so on, i.e. every turn): for every ever-alive major in the ribbon
-	//   that is alive, met by the active team and not at war with it, player:CalculateGoldRate(), which
-	//   recomputes CvTreasury::m_iExpensePerTurnUnitMaintenance (serialized). Without it that field lags
-	//   behind the reference whenever units or cities change after the player's DoGold (first seen at the
-	//   turn-0 doTurnBegin digest of every major that founded its capital in turn 0; hh-m2-aa100-a T100).
-	// ASSUMPTION: the ribbon is shown (EUI option CivRibbon, default on) and no other UI getter is stateful.
-	const char* kUiFrameLua =
-		"local a = Game.GetActivePlayer()\n"
-		"local at = Teams[Players[a]:GetTeam()]\n"
-		"local n = 0\n"
-		"for i = 0, GameDefines.MAX_MAJOR_CIVS - 1 do\n"
-		"  local p = Players[i]\n"
-		"  if p and p:IsEverAlive() and not p:IsMinorCiv() and i ~= a and p:IsAlive() and at:IsHasMet(p:GetTeam())\n"
-		"     and not Teams[p:GetTeam()]:IsAtWar(at:GetID()) then\n"
-		"    p:CalculateGoldRate(); n = n + 1\n"
-		"  end\n"
-		"end\n"
-		"return n\n";
-
-	// VP's EUI NotificationPanel.lua (MODS\(3a) VP - EUI Compatibility Files), "STACKING OBSERVER
-	// NOTIFICATION AGING": while autoplay runs (observer mode), every NotificationAdded forces a sweep that
-	// right-clicks away (UI.RemoveNotification) each shown, undismissed notification of the active player
-	// created at least UIObserverNotificationLifetimeTurns (Stacking_Settings, default 3) turns ago.
-	// UI.RemoveNotification is the engine's dismiss: MayUserDismissNotification, then DismissNotification
-	// (sets the serialized Notification::m_bDismissed; hh-m2-aa100-a playersRest from turn 22).
-	// ASSUMPTION (per-turn digests): only the forced sweep on NotificationAdded has an effect; the
-	// once-per-turn sweeps on SerialEventGameDataDirty / AIProcessingStartedForPlayer do not.
-	const char* kObserverExpiredLua =
-		"if Game.GetAIAutoPlay() <= 0 then return '' end\n"
-		"local lifetime = 3\n"
-		"if GameInfo.Stacking_Settings then for row in GameInfo.Stacking_Settings() do\n"
-		"  if row.Name == 'UIObserverNotificationLifetimeTurns' then lifetime = tonumber(row.Value) or 3 end end end\n"
-		"lifetime = math.max(0, math.min(10000, math.floor(lifetime)))\n"
-		"if lifetime == 0 then return '' end\n"
-		"local player = Players[Game.GetActivePlayer()]\n"
-		"local turn = Game.GetGameTurn()\n"
-		"local t = {}\n"
-		"for index = 0, player:GetNumNotifications() - 1 do\n"
-		"  local created = player:GetNotificationTurn(index)\n"
-		"  if not player:GetNotificationDismissed(index) and created >= 0 and turn - created >= lifetime then\n"
-		"    t[#t + 1] = player:GetNotificationIndex(index)\n"
-		"  end\n"
-		"end\n"
-		"return table.concat(t, ' ')\n";
 
 	// The engine's frame for a human active player (trace hh-m0-s1c-continents after autoplay ends):
 	// on the active player's turn start EndTurnTimerReset, UpdateSelectionList (auto unit cycle: selects
@@ -922,159 +895,30 @@ namespace
 		pPlayer->Destroy();
 	}
 
-	// VP's WhosWinningPopup.lua (MODS\(2) Vox Populi\Core Files\Overrides) OnPopup: it rolls the synced
-	// RNG (Game.Rand: the presenter, then list modes until a new allowed one) and reads the scores of the
-	// mode (GetMilitaryMight is a lazy cache; RefreshTourism changes cities). CvGame::doTurn queues it every
-	// PROGRESS_POPUP_TURN_FREQUENCY turns when the active player is alive: the turn autoplay hands the
-	// game back (hh-m2-aa100-a T100: 2 more sync RNG calls, no unit selected).
-	const char* kWhosWinningLua =
-		"local Food, Production, Gold, Science, Culture, Happiness, Wonders, Power, Influence, Tourism = 0,1,2,3,4,5,6,7,8,9\n"
-		"local function industrial()\n"
-		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
-		"    if p:IsAlive() and p:GetCurrentEra() >= GameInfo.Eras['ERA_INDUSTRIAL'].ID then return true end end\n"
-		"  return false\n"
-		"end\n"
-		"local function allowed(m)\n"
-		"  if m == Culture then\n"
-		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
-		"      if p:IsAlive() and p:GetNumPolicies() < 2 then return false end end\n"
-		"    if industrial() then return false end\n"
-		"  elseif m == Influence then\n"
-		"    local use = false\n"
-		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
-		"      if p:IsAlive() and p:GetNumCivsInfluentialOn() > 0 then use = true end end\n"
-		"    if not use then return false end\n"
-		"  elseif m == Tourism then\n"
-		"    local none = true\n"
-		"    for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
-		"      if p:IsAlive() and p:GetTourism() / 100 > 0 then none = false end end\n"
-		"    if none then return false end\n"
-		"  elseif m == Food or m == Production then\n"
-		"    if industrial() then return false end\n"
-		"  elseif m == Wonders then\n"
-		"    if Game.GetNumWorldWonders() < 2 then return false end\n"
-		"  elseif m == Happiness then\n"
-		"    if Game.IsOption(GameOptionTypes.GAMEOPTION_NO_HAPPINESS) then return false end\n"
-		"  elseif m == Science then\n"
-		"    if Game.IsOption(GameOptionTypes.GAMEOPTION_NO_SCIENCE) then return false end\n"
-		"  end\n"
-		"  return true\n"
-		"end\n"
-		"local function score(p, m)\n"
-		"  if m == Food or m == Production then\n"
-		"    local y = m == Food and YieldTypes.YIELD_FOOD or YieldTypes.YIELD_PRODUCTION\n"
-		"    for c in p:Cities() do c:GetYieldRateTimes100(y) end\n"
-		"  elseif m == Gold then p:GetGold()\n"
-		"  elseif m == Science then Teams[p:GetTeam()]:GetTeamTechs():GetNumTechsKnown()\n"
-		"  elseif m == Culture then p:GetNumPolicies()\n"
-		"  elseif m == Happiness then p:GetExcessHappiness()\n"
-		"  elseif m == Wonders then p:GetNumWorldWonders()\n"
-		"  elseif m == Power then p:GetMilitaryMight()\n"
-		"  elseif m == Influence then p:GetNumCivsInfluentialOn()\n"
-		"  end\n"
-		"end\n"
-		"Game.Rand(25, 'Rolling to determine Progress Screen dude.')\n"
-		"local last = __HHWhosWinningMode or -1\n"
-		"local r, bad = last, false\n"
-		"while r == last or bad do\n"
-		"  bad = false\n"
-		"  r = Game.Rand(10, 'Rolling to determine Progress Screen list type.')\n"
-		"  if not allowed(r) then bad = true end\n"
-		"end\n"
-		"__HHWhosWinningMode = r\n"
-		"if r == Tourism then\n"
-		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
-		"    if p:IsAlive() then for ci = 0, p:GetNumCities() - 1 do local c = p:GetCityByID(ci)\n"
-		"      if c ~= nil then c:RefreshTourism(); c:GetYieldRateTimes100(YieldTypes.YIELD_TOURISM) end end end end\n"
-		"else\n"
-		"  for i = 0, GameDefines.MAX_MAJOR_CIVS-1 do local p = Players[i]\n"
-		"    if p:IsAlive() then score(p, r) end end\n"
-		"end\n"
-		"return r\n";
-
-	// CP's CityEventPopup.lua (Core Files\New UI) OnPopup for BUTTONPOPUP_MODDER_7, the single-choice city
-	// event result (CvCity::DoStartEvent queues it for a human owner): outside the spy branch it adds the
-	// owner's NOTIFICATION_GENERIC "City Event: <title>" (game state) and shows the popup. %d placeholders:
-	// Data1 (event choice), Data2 (city ID), Data3 (owner). M5 options-5 (events on): the real p00 has it.
-	const char* kCityEventPopupLua =
-		"local iChoice, iCity, iOwner = %d, %d, %d\n"
-		"local info = GameInfo.CityEventChoices[iChoice]\n"
-		"local owner = Players[iOwner]\n"
-		"if not info or not owner then return 0 end\n"
-		"local city = owner:GetCityByID(iCity)\n"
-		"if city == nil then return 0 end\n"
-		"local name = Locale.ConvertTextKey(city:GetNameKey())\n"
-		"local title = Locale.Lookup('TXT_KEY_CITY_EVENT_TITLE', name, info.Description)\n"
-		"local help = Locale.Lookup('TXT_KEY_CITY_EVENT_HELP', name, city:GetScaledEventChoiceValue(iChoice))\n"
-		"owner:AddNotification(NotificationTypes.NOTIFICATION_GENERIC, help, Locale.ConvertTextKey('TXT_KEY_CITY_EVENT_NOTIFICATION') .. title, city:Plot():GetX(), city:Plot():GetY())\n"
-		"return 1\n";
-
-	// SerialEventGameMessagePopup on the UI frame after AddPopup. Only the popups whose Lua has game
-	// state effects are emulated; every popup is logged.
+	// SerialEventGameMessagePopup on the UI frame after AddPopup: the popup profiles emulate the popups whose Lua has
+	// game state effects or stays up (setup/HHProfiles.h); every popup is logged.
 	void ShowQueuedPopups(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 	{
 		std::vector<CvPopupInfo> popups = kIf.pUI->TakeQueuedPopups();
 		for(size_t i = 0; i < popups.size(); ++i)
 		{
-			const int eType = (int)popups[i].eButtonPopupType;
-			std::string what = HHFormat("popup %d (data %d,%d,%d) at turn %d", eType, popups[i].iData1, popups[i].iData2,
-			                            popups[i].iData3, kIf.pGame->GetGameTurn());
-			if(eType == BUTTONPOPUP_MODDER_7 && !popups[i].bOption1)
-			{
-				const std::string chunk = HHFormat(kCityEventPopupLua, popups[i].iData1, popups[i].iData2, popups[i].iData3);
-				what += HHFormat(": CityEventPopup notification %d", LuaInt(*kIf.pScripts, chunk.c_str(), -1));
+			std::string what = HHFormat("popup %d (data %d,%d,%d) at turn %d", (int)popups[i].eButtonPopupType, popups[i].iData1,
+			                            popups[i].iData2, popups[i].iData3, kIf.pGame->GetGameTurn());
+			bool bStaysUp = false;
+			HHGetProfiles().RunPopup(*kIf.pScripts, popups[i], bStaysUp, what);
+			if(bStaysUp)
 				kIf.pUI->SetPopupUp(true);
-			}
-			// GreatPersonRewardPopup.lua only displays (no game state) but its popup stays up, which stops the
-			// unit cycle and the end-of-turn test (M5 era-industrial T280: m_eEndTurnBlockingType -1, no unit
-			// selected). TECH_AWARD does not block (identical M5 cases with it at T50).
-			if(eType == BUTTONPOPUP_GREAT_PERSON_REWARD)
-				kIf.pUI->SetPopupUp(true);
-			if(eType == BUTTONPOPUP_WHOS_WINNING)
-			{
-				what += HHFormat(": WhosWinning list mode %d", LuaInt(*kIf.pScripts, kWhosWinningLua, -1));
-				kIf.pUI->SetPopupUp(true);
-			}
 			HHLog("%s", what.c_str());
 			kResult.steps.push_back(what);
 		}
 	}
 
-	void ObserverNotificationAging(HHNewGameInterfaces& kIf)
+	// The notification panel's handlers run on the UI frame after a NotificationAdded (notification-added profiles).
+	void NotificationAdded(HHNewGameInterfaces& kIf)
 	{
 		if(!kIf.pUI->TakeNotificationAdded())
 			return;
-		const PlayerTypes eActive = kIf.pPreGame->activePlayer();
-		std::string ids;
-		if(lua_State* L = RunReturning(*kIf.pScripts, "Headless notification aging", kObserverExpiredLua))
-		{
-			if(lua_isstring(L, -1))
-				ids = lua_tostring(L, -1);
-			kIf.pScripts->FreeLuaThread(L);
-		}
-		if(ids.empty())
-			return;
-		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(eActive);
-		if(!pPlayer)
-			return;
-		const char* p = ids.c_str();
-		while(*p)
-		{
-			char* end = NULL;
-			const int id = (int)strtol(p, &end, 10);
-			if(end == p)
-				break;
-			p = end;
-			while(*p == ' ')
-				++p;
-			// Only notifications the panel shows (g_ActiveNotifications), as the active player's.
-			std::map<int, PlayerTypes>::const_iterator it = kIf.pUI->GetShownNotifications().find(id);
-			if(it == kIf.pUI->GetShownNotifications().end() || it->second != eActive)
-				continue;
-			if(pPlayer->MayUserDismissNotification(id))
-				pPlayer->DismissNotification(id, true);
-		}
-		pPlayer->Destroy();
+		HHGetProfiles().RunHook(*kIf.pScripts, "notification-added", NULL);
 	}
 
 	// M6 tooling: runs a Lua file in a fresh thread and returns its result as JSON ("null" when it
@@ -1133,50 +977,6 @@ namespace
 	}
 }
 
-bool HHLoadGameplayAddins(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
-{
-	bool bOk = true;
-	const std::vector<HHActivatedMod>& mods = HHGetVfs().GetMods();
-	for(size_t m = 0; m < mods.size(); ++m)
-	{
-		for(size_t e = 0; e < mods[m].entryPoints.size(); ++e)
-		{
-			const HHModEntryPoint& ep = mods[m].entryPoints[e];
-			if(_stricmp(ep.type.c_str(), "InGameUIAddin") != 0)
-				continue;
-			if(!IsGameplayAddin(ep.file))
-			{
-				HHLog("InGameUIAddin skipped (UI only): %s / %s", mods[m].name.c_str(), ep.file.c_str());
-				continue;
-			}
-			std::string path = mods[m].folder + "\\" + Slashes(ep.file);
-			if(GetFileAttributesW(HHWiden(path).c_str()) == INVALID_FILE_ATTRIBUTES)
-			{
-				const std::vector<HHVfsEntry>* pFound = HHGetVfs().Find(BaseName(ep.file));
-				path = pFound && !pFound->empty() ? (*pFound)[0].path : std::string();
-			}
-			if(path.empty())
-			{
-				HHLogError("gameplay add-in not found: %s / %s", mods[m].name.c_str(), ep.file.c_str());
-				bOk = false;
-				continue;
-			}
-			// Each add-in is its own context: a thread with its own environment, kept alive for the game
-			// (its listeners close over it).
-			lua_State* L = kIf.pScripts->CreateLuaThread(BaseName(path).c_str());
-			if(!L || !kIf.pScripts->LoadFile(L, path.c_str()))
-			{
-				HHLogError("gameplay add-in failed: %s", path.c_str());
-				bOk = false;
-				continue;
-			}
-			kResult.addins.push_back(path);
-			kResult.steps.push_back("InGameUIAddin " + path);
-		}
-	}
-	return bOk;
-}
-
 bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurns, int nIdleUpdates)
 {
 	const double t0 = Now();
@@ -1213,8 +1013,9 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		kResult.error = "SetAIAutoPlay did not arm autoplay";
 		return false;
 	}
-	// CONTINUE (vpbench.CONTINUE, LoadScreen context): Events.LoadScreenClose() and UI.SetDontShowPopups(false)
-	// are UI; Game.SetPausePlayer(-1) unpauses the game core.
+	// CONTINUE (vpbench.CONTINUE, LoadScreen context): Events.LoadScreenClose() (to the UI contexts' listeners),
+	// Game.SetPausePlayer(-1) unpauses the game core, UI.SetDontShowPopups(false) is UI.
+	kResult.steps.push_back(HHFormat("Events.LoadScreenClose(): %d listener(s)", HHFireUIEvent(kScripts, "LoadScreenClose", std::string())));
 	HH_STEP("Game.SetPausePlayer(-1)", kIf.pGame->SetPausePlayer(NO_PLAYER));
 	HHDeliverNetMessages(kIf);
 
@@ -1251,8 +1052,8 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		// Slots of players that die or live again: HHEngineUtility::closeSlot/openSlot (CvPlayer::setAlive).
 		if(!HHGetOptions().noUiFrame)
 		{
-			ObserverNotificationAging(kIf);
-			LuaInt(kScripts, kUiFrameLua, 0);
+			NotificationAdded(kIf);
+			HHGetProfiles().RunHook(kScripts, "ui-frame", NULL);
 			ShowQueuedPopups(kIf, kResult);
 			HumanTurnFrame(kIf);
 		}

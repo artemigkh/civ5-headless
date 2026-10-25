@@ -841,7 +841,7 @@ Inbound calls whose name starts with a mutator verb (see `trace_phases.py`); cou
 | CvDllPreGame::setLeaderName | 65 | 65 | 65 | 65 | boot | ui | 0,"", 1,"", 2,"" |
 | CvDllPreGame::setLoadWBScenario | 1 | 1 | 1 | 1 | frontend | ui | false |
 | CvDllPreGame::setMapNoPlayers |  | 1 | 1 |  | newgame | ui | true |
-| CvDllPreGame::setMapScriptName | 2 | 2 | 2 | 2 | boot,frontend | ui | "C:\\Users\\rusit\\Documents\\My Games\\Sid Meier's Civilization 5\\MO... |
+| CvDllPreGame::setMapScriptName | 2 | 2 | 2 | 2 | boot,frontend | ui | "<Documents>\\My Games\\Sid Meier's Civilization 5\\MO... |
 | CvDllPreGame::setMaxTurns | 2 | 2 | 2 | 2 | boot,frontend | ui | 0 |
 | CvDllPreGame::setMinorCiv | 64 | 64 | 64 | 64 | boot | ui | 0,false, 1,false, 2,false |
 | CvDllPreGame::setNetID | 63 | 63 | 63 | 63 | boot | ui | 0,-1, 1,-1, 2,-1 |

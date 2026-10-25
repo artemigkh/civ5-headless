@@ -1,0 +1,11 @@
+{
+ "name": "base-great-person-reward",
+ "description": "The base game's GreatPersonRewardPopup.lua only displays (no game state), but the popup stays up, which stops the human turn's unit cycle and end-of-turn test (M5 era-industrial T280: m_eEndTurnBlockingType -1, no unit selected). BUTTONPOPUP_TECH_AWARD does not block (identical M5 cases with it at T50).",
+ "hook": "popup",
+ "popupTypes": ["BUTTONPOPUP_GREAT_PERSON_REWARD"],
+ "staysUp": true,
+ "order": 50,
+ "select": [
+  {"file": "GreatPersonRewardPopup.lua"}
+ ]
+}

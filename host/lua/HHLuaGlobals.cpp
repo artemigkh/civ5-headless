@@ -315,15 +315,41 @@ namespace
 
 	// Lua-side parts: Events/LuaEvents proxies, the simple Locale helpers.
 	const char* kLuaPrelude =
-		"local function eventTable(dispatch)\n"
+		"-- Listener registrations per Lua context (StateName of the registering code), for the run report:\n"
+		"-- __HHContextRecords[context][kind][event] = count, kind Events, LuaEvents or GameEvents.\n"
+		"__HHContextRecords = {}\n"
+		"local function recordListener(kind, name, env)\n"
+		"  local ctx = type(env) == 'table' and rawget(env, 'StateName') or nil\n"
+		"  if type(ctx) ~= 'string' then ctx = 'Main' end\n"
+		"  local r = __HHContextRecords[ctx] or {}\n"
+		"  __HHContextRecords[ctx] = r\n"
+		"  r[kind] = r[kind] or {}\n"
+		"  r[kind][name] = (r[kind][name] or 0) + 1\n"
+		"end\n"
+		"-- The environment of the code that called the caller of this function (pcall: getfenv raises at a tail call).\n"
+		"local function callerEnv() local ok, env = pcall(getfenv, 4) return ok and env or nil end\n"
+		"local function reportError(err, where)\n"
+		"  if __HHReportError then __HHReportError(tostring(err), where) end\n"
+		"end\n"
+		"local function eventTable(dispatch, kind)\n"
 		"  return setmetatable({}, {__index = function(t, name)\n"
 		"    local listeners = {}\n"
-		"    local ev = {\n"
-		"      Add = function(f) listeners[#listeners + 1] = f end,\n"
-		"      Remove = function(f) for i = #listeners, 1, -1 do if listeners[i] == f then table.remove(listeners, i) end end end,\n"
-		"      RemoveAll = function() listeners = {} end,\n"
-		"      Count = function() return #listeners end,\n"
-		"    }\n"
+		"    local ev = {}\n"
+		"    -- Add/Remove accept both Events.X.Add(f) and Events.X:Add(f).\n"
+		"    ev.Add = function(a, b) local f = (a == ev) and b or a; listeners[#listeners + 1] = f; recordListener(kind, name, callerEnv()) end\n"
+		"    ev.Remove = function(a, b) local f = (a == ev) and b or a\n"
+		"      for i = #listeners, 1, -1 do if listeners[i] == f then table.remove(listeners, i) end end end\n"
+		"    ev.RemoveAll = function() listeners = {} end\n"
+		"    ev.Count = function() return #listeners end\n"
+		"    -- The host fires the engine events it emulates (Events) through __HHFireEvent: every listener, errors logged.\n"
+		"    ev.__HHFire = function(...)\n"
+		"      local copy = {} for i = 1, #listeners do copy[i] = listeners[i] end\n"
+		"      for i = 1, #copy do\n"
+		"        local ok, r = pcall(copy[i], ...)\n"
+		"        if not ok then print('Runtime Error: ' .. tostring(r)); reportError(r, kind .. '.' .. name) end\n"
+		"      end\n"
+		"      return #copy\n"
+		"    end\n"
 		"    setmetatable(ev, {__call = function(self, ...)\n"
 		"      if dispatch then for _, f in ipairs(listeners) do f(...) end end\n"
 		"    end})\n"
@@ -331,10 +357,16 @@ namespace
 		"    return ev\n"
 		"  end})\n"
 		"end\n"
-		"-- Events: engine (UI/graphics) events; nothing listens headless, every member is a callable no-op.\n"
-		"Events = eventTable(false)\n"
+		"-- Events: engine (UI/graphics) events; calling a member is a no-op. Listeners are kept; the host fires only the\n"
+		"-- events it emulates (__HHFireEvent).\n"
+		"Events = eventTable(false, 'Events')\n"
 		"-- LuaEvents: script-to-script events; dispatched to listeners.\n"
-		"LuaEvents = eventTable(true)\n"
+		"LuaEvents = eventTable(true, 'LuaEvents')\n"
+		"function __HHFireEvent(name, ...)\n"
+		"  local ev = rawget(Events, name)\n"
+		"  if ev == nil then return 0 end\n"
+		"  return ev.__HHFire(...)\n"
+		"end\n"
 		"-- GameEvents: the DLL's hooks (ICvEngineScriptSystem1::Call*), measured semantics (contract 10.1):\n"
 		"-- every listener runs, in registration order; a raising listener is logged and does not vote;\n"
 		"-- handled = at least one listener. __HHGameEventListeners[name] is the listener list.\n"
@@ -347,7 +379,7 @@ namespace
 		"  if mode == 'testall' then value = true elseif mode == 'testany' then value = false elseif mode == 'hook' then value = false end\n"
 		"  for i = 1, #copy do\n"
 		"    local ok, r = pcall(copy[i], ...)\n"
-		"    if not ok then print('Runtime Error: ' .. tostring(r))\n"
+		"    if not ok then print('Runtime Error: ' .. tostring(r)); reportError(r, 'GameEvents.' .. name)\n"
 		"    elseif mode == 'testall' then if not r then value = false end\n"
 		"    elseif mode == 'testany' then if r then value = true end\n"
 		"    elseif mode == 'accum' then if type(r) == 'number' then value = value + r end\n"
@@ -361,7 +393,8 @@ namespace
 		"  __HHGameEventListeners[name] = __HHGameEventListeners[name] or {}\n"
 		"  local ev = {}\n"
 		"  -- Add/Remove accept both GameEvents.X.Add(f) and GameEvents.X:Add(f).\n"
-		"  ev.Add = function(a, b) local f = (a == ev) and b or a; local l = __HHGameEventListeners[name]; l[#l + 1] = f end\n"
+		"  ev.Add = function(a, b) local f = (a == ev) and b or a; local l = __HHGameEventListeners[name]; l[#l + 1] = f\n"
+		"    recordListener('GameEvents', name, callerEnv()) end\n"
 		"  ev.Remove = function(a, b) local f = (a == ev) and b or a; local l = __HHGameEventListeners[name]\n"
 		"    for i = #l, 1, -1 do if l[i] == f then table.remove(l, i) end end end\n"
 		"  ev.RemoveAll = function() __HHGameEventListeners[name] = {} end\n"
@@ -391,7 +424,98 @@ namespace
 		"Locale.Length = function(s) return string.len(tostring(s)) end\n"
 		"Locale.Compare = function(a, b) if a == b then return 0 elseif a < b then return -1 else return 1 end end\n"
 		"Locale.ToNumber = function(n, fmt) return tostring(n) end\n"
-		"Locale.GetCurrentLanguage = function() return {Type = 'en_US'} end\n";
+		"Locale.GetCurrentLanguage = function() return {Type = 'en_US'} end\n"
+		"-- Modding.OpenUserData(id, version): a mod's saved settings; Modding.OpenSaveData(): the game save's mod data. Headless\n"
+		"-- both start empty (every mod's defaults) and live in memory for the run: the game keeps user data in the user's cache,\n"
+		"-- which a run must not depend on, and save data in the save's embedded database, which the digest leaves out (savedb).\n"
+		"local userData = {}\n"
+		"local function store(key)\n"
+		"  if userData[key] == nil then\n"
+		"    local values = {}\n"
+		"    userData[key] = {GetValue = function(self, k) return values[k] end, SetValue = function(self, k, v) values[k] = v end}\n"
+		"  end\n"
+		"  return userData[key]\n"
+		"end\n"
+		"Modding.OpenUserData = Modding.OpenUserData or function(id, version) return store(tostring(id) .. '|' .. tostring(version)) end\n"
+		"Modding.OpenSaveData = Modding.OpenSaveData or function() return store('save data') end\n";
+
+	// Stub UI contexts (InGameUIAddin scripts, UI emulation profiles, Lua probes): each context is a Lua thread whose
+	// environment gets the UI-only globals the game gives a UI context. Nothing is shown, so they absorb every call:
+	// - Controls, Mouse, Keys, KeyEvents, MouseEvents, PopupPriority: the chainable stub (any member, any call, gives
+	//   the stub again; arithmetic gives 0, concatenation and tostring give '');
+	// - ContextPtr: per context; SetHide/IsHidden keep the hidden flag (initial: the XML Context's Hidden attribute),
+	//   IsHotLoad is false, GetID the context name, handlers are stored and never called, instance tables of
+	//   BuildInstanceForControl answer every control with the stub;
+	// - UIManager: stub calls, a 1024x768 screen, nothing modal;
+	// - UI, Network, Steam, OptionsManager, Matchmaking: every member is a function returning nil (nothing selected,
+	//   nothing sent), except UI.RemoveNotification, the engine's dismiss (host: __HHUIRemoveNotification);
+	// - ToHexFromGrid, ToGridFromHex, HexToWorld, WorldToHex: the stub; Path: the string helpers.
+	// Game, Map, Players, Teams, GameInfo, Events, LuaEvents and GameEvents are the shared ones.
+	const char* kUIContextLua =
+		"local stubMt = {}\n"
+		"local stub = setmetatable({}, stubMt)\n"
+		"local function zero() return 0 end\n"
+		"local function str(x) local t = type(x) if t == 'string' or t == 'number' then return x end return '' end\n"
+		"-- Instance builders (ContextPtr:BuildInstanceForControl, pulldown:BuildEntry) fill the caller's table: every control the stub.\n"
+		"local function fill(self, name, inst)\n"
+		"  if type(inst) == 'table' and getmetatable(inst) == nil then setmetatable(inst, {__index = function() return stub end}) end\n"
+		"  return stub\n"
+		"end\n"
+		"stubMt.__index = function(t, k) if k == 'BuildEntry' or k == 'BuildInstanceForControl' or k == 'BuildInstance' then return fill end return stub end\n"
+		"stubMt.__newindex = function() end\n"
+		"stubMt.__call = function() return stub end\n"
+		"stubMt.__add, stubMt.__sub, stubMt.__mul, stubMt.__div, stubMt.__mod, stubMt.__pow, stubMt.__unm = zero, zero, zero, zero, zero, zero, zero\n"
+		"stubMt.__concat = function(a, b) return str(a) .. str(b) end\n"
+		"stubMt.__tostring = function() return '' end\n"
+		"stubMt.__lt = function() return false end\n"
+		"stubMt.__le = function() return false end\n"
+		"__HHUIStub = stub\n"
+		"local function nilFn() return nil end\n"
+		"local function stubFn() return stub end\n"
+		"local function nilApi() return setmetatable({}, {__index = function() return nilFn end}) end\n"
+		"local function stubApi() return setmetatable({}, {__index = function() return stubFn end}) end\n"
+		"local function ext(p) return string.match(p or '', '(%.[^%.\\\\/]*)$') or '' end\n"
+		"local function base(p) return string.match(p or '', '([^\\\\/]*)$') or '' end\n"
+		"local path = nilApi()\n"
+		"path.GetExtension = function(p) return ext(p) end\n"
+		"path.GetFileName = function(p) return base(p) end\n"
+		"path.GetFileNameWithoutExtension = function(p) local b = base(p) return string.sub(b, 1, #b - #ext(b)) end\n"
+		"path.GetDirectoryName = function(p) return string.match(p or '', '^(.*)[\\\\/][^\\\\/]*$') or '' end\n"
+		"__HHUIContextStates = {}\n"
+		"function __HHMakeUIContext(env, name, hidden)\n"
+		"  local state = {hidden = hidden and true or false}\n"
+		"  __HHUIContextStates[name] = state\n"
+		"  local ctx = stubApi()\n"
+		"  ctx.SetHide = function(self, b) state.hidden = b and true or false end\n"
+		"  ctx.IsHidden = function() return state.hidden end\n"
+		"  ctx.IsHotLoad = function() return false end\n"
+		"  ctx.GetID = function() return name end\n"
+		"  ctx.SetShowHideHandler = function(self, f) state.showHide = f end\n"
+		"  ctx.SetInputHandler = function(self, f) state.input = f end\n"
+		"  ctx.SetUpdate = function(self, f) state.update = f end\n"
+		"  ctx.ClearUpdate = function() state.update = nil end\n"
+		"  ctx.BuildInstanceForControl = fill\n"
+		"  env.ContextPtr = ctx\n"
+		"  env.Controls = stub\n"
+		"  local ui = nilApi()\n"
+		"  ui.RemoveNotification = function(id) if __HHUIRemoveNotification then return __HHUIRemoveNotification(id) end end\n"
+		"  ui.IsLoadedGame = function() return false end\n"
+		"  env.UI = ui\n"
+		"  local uim = stubApi()\n"
+		"  uim.GetScreenSizeVal = function() return 1024, 768 end\n"
+		"  uim.GetMousePos = function() return 0, 0 end\n"
+		"  uim.IsModal = function() return false end\n"
+		"  env.UIManager = uim\n"
+		"  env.Network, env.Steam, env.OptionsManager, env.Matchmaking = nilApi(), nilApi(), nilApi(), nilApi()\n"
+		"  env.Mouse, env.Keys, env.KeyEvents, env.MouseEvents, env.PopupPriority = stub, stub, stub, stub, stub\n"
+		"  env.ToHexFromGrid, env.ToGridFromHex, env.HexToWorld, env.WorldToHex = stubFn, stubFn, stubFn, stubFn\n"
+		"  env.GridToWorld = function() return 0, 0, 0 end\n"
+		"  env.WorldToGrid = function() return 0, 0 end\n"
+		"  -- Every content package (the expansions, DLC) counts as active, as in a BNW game.\n"
+		"  env.ContentManager = setmetatable({IsActive = function() return true end}, {__index = function() return nilFn end})\n"
+		"  env.ContentType = stub\n"
+		"  env.Path = path\n"
+		"end\n";
 }
 
 bool HHLuaRegisterEngineGlobals(HHScriptSystem& kScripts, HHVfs& kVfs, ICvPreGame1* pPreGame)
@@ -434,5 +558,20 @@ bool HHLuaRegisterEngineGlobals(HHScriptSystem& kScripts, HHVfs& kVfs, ICvPreGam
 	}
 	lua_pop(L, 1);
 
-	return kScripts.RunString(L, kLuaPrelude, "=HHLuaGlobals");
+	return kScripts.RunString(L, kLuaPrelude, "=HHLuaGlobals") && kScripts.RunString(L, kUIContextLua, "=HHUIContext");
+}
+
+lua_State* HHLuaCreateUIContext(HHScriptSystem& kScripts, const std::string& strName, bool bHidden)
+{
+	lua_State* L = kScripts.CreateLuaThread(strName.c_str());
+	if(!L)
+		return NULL;
+	// getfenv(1) in this chunk is the thread's environment.
+	const std::string chunk = "__HHMakeUIContext(getfenv(1), [==[" + strName + "]==], " + (bHidden ? "true" : "false") + ")";
+	if(!kScripts.RunString(L, chunk.c_str(), "=HHUIContext"))
+	{
+		kScripts.FreeLuaThread(L);
+		return NULL;
+	}
+	return L;
 }

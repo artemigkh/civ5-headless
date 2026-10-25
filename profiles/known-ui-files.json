@@ -1,0 +1,6 @@
+{
+ "about": "UI Lua files known not to need a UI emulation profile (no call that changes game state, or only on user input), by name and sha256, and the official DLC folders whose UI is the base game's. The run report (host-report.json uiFiles) lists every other non-base UI file as unknown. docs/profiles.md says how to review a file.",
+ "officialDlc": ["DLC_01", "DLC_02", "DLC_03", "DLC_04", "DLC_05", "DLC_06", "DLC_07", "DLC_Deluxe", "DLC_SP_Maps", "DLC_SP_Maps_2",
+                 "DLC_SP_Maps_3", "Expansion", "Expansion2", "Shared", "Tablet"],
+ "files": []
+}

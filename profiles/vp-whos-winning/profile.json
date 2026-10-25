@@ -1,0 +1,14 @@
+{
+ "name": "vp-whos-winning",
+ "description": "VP's WhosWinningPopup.lua (Core Files\\Overrides) OnPopup: rolls the synced RNG (Game.Rand: the presenter out of 25, then list modes until a new allowed one) and reads the scores of the mode (GetMilitaryMight is a lazy cache; RefreshTourism changes cities). The popup stays up, which stops the human turn's unit cycle and end-of-turn test.",
+ "hook": "popup",
+ "popupTypes": ["BUTTONPOPUP_WHOS_WINNING"],
+ "lua": "whos-winning.lua",
+ "group": "whos-winning",
+ "order": 60,
+ "select": [
+  {"file": "WhosWinningPopup.lua", "sha256": ["718a7dbe4716d8b5f535a2fe58774bafa960cc165394d08a2c21c269395414d9"]},
+  {"file": "WhosWinningPopup.lua", "contains": ["TXT_KEY_DUDE_25", "RefreshTourism", "Rolling to determine Progress Screen list type."]}
+ ],
+ "covers": [{"file": "WhosWinningPopup.lua", "methods": ["Rand", "GetMilitaryMight", "RefreshTourism"]}]
+}
