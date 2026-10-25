@@ -111,10 +111,13 @@ commit it with the change it describes.
   the `m_iFreeMoveAcross` init, speed-marathon `--pregame-turn-timer 1` as an old reference). Last fixes: engine
   `ipairs` and per-thread `debug` (Continental Drift), era-start unit selection, CP city-event popup notification,
   great-person reward popup, closed slots of dead city-states, turn-timer pin in gamespec and host.
-- **Deployed now:** field-map DLL `work/msvc-output/Release-fieldmap/20261025-074750` (`6C73DC9A…527588321`, DLL
-  source = headless-host ce462727b: artifact pick on the seeded game RNG, settle-site logging without GetDanger).
-  Earlier references (`hh-m5`, `hh-m5f`, `hh-m5g`) were recorded with `89F146A7` (headless-host 1d70b7db0) and
-  compare against that DLL.
+- **Deployed now:** field-map DLL `work/msvc-output/Release-fieldmap/20261025-155805` (`CB6B0BED…DAC424C836`, DLL
+  source = headless-host c08b24207: artifact pick, trade stats and unit maintenance fixes, UI-only digest
+  normalisation). Earlier references (`hh-m5`, `hh-m5f`, `hh-m5g`: 89F146A7; `hh-m5b-mapopt-*`: 6C73DC9A) compare
+  against their own DLLs.
+- **Final game in flight:** `m5-final.json` (`hh-m5z-continents-s1`, Standard Emperor 1001/2002, maxTurns 400): host
+  first (exe `work/wt/hh-host/work/headless-output/Release/20261025-075337`), real game host-first with rolling dumps,
+  then `parity_run.py hh-m5z-continents-s1 --turns 400 --tag final`. Identical closes M5.
 - **Archaeology was nondeterministic in the real game too:** `CultureHelpers::GetArtifact` chose the dug-up great
   work with SQLite `order by Random()`, which SQLite seeds from the OS, so no run (real or host) reproduced past the
   first dig. Fixed in 6d42ad0c5 (candidates by ID, picked with `urandLimitExclusive` and a plot/class/era seed; a
