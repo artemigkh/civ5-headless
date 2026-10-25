@@ -8,9 +8,8 @@ commit it with the change it describes.
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
-- **Phase:** M3 done (73d4f1932): the host matches the real game turn by turn (hh-m2-aa100-a, 100 turns, every
-  digest total and every section but `savedb`), 77 s against about 9 min. M5 (breadth parity) and M6 (tooling)
-  in progress. M0, M1, M4 done; M2 done except Continental Drift (now an M5 item).
+- **Phase:** M3 done; M6 done (d0711220f); M5 (breadth parity) in progress. M0, M1, M4 done; M2 done except
+  Continental Drift (an M5 item).
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
   game is free for this work. Before handing back, restore the AI program's deployed DLL
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
@@ -25,9 +24,6 @@ commit it with the change it describes.
     `Random float` draw; suspected iteration order in the script); address-perturbation self-test; find why the
     game's logging profile changes AI results and make it result-neutral; matrix comparisons against the
     `hh-m5-*` references (`work/headless/parity_run.py`).
-  - tooling: M6, worktree `work/wt/hh-tooling`, branch `hh-tooling` from 73d4f1932. `vpbench --backend headless`
-    (run folders readable by compare.py and the ai-improvements abcompare/samerun), parallel runner
-    `work/headless/runner.py`, speed and scaling measurements, `docs/headless-host.md`. No game, no tuner.
   On resume after a pause: read each worktree's `RESUME.md` and relaunch the agent with its work order (above)
   plus the checkpoint.
 - **Merged into headless-host:**
@@ -45,6 +41,16 @@ commit it with the change it describes.
     EUI civ ribbon gold rate, VP observer notification aging, human-turn engine frame, WhosWinning popup RNG;
     autosaves shown not to matter). Independently reproduced end to end with a `build_db.py` database. The host
     copies the reference profile's DLL logging, because logging changes AI results (under investigation).
+  - M6 (d0711220f): `work/headless/hhbench.py` (also `vpbench newgame --backend headless`), run folders read unchanged by
+    compare.py, abcompare.py, samerun.py and summarize-ai-features.py; `work/headless/runner.py run|status|compare
+    QUEUE.json` (workers pinned P-cores first, job-object limits, resumable, database cache `dbcache.py`); guide
+    `docs/headless-host.md`. Host fix: each database connection owns its own logger (a shared static one was
+    freed at close: shutdown crash or hang in some builds).
+  - Measured (M6, with the real game recording in the background): 250 turns in 490 s against 1,600–1,900 s real
+    (3.5x; 6.5x early, about 3x after T150); 100 turns of the reference game 82–87 s against 443 s; about 280–330 MB
+    per game against 1.8 GB; 8 workers about 29,000 game turns per hour, 24 workers about 55,000 (steady queue).
+    Headless A/A between two builds that differ only in digest code: identical final states on 4 seeds x 150
+    turns. The ai-improvements DLL also runs headless (no digests: it lacks the additions).
 - **Fixes on headless-host:**
   - 393b7ceb7: DLL crash at unload (static destruction order); trace end line from `DllMain`; host log
     paths.
@@ -90,7 +96,8 @@ commit it with the change it describes.
   `work/test-runs/hh-m3-cdrift-randlog-config/`).
 - **Next steps:**
   1. Review and merge the host agent's work (cdrift, then M3 milestones).
-  2. M5 breadth parity and M6 tooling after M3.
+  2. Re-measure parallel scaling on an idle machine (`work/headless/m6/queues/scale-w<W>.json`, see
+     `docs/headless-host.md`).
   3. Restore the AI build and mods before handing back.
 - **Uncommitted files:** none besides this ledger.
 
@@ -104,7 +111,7 @@ commit it with the change it describes.
 | M3 | Turn loop and autoplay | done | 73d4f1932 | per-turn digest parity, 100 turns |
 | M4 | Database builder | done | 0c240f6bb | can run alongside M3; `dbdiff.py` oracle |
 | M5 | Breadth parity | in progress | | matrix in plan section 6 |
-| M6 | Tooling and throughput | in progress | | vpbench backend, parallel runner |
+| M6 | Tooling and throughput | done | d0711220f | vpbench backend, parallel runner |
 | M7 | Saves | not planned | | optional follow-up |
 
 ## Log
@@ -134,3 +141,4 @@ commit it with the change it describes.
 - 2026-10-25 ~02:40: both agents stopped on the session usage limit (work saved: hh-host with an uncommitted
   experiment in HHScriptSystem.cpp, hh-tooling at b6769a7d2 plus RESUME.md); resumed with SendMessage after the
   reset at 03:30.
+- 2026-10-25: M6 merged (d0711220f): headless A/B batches run end to end with the existing comparison tools.
