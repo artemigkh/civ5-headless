@@ -245,6 +245,8 @@ def newgame(a, quiet=False):
             proc = subprocess.Popen(cmd, cwd=str(run.dir), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                     creationflags=winproc.CREATE_NO_WINDOW)
             job.assign(proc)
+            if getattr(a, 'low_priority', False):
+                winproc.set_priority(proc)  # leave the foreground (and a real game) responsive
             run.log('launched', quiet=quiet, pid=proc.pid, affinity=hex(affinity) if affinity else None, memoryLimitMB=a.max_memory_mb,
                     dll=str(dll), dllSHA256=dll_sha, target=a.target_turn)
             offset = 0; last_turn = 0; last_progress = started; seen = {0: 0.0}; killed = None
@@ -368,6 +370,7 @@ def add_newgame_args(n, vpbench=False):
     n.add_argument('--stall-seconds', type=int, default=900, help='kill the host after this long without a new turn')
     n.add_argument('--max-memory-mb', type=int, default=3500, help='per-process commit limit (job object); 0 = none')
     n.add_argument('--affinity', default=None, help='CPU affinity mask for the host (e.g. 0x3)')
+    n.add_argument('--low-priority', action='store_true', help='run the host below normal priority')
     n.add_argument('--prune', action='store_true', help='delete the database copy, state dumps and AI logs afterwards')
     n.add_argument('--poll', type=float, default=1.0, help='progress poll interval in seconds')
     n.add_argument('--host-arg', action='append', help='extra civ5headless.exe argument (repeatable), e.g. --no-game-logging')
