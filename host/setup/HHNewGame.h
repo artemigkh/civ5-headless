@@ -19,6 +19,7 @@ struct HHNewGameInterfaces
 	HHScriptSystem* pScripts;
 	ICvDLLDatabaseUtility1* pDbUtil;
 	HHEngineUtility* pEngine;
+	class HHUserInterface* pUI;
 };
 
 struct HHNewGameResult

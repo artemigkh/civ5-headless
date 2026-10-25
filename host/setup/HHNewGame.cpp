@@ -836,6 +836,69 @@ namespace
 		"end\n"
 		"return n\n";
 
+	// VP's EUI NotificationPanel.lua (MODS\(3a) VP - EUI Compatibility Files), "STACKING OBSERVER
+	// NOTIFICATION AGING": while autoplay runs (observer mode), every NotificationAdded forces a sweep that
+	// right-clicks away (UI.RemoveNotification) each shown, undismissed notification of the active player
+	// created at least UIObserverNotificationLifetimeTurns (Stacking_Settings, default 3) turns ago.
+	// UI.RemoveNotification is the engine's dismiss: MayUserDismissNotification, then DismissNotification
+	// (sets the serialized Notification::m_bDismissed; hh-m2-aa100-a playersRest from turn 22).
+	// ASSUMPTION (per-turn digests): only the forced sweep on NotificationAdded has an effect; the
+	// once-per-turn sweeps on SerialEventGameDataDirty / AIProcessingStartedForPlayer do not.
+	const char* kObserverExpiredLua =
+		"if Game.GetAIAutoPlay() <= 0 then return '' end\n"
+		"local lifetime = 3\n"
+		"if GameInfo.Stacking_Settings then for row in GameInfo.Stacking_Settings() do\n"
+		"  if row.Name == 'UIObserverNotificationLifetimeTurns' then lifetime = tonumber(row.Value) or 3 end end end\n"
+		"lifetime = math.max(0, math.min(10000, math.floor(lifetime)))\n"
+		"if lifetime == 0 then return '' end\n"
+		"local player = Players[Game.GetActivePlayer()]\n"
+		"local turn = Game.GetGameTurn()\n"
+		"local t = {}\n"
+		"for index = 0, player:GetNumNotifications() - 1 do\n"
+		"  local created = player:GetNotificationTurn(index)\n"
+		"  if not player:GetNotificationDismissed(index) and created >= 0 and turn - created >= lifetime then\n"
+		"    t[#t + 1] = player:GetNotificationIndex(index)\n"
+		"  end\n"
+		"end\n"
+		"return table.concat(t, ' ')\n";
+
+	void ObserverNotificationAging(HHNewGameInterfaces& kIf)
+	{
+		if(!kIf.pUI->TakeNotificationAdded())
+			return;
+		const PlayerTypes eActive = kIf.pPreGame->activePlayer();
+		std::string ids;
+		if(lua_State* L = RunReturning(*kIf.pScripts, "Headless notification aging", kObserverExpiredLua))
+		{
+			if(lua_isstring(L, -1))
+				ids = lua_tostring(L, -1);
+			kIf.pScripts->FreeLuaThread(L);
+		}
+		if(ids.empty())
+			return;
+		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(eActive);
+		if(!pPlayer)
+			return;
+		const char* p = ids.c_str();
+		while(*p)
+		{
+			char* end = NULL;
+			const int id = (int)strtol(p, &end, 10);
+			if(end == p)
+				break;
+			p = end;
+			while(*p == ' ')
+				++p;
+			// Only notifications the panel shows (g_ActiveNotifications), as the active player's.
+			std::map<int, PlayerTypes>::const_iterator it = kIf.pUI->GetShownNotifications().find(id);
+			if(it == kIf.pUI->GetShownNotifications().end() || it->second != eActive)
+				continue;
+			if(pPlayer->MayUserDismissNotification(id))
+				pPlayer->DismissNotification(id, true);
+		}
+		pPlayer->Destroy();
+	}
+
 	std::string DumpState(HHScriptSystem& kScripts, const std::string& folder)
 	{
 		std::string chunk = "if Game.DumpHeadlessState == nil then return nil end\nreturn Game.DumpHeadlessState([==[" + folder + "]==])\n";
@@ -913,6 +976,8 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	kResult.steps.push_back(HHFormat("ARM: QUICK_COMBAT, QUICK_MOVEMENT, Game.SetAIAutoPlay(%d, 0) -> %d; active player %d", nTurns, iArmed,
 	                                 (int)kIf.pPreGame->activePlayer()));
 	kResult.steps.push_back(HHFormat("NetMessageHandler.Response* x%u", (unsigned)HHDeliverNetMessages(kIf)));
+	kIf.pUI->ClearShownNotifications();   // NotificationPanel OnSetActivePlayer: RemoveNotificationID for all
+	kIf.pUI->TakeNotificationAdded();
 	if(iArmed != nTurns)
 	{
 		kResult.error = "SetAIAutoPlay did not arm autoplay";
@@ -938,7 +1003,10 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		kIf.pEngine->EndOfUpdate();
 		HHDeliverNetMessages(kIf);
 		if(!HHGetOptions().noUiFrame)
+		{
+			ObserverNotificationAging(kIf);
 			LuaInt(kScripts, kUiFrameLua, 0);
+		}
 		++kResult.iUpdates;
 		++iTurnUpdates;
 		const int iNow = kIf.pGame->GetGameTurn();

@@ -376,7 +376,20 @@ void HHEngineUtility::EndSendBundle() { HH_IMPL_CALL("ICvEngineUtility3::EndSend
 //------------------------------------------------------------------------------
 // HHUserInterface
 //------------------------------------------------------------------------------
-HHUserInterface::HHUserInterface() {}
+HHUserInterface::HHUserInterface() : m_bNotificationAdded(false) {}
+
+void HHUserInterface::AddNotification(int iID, NotificationTypes, const char*, const char*, int, int, PlayerTypes ePlayer, int, int)
+{
+	HH_IMPL_CALL("ICvUserInterface1::AddNotification");
+	m_shownNotifications[iID] = ePlayer;
+	m_bNotificationAdded = true;
+}
+
+void HHUserInterface::RemoveNotification(int iID, PlayerTypes)
+{
+	HH_IMPL_CALL("ICvUserInterface1::RemoveNotification");
+	m_shownNotifications.erase(iID);
+}
 
 void* HHUserInterface::QueryInterface(GUID guidInterface)
 {

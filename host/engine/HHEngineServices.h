@@ -195,4 +195,17 @@ public:
 	void SetDontShowPopups(bool bValue);
 	void SetEndTurnBlockingChanged(EndTurnBlockingTypes ePrevBlockingType, EndTurnBlockingTypes eNewBlockingType);
 	void UpdateEndTurn();
+
+	// The notification panel's shown notifications (NotificationPanel.lua g_ActiveNotifications):
+	// AddNotification is the engine's NotificationAdded event, RemoveNotification its NotificationRemoved.
+	void AddNotification(int iID, NotificationTypes type, const char* cTooltip, const char* cSummary, int iGameData, int iExtraGameData, PlayerTypes ePlayer, int iX, int iY);
+	void RemoveNotification(int iID, PlayerTypes ePlayer);
+	const std::map<int, PlayerTypes>& GetShownNotifications() const { return m_shownNotifications; }
+	void ClearShownNotifications() { m_shownNotifications.clear(); }
+	// True once per NotificationAdded since the last call (the panel's handlers run on the next UI frame).
+	bool TakeNotificationAdded() { const bool b = m_bNotificationAdded; m_bNotificationAdded = false; return b; }
+
+private:
+	std::map<int, PlayerTypes> m_shownNotifications;
+	bool m_bNotificationAdded;
 };

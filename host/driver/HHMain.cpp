@@ -742,6 +742,7 @@ namespace
 		nif.pScripts = pScripts;
 		nif.pDbUtil = pDbUtil;
 		nif.pEngine = pEngine;
+		nif.pUI = pUI;
 		pEngine->SetPreGame(nif.pPreGame);
 		const int iLuaErrorsBefore = pScripts->GetErrorCount();
 		if(bNewGame && s.bPostOk && s.bCacheOk)
