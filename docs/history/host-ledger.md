@@ -95,10 +95,10 @@ commit it with the change it describes.
 
 | ID | Milestone | Status | Commit | Notes |
 |---|---|---|---|---|
-| M0 | Record the engine contract | nearly done | f96b1be30 | trace recordings, reference A/A, DB check, DLC snapshot |
+| M0 | Record the engine contract | done | f96b1be30 | trace recordings, reference A/A, DB check, DLC snapshot |
 | M1 | Host boots the DLL | done | fc197fd34 | go: boot passes; small-block allocator disabled (all DLL memory from the MSVCR90 heap) |
 | M2 | New-game generation | nearly done (cdrift open) | | T000 digest parity, incl. Communitu and Continental Drift |
-| M3 | Turn loop and autoplay | done | 73d4f1932 | | per-turn digest parity |
+| M3 | Turn loop and autoplay | done | 73d4f1932 | per-turn digest parity, 100 turns |
 | M4 | Database builder | done | 0c240f6bb | can run alongside M3; `dbdiff.py` oracle |
 | M5 | Breadth parity | in progress | | matrix in plan section 6 |
 | M6 | Tooling and throughput | in progress | | vpbench backend, parallel runner |
