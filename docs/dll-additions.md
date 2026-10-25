@@ -186,8 +186,11 @@ substitution needs `HHDigest::g_bWriting` on the current thread.
 | `CvPlayerCulture::m_eOpinion`, `m_ePreferredIdeology`, `m_eOpinionBiggestInfluence`, while the player has no ideology (`GetLateGamePolicyTree() == NO_POLICY_BRANCH_TYPE`) | never initialised; first written by `DoPublicOpinion`, which returns early without an ideology | **real nondeterminism risk**, see below |
 | `CvReligion::m_iHolyCityX`, `m_iHolyCityY` of pantheons (`m_bPantheon`) | `CvReligion(RELIGION_PANTHEON, ePlayer, NULL, true)` leaves them uninitialised (AA100b: the `game` section's 2-byte runs at a 507-byte stride from turn 14, one per pantheon) | **risk**, see below |
 
-Real nondeterminism risks found with the digest (gameplay can read the uninitialised value; not changed, since a fix
-changes gameplay; normalised so that the digest stays usable):
+Real nondeterminism risks found with the digest (gameplay can read the uninitialised value). **Fixed on headless-host
+(2026-10-25) with the proposed fixes below**: the three members are initialised where the code already uses those
+values for "unset". This changes gameplay only where heap garbage was read before, which no run can reproduce. The
+normalisations stay, as they are harmless. References recorded before the fix keep the old values: city-states had
+0 or 15 there, where the fixed DLL has −1.
 
 - `CvPlayerCulture::m_eOpinion`, `m_ePreferredIdeology`, `m_eOpinionBiggestInfluence` are never initialised
   (`CvPlayerCulture::Init` skips them) and stay heap garbage until the player's first `DoPublicOpinion` with an
