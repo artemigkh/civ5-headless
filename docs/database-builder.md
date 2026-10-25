@@ -22,6 +22,8 @@ Inputs:
 - `--mods-dir` is a MODS folder or a pinned copy of one. Only the `.modinfo`, `.xml`, `.sql` and `.lua` files are read.
 - `--mods-db` is the game's `Civ5ModsDatabase.db`. It supplies the activated mods (`Activated = 1`, in RowID order)
   and a cross-check of the modinfo action lists. Use `--mod GUID[:version]` (repeatable) to name the mods instead.
+  `c5h modsdb` generates a registry for a mod set from the `.modinfo` files (`c5h dbcache --mod` and `c5h run --mod`
+  use it), for mods the game has not activated.
 - `--snapshot` defaults to the configured `snapshot`, else to the snapshot built from the game's files (`c5h
   snapshot`, cached in `<db_cache>/snapshot/<key>/`).
 - `--dll` is the game DLL used for post-processing. It defaults to the DLL in the CP mod folder (`c5h dbcache`: the

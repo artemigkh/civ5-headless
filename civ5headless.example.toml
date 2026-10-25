@@ -34,6 +34,11 @@
 # exe = "out/Release/20261025-120000/civ5headless.exe"
 # toolchain = "toolchain"
 
+# The host's UI emulation profiles and the Lua probes (fingerprint.lua). Default: profiles/ and probes/ in the
+# workspace, else in the repository.
+# profiles = "profiles"
+# probes = "probes"
+
 # Where run folders go (default: <workspace>/runs) and the workspace itself (default: the repository root, or
 # %LOCALAPPDATA%\civ5headless for an installed package).
 # runs = "runs"

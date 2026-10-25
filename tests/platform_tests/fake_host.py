@@ -1,6 +1,6 @@
 """A stand-in for civ5headless.exe newgame (run through fake_host.cmd): records its arguments in argv.json and writes
-the outputs run.py reads, for --turns turns: turn-times.jsonl, newgame-report.json, lua-before-arm.json,
-lua-before-dump.json, checkpoints/turn-NNNN-final.json and Logs/HeadlessDigest.log."""
+the outputs run.py reads, for --turns turns: turn-times.jsonl, newgame-report.json, host-report.json,
+lua-before-arm.json, lua-before-dump.json, checkpoints/turn-NNNN-final.json and Logs/HeadlessDigest.log."""
 import json
 from pathlib import Path
 import sys
@@ -9,7 +9,7 @@ import sys
 def main(argv):
     opts, i = {}, 1
     while i < len(argv):
-        if argv[i].startswith('--') and i + 1 < len(argv):
+        if argv[i].startswith('--') and i + 1 < len(argv) and not argv[i + 1].startswith('--'):
             opts.setdefault(argv[i], []).append(argv[i + 1])
             i += 2
         else:
@@ -28,6 +28,8 @@ def main(argv):
     (out / 'lua-before-arm.json').write_text(json.dumps(dict(setup=dict(turn=0), improvedMask=-2, diagnosticsLevel=-1)), encoding='utf-8')
     (out / 'lua-before-dump.json').write_text(json.dumps(dict(victory=dict(winner=-1), messages=[], replayData={})), encoding='utf-8')
     (out / 'newgame-report.json').write_text(json.dumps(dict(status='passed', newgame=dict(autoplay=dict(updates=turns)))), encoding='utf-8')
+    (out / 'host-report.json').write_text(json.dumps({'format': 'civ5headless-host-report/1', 'status': 'passed',
+                                                     'command': argv}), encoding='utf-8')
     return 0
 
 

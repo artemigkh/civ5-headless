@@ -5,8 +5,8 @@
 Prints every configuration value with its source (file, discovery, environment, default, unset) and the activated
 mods, then checks, in three groups:
   host games         Python, the game folder (the Firaxis DLLs and ICU data the host loads), the DLL, the mods and
-                     localization databases, the host exe, and the game database (db, a snapshot, or what the DLC
-                     snapshot is built from);
+                     localization databases, the host exe, the UI emulation profiles and the fingerprint probe, and
+                     the game database (db, a snapshot, or what the DLC snapshot is built from);
   real game          the game executable, config.ini (EnableTuner = 1, LoggingEnabled = 1, seeds left pinned); the
                      file is only read, never edited;
   building the host  the VC9 toolchain (tools/toolchain.py; python tools/get_toolchain.py makes one).
@@ -54,7 +54,7 @@ def checks(cfg):
         add(HOST, 'ok' if cfg.active_mods else 'warn', 'active mods',
             f'{len(cfg.active_mods)} activated in {cfg.mods_db.name}' if cfg.active_mods else
             'none activated (the game lists none while it sits in the mods browser; pin a copy taken in a '
-            'modded session, or use --mod with c5h dbbuild)')
+            'modded session, or give the mod set with --mod)')
         if cfg.active_mods and cfg.mods_dir and cfg.mods_dir.is_dir():
             folders = config.mod_folders(cfg.mods_dir)
             absent = [f'{m.name or m.id} v{m.version}' for m in cfg.active_mods if (m.id, m.version) not in folders]
@@ -62,6 +62,15 @@ def checks(cfg):
                 add(HOST, 'FAIL', 'active mods installed', 'not in mods_dir: ' + ', '.join(absent))
     path_check('loc_db', 'file', "the game's text; written by the game at its first start")
     path_check('exe', 'file', 'build it: python tools/build_host.py')
+    if path_check('profiles', 'dir', "the host's UI emulation profiles; without them games need --no-profiles"):
+        names = sorted(p.parent.name for p in cfg.profiles.glob('*/profile.json'))
+        known = (cfg.profiles / 'known-ui-files.json').is_file()
+        add(HOST, 'ok' if names and known else 'warn', 'UI emulation profiles',
+            f'{len(names)} profiles' + ('' if known else ', no known-ui-files.json') if names else 'no */profile.json in profiles')
+    if path_check('probes', 'dir', 'Lua probes; --fingerprint needs probes/fingerprint.lua', 'warn'):
+        fp = cfg.probes / 'fingerprint.lua'
+        add(HOST, 'ok' if fp.is_file() else 'warn', 'fingerprint probe',
+            str(fp) if fp.is_file() else f'{fp} does not exist (--fingerprint needs it)')
     database_check(cfg, add)
 
     # the real game (session.py): read only

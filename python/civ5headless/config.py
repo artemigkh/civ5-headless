@@ -25,7 +25,8 @@ Each value has a source:
   - toolchain: toolchain/ in the repository;
 - environment: toolchain from C5H_TOOLCHAIN;
 - default: workspace is the repository root for a checkout, else %LOCALAPPDATA%\\civ5headless; runs is
-  <workspace>/runs and db_cache <workspace>/cache/db;
+  <workspace>/runs and db_cache <workspace>/cache/db; profiles (the host's UI emulation profiles) and probes (Lua
+  probes such as fingerprint.lua) are <workspace>/profiles and <workspace>/probes, else the repository's folders;
 - unset: nothing found. snapshot (the DLC snapshot the database builder starts from) and db (a built game database
   used as is) are never discovered.
 """
@@ -52,7 +53,7 @@ FOLDERID_DOCUMENTS = '{FDD39AD0-238F-46AF-ADB4-6C85480369C7}'
 
 # Path keys in the order they are resolved (later ones derive from earlier ones).
 KEYS = ('workspace', 'game_dir', 'user_dir', 'mods_dir', 'cache_dir', 'mods_db', 'loc_db', 'config_ini', 'dll',
-        'snapshot', 'db', 'db_cache', 'exe', 'toolchain', 'runs')
+        'snapshot', 'db', 'db_cache', 'exe', 'profiles', 'probes', 'toolchain', 'runs')
 DESCRIPTIONS = {
     'workspace': 'folder for runs and caches',
     'game_dir': "game folder (Sid Meier's Civilization V)",
@@ -67,6 +68,8 @@ DESCRIPTIONS = {
     'db': 'built game database, used as is instead of the cache',
     'db_cache': 'database cache',
     'exe': 'civ5headless.exe',
+    'profiles': "the host's UI emulation profiles",
+    'probes': 'Lua probes (fingerprint.lua)',
     'toolchain': 'VC9 toolchain (building the host)',
     'runs': 'run folders',
 }
@@ -105,6 +108,8 @@ class Config:
     db: Path | None = None
     db_cache: Path | None = None
     exe: Path | None = None
+    profiles: Path | None = None
+    probes: Path | None = None
     toolchain: Path | None = None
     runs: Path | None = None
     file: Path | None = None                               # the civ5headless.toml read, if any
@@ -434,6 +439,10 @@ def load(path=None, system=None):
     if 'exe' not in given:
         exe, note = find_exe(repo)
         cfg.set('exe', exe, 'discovery', note)
+    for key in ('profiles', 'probes'):
+        if key not in given:
+            folder, kind, note = find_folder(cfg.workspace, repo, key)
+            cfg.set(key, folder, kind, note)
     if 'toolchain' not in given:
         if environ.get('C5H_TOOLCHAIN'):
             cfg.set('toolchain', expand(environ['C5H_TOOLCHAIN'], system.cwd(), environ), 'environment', 'C5H_TOOLCHAIN')
@@ -443,6 +452,15 @@ def load(path=None, system=None):
             cfg.set('toolchain', None, 'unset', 'no C5H_TOOLCHAIN, no toolchain\\ in the repository'
                     ' (tools/toolchain.py also looks for an installed Visual Studio 2008)')
     return cfg
+
+
+def find_folder(workspace, repo, name):
+    """(folder, source kind, note) for <workspace>/name, else <repository>/name."""
+    if workspace and (workspace / name).is_dir():
+        return workspace / name, 'default', f'workspace\\{name}'
+    if repo and (repo / name).is_dir():
+        return repo / name, 'discovery', f'{name}\\ in the repository'
+    return None, 'unset', f'no {name}\\ in the workspace' + ('' if repo is None or repo == workspace else ' or the repository')
 
 
 def find_exe(repo):
