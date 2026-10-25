@@ -170,6 +170,15 @@ commit it with the change it describes.
   `hh-m5l-matrix.stop`; m5-long with `--retry-failed`).
 - **Not scheduled:** moving the host to its own repository, for sharing with other mod developers: notes in
   [headless-repo-migration.md](headless-repo-migration.md). The user will decide later; not a plan step.
+- **Later, once the host is finished (user request 2026-10-25): benchmark Vox Deorum's no-render approach against
+  ours.** Vox Deorum (John Chen, github.com/vox-deorum, github.com/civitas-john) runs the real
+  `CivilizationV_DX11.exe` with a proxy `d3d9.dll` from `civitas-john/d3d9-blank-proxy`. The proxy hooks D3D11
+  `Present` (kiero + MinHook), skips drawing and sleeps 33 ms per frame; a watchdog exits after 300 s without a frame.
+  They also ship a rebuilt `lua51_Win32.dll` with a global lock (`vox-deorum/vox-deorum-lua51`), needed only for
+  their IPC thread. Download and build the proxy (VS project, x86), drop it next to the DX11 exe with our DLL and
+  mods, and run the same specs/seeds three ways: the plain real game, the real game with the proxy, and
+  `civ5headless.exe`. Compare time per turn, memory, how many run side by side, and that the digests still match
+  (the proxy should not change results). Not a plan step until the host work is done.
 - **User rule (2026-10-25): UI-only state is not a difference.** Anything that cannot affect the game (notification
   `m_bDismissed`, the era-start initial unit selection, and any other purely UI field) is normalised out of the digest
   (`HH_DIGEST_NORM`, digest-only, result-neutral). On resume, before the next DLL build: the host agent audits the
