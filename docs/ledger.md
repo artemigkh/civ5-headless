@@ -100,3 +100,15 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   config keys `profiles`, `probes`; spec `minorCivs`; `RealGameSession.replay_data()` (one player per tuner call:
   the tuner caps a result at 10,000 items and 256 KiB). 174 tests.
 - Host-only `c5h verify` on main (before this merge): 3.6 min, verdict warn (UI hazards only), as in the agent's run.
+
+### 2026-10-25: anydll milestone 2 merged
+
+- 9671c70: the host honours spec `minorCivs` when it chooses civs itself (stock-like DLLs; VP chooses in the DLL and
+  is left alone, with a match report), `host-report.json` `minorCivs` section, random city-states only from IDs the
+  database has; `--skip-addin` accepts names with an extension; `hazards.scan_report` and a per-hit `reach`
+  (load/game/input) with better call resolution, curated reviews and host/DLL rules: on the M5 reference run 0
+  uncovered game-reachable UI hazards (was 60), plain VP 5, stock DLL 37 (base-game UI); `fingerprint.probe_path()`.
+  Invariant (8 cases) identical. 181 tests.
+- Open: `CalculateGoldRate` counts as fixed only for DLLs with the digest additions (no better marker yet); Squads
+  reads its options from user mod data, which the host keeps empty; the hazard scan does not follow `include()`;
+  installed-package data for `probes/` (only `data/*.json` ships).
