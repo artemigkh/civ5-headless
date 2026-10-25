@@ -539,7 +539,7 @@ real game, whose control word was not recorded (open question 3).
 | G13 | `GetAudioTagIndex` | −1 | engine ids | UI getters only |
 | G14 | `IsPlayerConnected` | stub false | true | notifications |
 | G15 | `GetDone` | false always | true from `Uninit` | entity removal at shutdown |
-| G16 | pregame reset + `loadFromIni`/seeds, NetInitInfo round trip, `closeInactiveSlots`, leader choice, `LaterInit`, graphics init, `DoGameStarted`, `SendPlayerOptions` | M2 in progress | 5.4 | start state |
+| G16 | pregame reset + `loadFromIni`/seeds, NetInitInfo round trip, `closeInactiveSlots`, leader choice, `LaterInit`, graphics init, `DoGameStarted`, `SendPlayerOptions`, `SelectSettler`, LoadScreen pause, autoplay Lua | M2 in progress | 5.4, 7 | start state |
 
 ## 13. Open questions and how to resolve them
 
