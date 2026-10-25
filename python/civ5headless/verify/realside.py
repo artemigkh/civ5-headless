@@ -3,16 +3,20 @@
 One session:
 1. launch with the first game's seeds pinned (the game reads them when it loads the DLL; the games are ordered so
    that each seed pair costs at most one relaunch), activate the configuration's mods;
-2. the turn-0 setups: each started with the probes (the session leaves it paused at turn 0), one turn played (the
-   fingerprint prints at turn 0), logs collected, back to the main menu; after the first game, the database the game
-   holds in memory is exported for the database check;
-3. the trajectory game: the Tiny game played to the horizon with the probes; per-turn wall times, replay data
-   (session.call in InGame, as run.py's final query), process statistics right after its autoplay;
+2. the turn-0 setups: each started with the fingerprint probe and the suite's probes (start_game(fingerprint=...,
+   lua_probes=...): the files a host run uses, at the same point; the session leaves the game paused at turn 0), one
+   turn played, logs collected, back to the main menu; after the first game, the database the game holds in memory
+   is exported for the database check;
+3. the trajectory game: the Tiny game played to the horizon; per-turn wall times, replay data (replay_data()),
+   process statistics right after its autoplay;
 4. full mode: the same game again (real A/A) and a Standard game for scale and memory.
+
+City-state pins (pins.py): right after each game has started, its logs are collected once and the city-states read
+from the fingerprint's turn-0 player lines are published for the host games compared with it.
 
 Each game's logs go to real/<game>/: collect_logs copies the session's logs, and Lua.segment.log (also Logs/Lua.log)
 keeps only what that game appended; HeadlessDigest.log likewise. A relaunch starts new logs, which the segmenting
-notices. Optional session methods (replay_data, call, game_database) are used when present.
+notices. The optional game_database() is used when present.
 """
 from __future__ import annotations
 import inspect
@@ -22,31 +26,25 @@ import traceback
 from pathlib import Path
 
 from .. import run as host_run
+from . import pins as pins_mod
 
 SEGMENTED = ('Lua.log', 'HeadlessDigest.log')
 HEAD = 256  # bytes of a log remembered to notice a new file (a relaunch) of the same name
-
-# Every major's replay data, as run.FINAL collects it in the host.
-REPLAY_LUA = r'''
-local series={}
-for owner=0,63 do local p=Players[owner]
- if p and p:IsEverAlive() and not p:IsBarbarian() and not p:IsMinorCiv() and not p:IsObserver() then
-  local ok,d=pcall(function() return p:GetReplayData() end)
-  if ok and d then local o={};for k,s in pairs(d) do local a={};for t,x in pairs(s) do a[#a+1]={t,x} end;o[k]=a end;series[tostring(owner)]=o end
- end
-end
-return series
-'''
 DONE = ('turns', 'victory', 'target', 'target_turn')   # autoplay endReason of a game played to its end
 
 
 class RealSide:
-    def __init__(self, cfg, settings, session_class, out_dir, games, probes, deadline, t0, log=print, state=None):
-        """games: [{name, kind (setup, trajectory, aa, standard), spec (resolved dict), turns}]."""
+    def __init__(self, cfg, settings, session_class, out_dir, games, probes, deadline, t0, log=print, state=None,
+                 fingerprint=None, pins=None, fingerprint_module=None):
+        """games: [{name, kind (setup, trajectory, aa, standard), spec (resolved dict), turns}]; probes: the suite's
+        own Lua probes; fingerprint: start_game's fingerprint options (None: no fingerprint probe); pins: a
+        pins.Pins that gets each game's city-states (read with fingerprint_module, civ5headless.fingerprint)."""
         self.cfg, self.settings, self.session_class = cfg, settings, session_class
         self.dir = Path(out_dir) / 'real'
         self.games = games
         self.probes = [str(p) for p in probes]
+        self.fingerprint = fingerprint
+        self.pins, self.fingerprint_module = pins, fingerprint_module
         self.deadline, self.t0 = deadline, t0
         self.log = log
         self.state = state if state is not None else {}   # shared with the load timeline: {'phase': ...}
@@ -69,7 +67,9 @@ class RealSide:
             else:
                 info = session.launch()
             self.result['launch'] = dict(_as_dict(info), seconds=round(time.monotonic() - t, 2), started=self.now())
-            mods = [m.id for m in self.cfg.active_mods]
+            s = self.settings
+            mods = ([] if s.no_mods else [m.split(':')[0] for m in s.mods] if s.mods else
+                    [m.id for m in self.cfg.active_mods])
             t = time.monotonic()
             session.set_mods(mods)
             self.result['mods'] = dict(ids=mods, seconds=round(time.monotonic() - t, 2))
@@ -92,6 +92,8 @@ class RealSide:
             (self.dir / 'error.txt').write_text(traceback.format_exc(), encoding='utf-8')
             self.log(f'real game: {type(error).__name__}: {error}')
         finally:
+            if self.pins is not None:
+                self.pins.close(self.result['errors'][-1] if self.result['errors'] else 'the real game did not start it')
             self.state['phase'] = 'quit'
             if session is not None:
                 try:
@@ -120,12 +122,15 @@ class RealSide:
             self.state['phase'] = f"start {game['name']}"
             t = time.monotonic()
             g['startedAt'] = self.now()
-            info = _as_dict(session.start_game(game['spec'], seeds.get('map'), seeds.get('sync'), lua_probes=list(self.probes)))
+            info = _as_dict(session.start_game(game['spec'], seeds.get('map'), seeds.get('sync'), lua_probes=list(self.probes),
+                                               fingerprint=self.fingerprint))
             g['start'] = dict({k: v for k, v in info.items() if k in ('seeds', 'relaunched', 'seedsVerified', 'probes', 'seconds')},
                               seconds=round(time.monotonic() - t, 2))
             g['started'] = True
             if info.get('relaunched'):
                 self.offsets = {}  # a new process writes new logs
+            if self.pins is not None:
+                self.publish_pins(session, game, folder, g)
             self.state['phase'] = f"autoplay {game['name']}"
             left = self.deadline - time.monotonic() - self.settings.reserve_seconds
             t = time.monotonic()
@@ -141,6 +146,8 @@ class RealSide:
             g['error'] = f'{type(error).__name__}: {error}'
             self.log(f"real game {game['name']}: {g['error']}")
         finally:
+            if self.pins is not None:
+                self.pins.publish(game['name'], None, reason=f"the real game {game['name']} failed: {g.get('error')}")
             self.collect(session, folder, g)
         if replay is None and (folder / 'logs/replay-data.json').is_file():
             replay = host_run.read(folder / 'logs/replay-data.json')
@@ -151,15 +158,36 @@ class RealSide:
         return g
 
     def replay(self, session, g):
-        """Every major's replay data: session.replay_data(), else the REPLAY_LUA query through session.call."""
+        """Every major's replay data ({player: {REPLAYDATASET_X: [[turn, value], ...]}}): session.replay_data()."""
         try:
-            if callable(getattr(session, 'replay_data', None)):
-                return session.replay_data()
-            if callable(getattr(session, 'call', None)):
-                return _replay_shape(session.call('InGame', REPLAY_LUA, 'replay-data'))
+            return session.replay_data()
         except Exception as error:  # noqa: BLE001
             g['replayError'] = f'{type(error).__name__}: {error}'
         return None
+
+    def publish_pins(self, session, game, folder, g):
+        """The city-states of the game just started, from its turn-0 fingerprint (the probe's player lines, printed
+        when it was injected): published for the host games compared with it."""
+        why = None
+        try:
+            dest = folder / 'start-logs'
+            session.collect_logs(dest)
+            log = next(iter(sorted(dest.rglob('Lua.log'))), None)
+            if log is None:
+                why = 'no Lua.log after the start'
+            elif self.fingerprint_module is None:
+                why = 'no fingerprint module'
+            else:
+                types, info = pins_mod.from_fingerprint(self.fingerprint_module.read(log))
+                g['minorCivs'] = dict(info, types=types)
+                if types:
+                    self.pins.publish(game['name'], types, **info)
+                    return
+                why = 'no city-state in the fingerprint'
+        except Exception as error:  # noqa: BLE001
+            why = f'{type(error).__name__}: {error}'
+        g['minorCivsError'] = why
+        self.pins.publish(game['name'], None, reason=why)
 
     def collect(self, session, folder, g):
         """collect_logs into folder/logs, then the part of each session-wide log that this game added."""
@@ -209,28 +237,6 @@ def _as_dict(value):
     if hasattr(value, '__dict__'):
         return dict(vars(value))
     return dict(value=value)
-
-
-def _replay_shape(data):
-    """{player: {dataset: [[turn, value], ...]}} from what the tuner returns (lists or {index: item} tables)."""
-    if not isinstance(data, dict):
-        return None
-    out = {}
-    for player, sets in data.items():
-        if not isinstance(sets, dict):
-            continue
-        o = {}
-        for name, points in sets.items():
-            items = points.values() if isinstance(points, dict) else points if isinstance(points, list) else []
-            pairs = []
-            for p in items:
-                if isinstance(p, dict):
-                    p = [p.get('1', p.get(1)), p.get('2', p.get(2))]
-                if isinstance(p, (list, tuple)) and len(p) == 2 and p[0] is not None:
-                    pairs.append([p[0], p[1]])
-            o[name] = pairs
-        out[str(player)] = o
-    return out
 
 
 def _autoplay(info, turns):

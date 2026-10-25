@@ -6,6 +6,10 @@ By default the game depends on the map seed only (as Vox Populi's games do); syn
 too. diverge_at makes every player section differ from that turn on (a lasting difference), transient_at for one
 turn only. Each game's metric level is drawn from its seeds, so an ensemble has spread; scale multiplies every
 metric (a biased game).
+
+City-states (slots 22 to 24): chooser 'dll' (the DLL chooses, from the map seed, as Vox Populi does), 'exe' (the real
+game's exe chooses: a draw the host cannot make) or 'host' (the host chooses: the spec's minorCivs pins, else its own
+draw). They are a state section, so games with other city-states differ from turn 0.
 """
 import hashlib
 import json
@@ -15,6 +19,10 @@ PLAYERS = 4
 DATASETS = ('REPLAYDATASET_SCORE', 'REPLAYDATASET_CITYCOUNT', 'REPLAYDATASET_TOTALGOLD', 'REPLAYDATASET_TECHSKNOWN',
             'REPLAYDATASET_POPULATION', 'REPLAYDATASET_MILITARYMIGHT')
 METRICS = ('cities', 'population', 'techs', 'units')
+MAX_MAJORS = 22
+MINORS = 3
+MINOR_POOL = ('MINOR_CIV_GENEVA', 'MINOR_CIV_BUDAPEST', 'MINOR_CIV_SYDNEY', 'MINOR_CIV_SINGAPORE', 'MINOR_CIV_MONACO',
+              'MINOR_CIV_HANOI', 'MINOR_CIV_LHASA', 'MINOR_CIV_ALMATY')
 
 
 def h(*parts):
@@ -22,7 +30,8 @@ def h(*parts):
 
 
 class Game:
-    def __init__(self, spec, sync_matters=False, diverge_at=None, transient_at=None, tag='', scale=1.0, victory_turn=None):
+    def __init__(self, spec, sync_matters=False, diverge_at=None, transient_at=None, tag='', scale=1.0, victory_turn=None,
+                 chooser='dll'):
         seeds = spec.get('seeds') or {}
         self.map, self.sync = int(seeds.get('map', 1)), int(seeds.get('sync', 2))
         self.key = (self.map, self.sync) if sync_matters else (self.map,)
@@ -30,6 +39,15 @@ class Game:
         self.victory_turn = victory_turn
         self.script = (spec.get('map') or {}).get('file') or (spec.get('map') or {}).get('script') or 'Continents.lua'
         self.world = (spec.get('worldSize') or {}).get('id', 1)
+        self.chooser = chooser
+        pins = [m['type'] if isinstance(m, dict) else m for m in spec.get('minorCivs') or []]
+        self.pinned = pins if chooser == 'host' else []
+        self.minors = self.pinned[:MINORS] or self.draw(chooser)
+        self.pins = pins
+
+    def draw(self, who):
+        pool = sorted(MINOR_POOL, key=lambda t: h(who, self.map, t))
+        return pool[:MINORS]
 
     def changed(self, t):
         return (self.diverge_at is not None and t >= self.diverge_at) or (self.transient_at is not None and t == self.transient_at)
@@ -38,7 +56,8 @@ class Game:
         return min(turns, self.victory_turn) if self.victory_turn else turns
 
     def sections(self, t):
-        out = {'pregame': h('pregame', self.map, self.sync), 'game': h('game', self.map, self.sync, t)}
+        out = {'pregame': h('pregame', self.map, self.sync), 'game': h('game', self.map, self.sync, t),
+               'minors': h('minors', *self.minors)}
         for p in range(PLAYERS):
             out['p%02d' % p] = h('p', self.key, p, t, self.tag if self.changed(t) else '')
         out['savedb'] = h('savedb', t)
@@ -76,14 +95,38 @@ class Game:
         out.append('C5HPG|end|1')
         return out
 
+    def meta_lines(self):
+        """What the fingerprint probe prints when it is injected (turn 0): the meta line and one per player."""
+        out = ['C5HFP|v=1|meta|turn=0|plots=1056|width=44|height=24|maxMajors=%d|maxCivs=63|every=1' % MAX_MAJORS]
+        for p in range(PLAYERS):
+            out.append('C5HFP|v=1|player|turn=0|player=%d|team=%d|civ=CIVILIZATION_%d|leader=LEADER_%d' % (p, p, p, p))
+        for i, m in enumerate(self.minors):
+            out.append('C5HFP|v=1|player|turn=0|player=%d|team=%d|civ=CIVILIZATION_MINOR|minor=%s'
+                       % (MAX_MAJORS + i, MAX_MAJORS + i, m))
+        return out
+
+    def minor_report(self):
+        """host-report.json's minorCivs section for this game in the host."""
+        slots = []
+        for i, m in enumerate(self.minors):
+            x = dict(slot=MAX_MAJORS + i, id=MINOR_POOL.index(m), type=m)
+            pinned = self.pins[i] if i < len(self.pins) else None
+            match = pinned == m if pinned else None
+            x['chosenBy'] = 'dll' if self.chooser == 'dll' else 'spec' if match else 'host'
+            if pinned:
+                x.update(pinnedId=MINOR_POOL.index(pinned) if pinned in MINOR_POOL else -1, pinnedType=pinned, match=match)
+            slots.append(x)
+        n = sum(1 for x in slots if 'pinnedType' in x)
+        k = sum(1 for x in slots if x.get('match'))
+        return dict(chosenBy='host' if self.chooser == 'host' else 'dll', pinned=n, matching=k,
+                    allMatch=(n == k) if n else None, slots=slots)
+
     def fingerprint_lines(self, t):
-        """Lines in probes/fingerprint.lua's format (version 1), read by civ5headless.fingerprint."""
+        """A turn's lines in probes/fingerprint.lua's format (version 1), read by civ5headless.fingerprint."""
         s = {k: v for k, v in self.sections(t).items() if k not in ('pregame', 'savedb')}
         s['game'] = h('game', self.map, t)  # the probe's game section holds no seed
         total = h(*[s[k] for k in sorted(s)])
         out = []
-        if t == 0:
-            out.append('C5HFP|v=1|meta|turn=0|plots=1056|width=44|height=24|maxMajors=22|maxCivs=63|every=1')
         out.append('C5HFP|v=1|turn=%d|point=PlayerDoTurn|part=1/1|total=%s|' % (t, total)
                    + '|'.join('%s=%s' % (k, v) for k, v in s.items()))
         for p in range(PLAYERS):

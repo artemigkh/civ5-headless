@@ -4,9 +4,11 @@ real side of c5h verify runs without the game.
 Like the real session: launch(map_seed, sync_seed) pins seeds; a start_game with other seeds relaunches (a new
 process: new logs) and says so; Lua.log and HeadlessDigest.log grow over a process's life (every game appends) and
 collect_logs copies them as they are; autoplay returns turnSeconds (cumulative), endTurn and endReason 'turns';
-process_stats uses the session's key names; replay data comes through call('InGame', lua); game_database exports.
+process_stats uses the session's key names; replay_data() as the session returns it; game_database exports.
+start_game(fingerprint=...) prints the fingerprint probe's lines (meta and players at the start, then every turn).
 Class attributes configure a test: sync_matters, diverge_at (the "real" game differs from that turn on),
-transient_at, scale (a biased real game), fail_in (a method that raises), with_extras (call and game_database).
+transient_at, scale (a biased real game), fail_in (a method that raises), with_extras (game_database), exe_chooses
+(the DLL leaves city-states to the exe: the real game's are a draw the host cannot make).
 """
 from pathlib import Path
 import shutil
@@ -21,6 +23,7 @@ class FakeRealGameSession:
     scale = 1.0
     fail_in = None
     with_extras = True
+    exe_chooses = False
     instances = []
 
     def __init__(self, cfg, run_dir):
@@ -30,7 +33,6 @@ class FakeRealGameSession:
         self.launch_seeds, self.launches = None, 0
         FakeRealGameSession.instances.append(self)
         if not self.with_extras:
-            self.call = None
             self.game_database = None
 
     def _call(self, name):
@@ -48,7 +50,7 @@ class FakeRealGameSession:
         self.mods = list(mod_ids)
         return dict(mods=[dict(id=i) for i in mod_ids])
 
-    def start_game(self, spec, map_seed=None, sync_seed=None, lua_probes=()):
+    def start_game(self, spec, map_seed=None, sync_seed=None, lua_probes=(), fingerprint=None):
         self._call('start_game')
         relaunched = (map_seed, sync_seed) != self.launch_seeds
         if relaunched:  # a new process: new logs
@@ -56,9 +58,13 @@ class FakeRealGameSession:
             self.lua, self.digest = [], []
         spec = dict(spec, seeds=dict(map=map_seed, sync=sync_seed))
         self.game = fakegame.Game(spec, sync_matters=self.sync_matters, diverge_at=self.diverge_at,
-                                  transient_at=self.transient_at, tag='real', scale=self.scale)
+                                  transient_at=self.transient_at, tag='real', scale=self.scale,
+                                  chooser='exe' if self.exe_chooses else 'dll')
         self.probes = [Path(p).read_text(encoding='utf-8') for p in lua_probes]
+        self.fingerprint = bool(fingerprint)
         self.lua.append(f'[1.0] Game started: {map_seed}/{sync_seed}')
+        if self.fingerprint:  # the fingerprint probe runs first, then lua_probes
+            self.lua += self.game.meta_lines()
         if any('C5HPG' in p for p in self.probes):
             self.lua += self.game.pregame_lines()
         return dict(seeds=dict(map=map_seed, sync=sync_seed), relaunched=relaunched, probes=len(self.probes))
@@ -68,18 +74,16 @@ class FakeRealGameSession:
         self.turns = turns
         for t in range(turns):
             self.digest.append(self.game.digest_line(t))
-            if any('C5HFP' in p for p in self.probes):
+        for t in range(turns + 1):  # the probe also prints the state after the last turn
+            if self.fingerprint:
                 self.lua += self.game.fingerprint_lines(t)
         return dict(startTurn=0, endTurn=turns, turns=turns, endReason='turns', victory=None,
                     turnSeconds={t: 4 * self.game.turn_seconds(t) for t in range(1, turns + 1)},
                     wallSeconds=4 * self.game.turn_seconds(turns))
 
-    def call(self, context, lua, label=None, timeout=120):
-        self._call('call')
-        if 'GetReplayData' in lua and self.game:
-            # as the tuner returns a Lua table of arrays: lists of [turn, value] pairs
-            return self.game.replay_data(self.turns)
-        return None
+    def replay_data(self):
+        self._call('replay_data')
+        return self.game.replay_data(self.turns)
 
     def to_main_menu(self):
         self._call('to_main_menu')

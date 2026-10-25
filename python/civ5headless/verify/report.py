@@ -382,13 +382,20 @@ def html(doc):
     for p in doc.get('phases') or []:
         parts.append(f'<tr><td>{h(p["name"])}</td><td class="num">{p["workers"]}</td><td class="num">{p.get("completed")}/{len(p.get("jobs") or [])}</td>'
                      f'<td class="num">{fmt(p.get("seconds"), 0)}</td></tr>')
+    pinning = any(j.get('pin') for j in doc.get('jobs') or [])
     parts.append('</tbody></table><details><summary>every host game</summary><table><thead><tr><th>game</th><th>kind</th><th>state</th>'
-                 '<th class="num">turns</th><th class="num">seconds</th><th class="num">estimate</th><th>error</th></tr></thead><tbody>')
+                 '<th class="num">turns</th><th class="num">seconds</th><th class="num">estimate</th>'
+                 + ('<th>city-states</th>' if pinning else '') + '<th>error</th></tr></thead><tbody>')
     for j in doc.get('jobs') or []:
         secs = (j['finished'] - j['started']) if j.get('finished') is not None and j.get('started') is not None else None
+        cs = ''
+        if pinning:
+            cs = (f"the real game's ({len(j['pinned'])}; waited {fmt(j.get('pinWait'), 0)} s)" if j.get('pinned') else
+                  j.get('pinNote') or ('' if j.get('pin') else 'not pinned'))
+            cs = f'<td>{h(cs)}</td>'
         parts.append(f'<tr><td class="mono">{h(j["name"])}</td><td>{h(j.get("kind"))}</td><td>{h(j.get("state"))}</td>'
                      f'<td class="num">{fmt(j.get("endTurn"))}</td><td class="num">{fmt(secs, 0)}</td><td class="num">{fmt(j.get("estimate"), 0)}</td>'
-                     f'<td>{h(j.get("error"))}</td></tr>')
+                     f'{cs}<td>{h(j.get("error"))}</td></tr>')
     parts.append('</tbody></table></details>')
     real = doc.get('real')
     if real:

@@ -47,6 +47,16 @@ DEFAULT_CIVS = ['CIVILIZATION_GREECE', 'CIVILIZATION_EGYPT', 'CIVILIZATION_JAPAN
                 'CIVILIZATION_PERSIA', 'CIVILIZATION_SIAM', 'CIVILIZATION_SONGHAI', 'CIVILIZATION_CARTHAGE',
                 'CIVILIZATION_BYZANTIUM', 'CIVILIZATION_CELTS']
 
+# City-states given to the host-only games' specs, in this order (those the database has), so that a DLL that leaves
+# the choice to the exe gets named city-states rather than the host's draw. Base-game city-states. A comparison with
+# the real game pins the real game's city-states instead (pins.py).
+DEFAULT_MINOR_CIVS = ['MINOR_CIV_GENEVA', 'MINOR_CIV_BUDAPEST', 'MINOR_CIV_SYDNEY', 'MINOR_CIV_SINGAPORE',
+                      'MINOR_CIV_BRUSSELS', 'MINOR_CIV_MONACO', 'MINOR_CIV_KATHMANDU', 'MINOR_CIV_HANOI',
+                      'MINOR_CIV_LHASA', 'MINOR_CIV_ALMATY', 'MINOR_CIV_KUALA_LUMPUR', 'MINOR_CIV_CAPE_TOWN',
+                      'MINOR_CIV_SIDON', 'MINOR_CIV_TYRE', 'MINOR_CIV_RAGUSA', 'MINOR_CIV_MILAN', 'MINOR_CIV_VALLETTA',
+                      'MINOR_CIV_WITTENBERG', 'MINOR_CIV_ZANZIBAR', 'MINOR_CIV_VANCOUVER', 'MINOR_CIV_MOMBASA',
+                      'MINOR_CIV_SAMARKAND', 'MINOR_CIV_VILNIUS', 'MINOR_CIV_KABUL']
+
 MODE_DEFAULTS = {
     'quick': dict(budget_minutes=25.0, real=True, real_aa=False, standard_turns=0, ensemble=32, victory_games=0),
     'full': dict(budget_minutes=55.0, real=True, real_aa=True, standard_turns=60, ensemble=64, victory_games=4),
@@ -82,6 +92,13 @@ class Settings:
     setup_turns: int = 1                # turn-0 setups play this many turns (the fingerprint prints at turn 0)
     pin_civs: bool = True               # name the civilizations of major slots a spec leaves random
     civs: list = field(default_factory=lambda: list(DEFAULT_CIVS))
+    pin_minor_civs: bool = True         # city-states: the real game's for the host games compared with it (from
+                                        # its turn-0 fingerprint); host-only, minor_civs in every spec
+    minor_civs: list = field(default_factory=lambda: list(DEFAULT_MINOR_CIVS))
+    fingerprint: object = True          # the Lua fingerprint probe on both sides: true, or {every, turns, split}
+    sparse_every: int = 25              # DLLs without digests: the probe-off reference fingerprints every k turns
+    mods: list | None = None            # the mod set as "ID[:VERSION]" strings (default: the configuration's)
+    no_mods: bool = False               # no mods: host games, database and real game
     standard_spec: dict = field(default_factory=lambda: copy.deepcopy(DEFAULT_STANDARD_SPEC))
     standard_turns: int = 0             # full: real and host Standard game of this many turns (0: none)
     victory_games: int = 0              # full: host Tiny games to victory
@@ -192,4 +209,8 @@ def build(mode='quick', table=None, overrides=None):
         raise SettingsError(f'ensemble_vary must be auto, sync or map, not {s.ensemble_vary!r}')
     if s.workers < 1 or s.turns < 1 or s.ensemble < 0 or s.reference_workers < 1:
         raise SettingsError('workers, reference_workers and turns must be positive, ensemble not negative')
+    if s.mods and s.no_mods:
+        raise SettingsError('mods and no_mods exclude each other')
+    if isinstance(s.fingerprint, dict) and set(s.fingerprint) - {'every', 'turns', 'split'}:
+        raise SettingsError('fingerprint is true, false or a table with every, turns and split')
     return s

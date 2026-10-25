@@ -34,6 +34,8 @@ class Job:
     turns: int
     seeds: tuple | None = None      # (map, sync)
     probes: list = field(default_factory=list)
+    fingerprint: dict | None = None # run.play's fingerprint options (None: no fingerprint probe)
+    pin: str | None = None          # the real game whose city-states this game takes (pins.py)
     frame_skew: int | None = None
     heap_perturb: int | None = None
     essential: bool = False
@@ -48,11 +50,16 @@ class Job:
     error: str | None = None
     status: dict = field(default_factory=dict)
     concurrency: list = field(default_factory=list)  # running host games, sampled while this job ran
+    pinned: list | None = None      # the city-states it was given
+    pin_note: str | None = None     # why it was not pinned
+    pin_wait: float | None = None   # seconds it waited for the real game's pins
 
     def to_dict(self):
         return dict(name=self.name, kind=self.kind, role=self.role, turns=self.turns,
                     seeds=list(self.seeds) if self.seeds else None, frameSkew=self.frame_skew,
                     heapPerturb=self.heap_perturb, probes=[str(p) for p in self.probes], size=self.size,
+                    fingerprint=self.fingerprint, pin=self.pin, pinned=self.pinned, pinNote=self.pin_note,
+                    pinWait=self.pin_wait,
                     essential=self.essential, state=self.state, runDir=str(self.run_dir) if self.run_dir else None,
                     started=self.started, finished=self.finished, estimate=self.estimate, endTurn=self.end_turn,
                     error=self.error, meanConcurrency=round(sum(self.concurrency) / len(self.concurrency), 2) if self.concurrency else None)
@@ -151,10 +158,13 @@ def turn_times(folder):
 class HostSide:
     """Runs the phases on threads; thread-safe counters for the load timeline."""
 
-    def __init__(self, cfg, settings, phases, out_dir, deadline, t0, db, cost=None, play=None, log=print, between=None):
-        """between(phase) is called after each phase (the suite adjusts later jobs there)."""
+    def __init__(self, cfg, settings, phases, out_dir, deadline, t0, db, cost=None, play=None, log=print, between=None,
+                 pins=None, pin_spec=None):
+        """between(phase) is called after each phase (the suite adjusts later jobs there); a job with a pin waits for
+        that real game's city-states in pins (pins.Pins) and plays pin_spec(spec, minor civ types) instead."""
         self.cfg, self.settings, self.phases = cfg, settings, phases
         self.between = between
+        self.pins, self.pin_spec = pins, pin_spec
         self.out_dir = Path(out_dir)
         self.deadline, self.t0 = deadline, t0   # time.monotonic() values
         self.db = db
@@ -222,6 +232,9 @@ class HostSide:
 
     def run_job(self, job, affinity, concurrency):
         job.estimate = round(self.cost.estimate(job.size, job.turns, concurrency), 1)
+        spec = job.spec
+        if job.pin and self.pins is not None:
+            spec = self.pinned_spec(job)
         left = self.remaining() - self.settings.reserve_seconds
         if left <= 5 or (not job.essential and job.estimate > left):
             job.state, job.error = 'skipped', f'budget: needs about {job.estimate:.0f} s, {max(left, 0):.0f} s left'
@@ -233,8 +246,10 @@ class HostSide:
         with self.lock:
             self.running += 1
         try:
-            r = self.play(job.spec, job.turns, run_dir=job.run_dir, cfg=self.cfg, seeds=dict(map=job.seeds[0], sync=job.seeds[1]) if job.seeds else None,
-                          dll=self.settings.dll, db=self.db, lua_probes=[str(p) for p in job.probes],
+            s = self.settings
+            r = self.play(spec, job.turns, run_dir=job.run_dir, cfg=self.cfg, seeds=dict(map=job.seeds[0], sync=job.seeds[1]) if job.seeds else None,
+                          dll=s.dll, db=self.db, mods=None if s.no_mods else s.mods, no_mods=bool(s.no_mods),
+                          fingerprint=job.fingerprint or False, lua_probes=[str(p) for p in job.probes],
                           heap_perturb=job.heap_perturb, frame_skew=job.frame_skew, max_seconds=int(max(left, 10)),
                           stall_seconds=300, max_memory_mb=self.settings.max_memory_mb, affinity=affinity,
                           low_priority=self.settings.low_priority, prune=True, host_args=list(self.settings.host_args),
@@ -256,6 +271,27 @@ class HostSide:
             self.cost.observe(job.size, turn_times(job.run_dir), job.status.get('hostSeconds'), job.status.get('wallSeconds'))
         self.log(f"  {job.state} {job.name}: turn {job.end_turn}, {job.finished - job.started:.0f} s (estimate {job.estimate:.0f} s)"
                  + (f', {job.error}' if job.error else ''))
+
+    def pinned_spec(self, job):
+        """Wait for the city-states of the real game job.pin (no longer than the budget allows) and return the spec
+        to play: pinned to them, or job.spec with the reason in job.pin_note."""
+        t = time.monotonic()
+        room = self.remaining() - self.settings.reserve_seconds - (10 if job.essential else job.estimate)
+        if self.pins.get(job.pin) is None:
+            self.log(f'  {job.name} waits for the city-states of the real game {job.pin}')
+        got = self.pins.wait(job.pin, room)
+        job.pin_wait = round(time.monotonic() - t, 1)
+        if not got.get('minorCivs'):
+            job.pin_note = got.get('reason') or 'no city-states'
+            return job.spec
+        try:
+            spec = self.pin_spec(job.spec, got['minorCivs'])
+        except Exception as error:  # noqa: BLE001 (played unpinned; setup.civ-choice reports it)
+            job.pin_note = f'cannot pin {got["minorCivs"]}: {type(error).__name__}: {error}'
+            self.log(f'  {job.name}: {job.pin_note}')
+            return job.spec
+        job.pinned = list(got['minorCivs'])
+        return spec
 
     def sample(self):
         """Called by the load timeline: records the running count on the running jobs."""

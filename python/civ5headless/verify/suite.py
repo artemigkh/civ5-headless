@@ -16,6 +16,7 @@ import copy
 import hashlib
 import json
 import sqlite3
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +24,8 @@ from pathlib import Path
 from .. import dbcache
 from .. import run as host_run
 from .. import spec as gamespec
-from . import capabilities, checks, exact, hostside, perf, probes, realside, report, series
+from ..probes import fingerprint_options
+from . import capabilities, checks, exact, hostside, perf, pins, probes, realside, report, series
 
 FORMAT = 'civ5headless-verify/1'
 
@@ -41,6 +43,10 @@ class Suite:
         self._log = log
         self.notes = []
         self.phases, self.real_games = [], []
+        self.sources = {}           # spec file -> the spec it was resolved from (re-resolved with city-state pins)
+        self.pinned = {}            # (spec file, city-states) -> pinned spec file
+        self.pin_lock = threading.Lock()
+        self.pins = None
 
     def log(self, message):
         line = f'[{time.monotonic() - self.t0:7.1f}s] {message}'
@@ -58,30 +64,29 @@ class Suite:
         for k, why in self.caps.notes.items():
             self.log(f'  not available: {k}: {why}')
         self.dll = Path(s.dll or cfg.require('dll', 'pass --dll')).resolve()
-        db, info = dbcache.database(cfg, db=s.db, dll=self.dll, exe=self.exe, log=self.log)
+        db, info = dbcache.database(cfg, db=s.db, dll=self.dll, exe=self.exe, log=self.log,
+                                    mods=[] if s.no_mods else s.mods)
         self.db = Path(db)
         specs = self.out / 'specs'
         specs.mkdir(exist_ok=True)
-        self.trajectory = self.resolve(s.trajectory_spec())
-        host_run.write(specs / 'trajectory.json', self.trajectory)
+        self.trajectory = self.write_spec(specs / 'trajectory.json', s.trajectory_spec())
         seeds = self.trajectory['seeds']
         self.setups = []
         for k, sp in enumerate(s.setups):
             name = sp.get('name') or f'setup{k + 1}'
-            r = self.resolve(sp, seeds)
-            host_run.write(specs / f'setup-{name}.json', r)
-            self.setups.append((name, r))
+            self.setups.append((name, self.write_spec(specs / f'setup-{name}.json', sp, seeds)))
         self.standard = None
         if s.standard_turns:
-            self.standard = self.resolve(s.standard_spec, seeds)
-            host_run.write(specs / 'standard.json', self.standard)
+            self.standard = self.write_spec(specs / 'standard.json', s.standard_spec, seeds)
         pdir = self.out / 'probes'
         pdir.mkdir(exist_ok=True)
-        self.probes = []
-        if self.caps.lua_probe:
-            self.probes.append(probes.write_pregame(pdir))
-            if self.caps.fingerprint_probe:
-                self.probes.append(Path(self.caps.fingerprint_probe))
+        self.probes = [probes.write_pregame(pdir)] if self.caps.lua_probe else []
+        # The fingerprint probe: run.play and RealGameSession.start_game run the same files at the same point.
+        self.fingerprint = (fingerprint_options(s.fingerprint) if self.caps.lua_probe and self.caps.fingerprint_probe
+                            and self.caps.fingerprint is not None else None)
+        # City-state pins from the real game for the host games compared with it (a DLL that leaves the choice to
+        # the exe gets them from the host otherwise, which cannot draw what the exe drew).
+        self.pinning = bool(s.real and s.pin_minor_civs and self.fingerprint and self.caps.session_class is not None)
         self.build_phases()
         self.history_path = perf.history_path(cfg.require('runs'))
         self.history = perf.load_history(self.history_path)
@@ -90,40 +95,72 @@ class Suite:
         self.real_games = self.build_real_games() if s.real else []
         self.write_plan()
 
+    def write_spec(self, path, spec, seeds=None):
+        """Resolve a spec (see resolve), write it to path and remember what it was resolved from."""
+        source, resolved = self.resolve(spec, seeds)
+        host_run.write(path, resolved)
+        self.sources[str(path)] = source
+        return resolved
+
+    def _types(self, table, where=''):
+        con = sqlite3.connect(self.db.resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            return [t for (t,) in con.execute(f'select Type from {table} {where} order by ID')]
+        except sqlite3.Error:
+            return []
+        finally:
+            con.close()
+
     def resolve(self, spec, seeds=None):
-        """The resolved spec; seeds when the spec has none; with pin_civs, every random major civilization named
-        (from settings.civs, then any other playable one): the stock DLL leaves them to the exe, which the host cannot
-        reproduce. City-states cannot be named in a spec yet (the stock DLL's are chosen by the host then: the
-        setup.civ-choice check reports it)."""
+        """(the spec as given, completed; the resolved spec). Seeds when the spec has none; with pin_civs, every
+        random major civilization named (from settings.civs, then any other playable one): the stock DLL leaves them
+        to the exe, which the host cannot reproduce. City-states: in host-only mode, with pin_minor_civs, the spec's
+        city-states are named from settings.minor_civs; a real-game comparison pins the real game's instead
+        (pin_spec), since the real game cannot be told which to use."""
+        s = self.settings
         spec = copy.deepcopy(spec)
         spec.pop('name', None)
         if seeds and not spec.get('seeds'):
             spec['seeds'] = dict(seeds)
         r = gamespec.resolve(spec, self.db)
-        if not self.settings.pin_civs:
-            return r
+        spec['seeds'] = dict(r['seeds'])  # the seeds drawn for a spec without any stay
+        changed = False
         active = [x for x in r['slots'] if x['status'] in ('taken', 'computer')]
         missing = [x['slot'] for x in active if x['civId'] < 0]
-        if not missing:
-            return r
-        con = sqlite3.connect(self.db.resolve().as_uri() + '?mode=ro', uri=True)
-        try:
-            playable = {t for (t,) in con.execute('select Type from Civilizations where Playable = 1')}
-        finally:
-            con.close()
-        taken = {x['civ'] for x in active if x['civId'] >= 0}
-        choice = [c for c in self.settings.civs if c in playable and c not in taken]
-        choice += sorted(playable - taken - set(choice))
-        given = {x['slot']: dict(x) for x in spec.get('slots') or []}
-        for slot, civ in zip(missing, choice):
-            given[slot] = dict(given.get(slot, {}), slot=slot, civ=civ)
-        spec['slots'] = [given[k] for k in sorted(given)]
-        spec['seeds'] = dict(r['seeds'])  # the seeds drawn for a spec without any stay
-        return gamespec.resolve(spec, self.db)
+        if s.pin_civs and missing:
+            playable = set(self._types('Civilizations', 'where Playable = 1'))
+            taken = {x['civ'] for x in active if x['civId'] >= 0}
+            choice = [c for c in s.civs if c in playable and c not in taken]
+            choice += sorted(playable - taken - set(choice))
+            given = {x['slot']: dict(x) for x in spec.get('slots') or []}
+            for slot, civ in zip(missing, choice):
+                given[slot] = dict(given.get(slot, {}), slot=slot, civ=civ)
+            spec['slots'] = [given[k] for k in sorted(given)]
+            changed = True
+        if s.pin_minor_civs and not s.real and spec.get('minorCivs') is None and r.get('cityStates'):
+            known = self._types('MinorCivilizations')
+            choice = [c for c in s.minor_civs if c in known]
+            choice += [c for c in known if c not in choice]
+            spec['minorCivs'] = choice[:int(r['cityStates'])]
+            changed = bool(spec['minorCivs']) or changed
+        return spec, (gamespec.resolve(spec, self.db) if changed else r)
 
-    def _job(self, name, kind, spec_file, turns, seeds, role, size, probes=True, **kw):
+    def pin_spec(self, spec_file, minor_civs):
+        """The spec file of spec_file's game with these city-states (types in slot order): written once."""
+        key = (str(spec_file), tuple(minor_civs))
+        with self.pin_lock:
+            if key not in self.pinned:
+                source = dict(self.sources[str(spec_file)], minorCivs=list(minor_civs))
+                tag = hashlib.sha256('|'.join(minor_civs).encode()).hexdigest()[:6]
+                path = Path(spec_file).with_name(f'{Path(spec_file).stem}-cs{tag}.json')
+                host_run.write(path, gamespec.resolve(source, self.db))
+                self.pinned[key] = path
+            return self.pinned[key]
+
+    def _job(self, name, kind, spec_file, turns, seeds, role, size, probes=True, pin=None, **kw):
         return hostside.Job(name=name, kind=kind, spec=spec_file, turns=turns, seeds=seeds, role=role, size=size,
-                            probes=list(self.probes) if probes else [], **kw)
+                            probes=list(self.probes) if probes else [], fingerprint=self.fingerprint if probes else None,
+                            pin=pin if self.pinning else None, **kw)
 
     def build_phases(self):
         s = self.settings
@@ -136,15 +173,17 @@ class Suite:
             sd = (r['seeds']['map'], r['seeds']['sync'])
             for half in ('a', 'b'):
                 setup_jobs.append(self._job(f'setup-{name}-{half}', 'setup', specs / f'setup-{name}.json', s.setup_turns, sd,
-                                            f'setup-{name}-{half}', r['worldSize']['type'], essential=True))
-        base = self._job('trajectory', 'trajectory', traj, s.turns, tseeds, 'base', tsize, essential=True)
-        refs = [self._job('trajectory-aa', 'reference', traj, s.turns, tseeds, 'aa', tsize, essential=True),
+                                            f'setup-{name}-{half}', r['worldSize']['type'], essential=True,
+                                            pin=f'setup-{name}'))
+        t = dict(essential=True, pin='trajectory')
+        base = self._job('trajectory', 'trajectory', traj, s.turns, tseeds, 'base', tsize, **t)
+        refs = [self._job('trajectory-aa', 'reference', traj, s.turns, tseeds, 'aa', tsize, **t),
                 self._job(f'trajectory-skew{s.frame_skew}', 'reference', traj, s.turns, tseeds, 'skew', tsize,
-                          essential=True, frame_skew=s.frame_skew),
+                          frame_skew=s.frame_skew, **t),
                 self._job(f'trajectory-perturb{s.heap_perturb}', 'reference', traj, s.turns, tseeds, 'perturb', tsize,
-                          essential=True, heap_perturb=s.heap_perturb)]
-        if self.probes:
-            refs.append(self._job('trajectory-noprobe', 'reference', traj, s.turns, tseeds, 'noprobe', tsize, probes=False, essential=True))
+                          heap_perturb=s.heap_perturb, **t)]
+        if self.probes or self.fingerprint:
+            refs.append(self._job('trajectory-noprobe', 'reference', traj, s.turns, tseeds, 'noprobe', tsize, probes=False, **t))
         self.vary = 'sync' if s.ensemble_vary == 'auto' else s.ensemble_vary
         self.vary_reason = 'configured' if s.ensemble_vary != 'auto' else 'default (no probe result)'
         ensemble = [self._job(f'ensemble-{k + 1:02d}', 'ensemble', traj, s.turns, seeds, 'ensemble', tsize)
@@ -154,26 +193,39 @@ class Suite:
             # hashes, so its games depend on the map seed only.) Two short games decide before the ensemble starts.
             n = min(s.turns, s.sync_probe_turns)
             other = s.ensemble_seeds('sync', 1)[0]
-            setup_jobs += [self._job('syncprobe-a', 'probe', traj, n, tseeds, 'syncprobe-a', tsize, probes=False),
-                           self._job('syncprobe-b', 'probe', traj, n, other, 'syncprobe-b', tsize, probes=False)]
-        phases = []
-        if setup_jobs:
-            phases.append(hostside.Phase('setups', min(s.workers, len(setup_jobs)), setup_jobs))
-        if s.single_phase:
-            phases.append(hostside.Phase('single', 1, [base], throughput=True))
+            sync_jobs = [self._job('syncprobe-a', 'probe', traj, n, tseeds, 'syncprobe-a', tsize, probes=False),
+                         self._job('syncprobe-b', 'probe', traj, n, other, 'syncprobe-b', tsize, probes=False)]
         else:
+            sync_jobs = []
+        phases = []
+        if s.single_phase:
+            single = [hostside.Phase('single', 1, [base], throughput=True)]
+        else:
+            single = []
             refs.insert(0, base)
         width = min(s.reference_workers, s.workers)
         while len(refs) % width and ensemble:
             refs.append(ensemble.pop(0))  # full waves, so the phase's throughput is that many games at once
-        phases.append(hostside.Phase('references', min(width, len(refs)), refs, throughput=len(refs) % width == 0))
-        if ensemble:
-            phases.append(hostside.Phase('ensemble', min(s.workers, len(ensemble)), ensemble, throughput=True))
+        references = hostside.Phase('references', min(width, len(refs)), refs, throughput=len(refs) % width == 0)
+        ens = [hostside.Phase('ensemble', min(s.workers, len(ensemble)), ensemble, throughput=True)] if ensemble else []
+        if self.pinning:
+            # The pinned games wait for the real game to start theirs, so the ensemble plays first.
+            if sync_jobs:
+                phases.append(hostside.Phase('probe', len(sync_jobs), sync_jobs))
+            phases += ens
+            if setup_jobs:
+                phases.append(hostside.Phase('setups', min(s.workers, len(setup_jobs)), setup_jobs))
+            phases += single + [references]
+        else:
+            setup_jobs += sync_jobs
+            if setup_jobs:
+                phases.append(hostside.Phase('setups', min(s.workers, len(setup_jobs)), setup_jobs))
+            phases += single + [references] + ens
         long_jobs = []
         if self.standard is not None:
             long_jobs.append(self._job('standard', 'standard', specs / 'standard.json', s.standard_turns,
                                        (self.standard['seeds']['map'], self.standard['seeds']['sync']), 'standard',
-                                       self.standard['worldSize']['type'], essential=bool(s.real)))
+                                       self.standard['worldSize']['type'], essential=bool(s.real), pin='standard'))
         for k in range(s.victory_games):
             sync = s.ensemble_seed + 5000 + k
             long_jobs.append(self._job(f'victory-s{sync}', 'victory', traj, s.victory_max_turns, (tseeds[0], sync), 'victory', tsize))
@@ -182,8 +234,10 @@ class Suite:
         self.phases = phases
 
     def between(self, phase):
-        """After the setups phase: decide what the ensemble varies (ensemble_vary auto)."""
-        if phase.name != 'setups' or self.settings.ensemble_vary != 'auto':
+        """After each phase: how the probe-off reference runs (decide_noprobe); after the phase with the sync-seed
+        probe: what the ensemble varies (ensemble_vary auto)."""
+        self.decide_noprobe(phase)
+        if self.settings.ensemble_vary != 'auto' or not any(j.kind == 'probe' for j in phase.jobs):
             return
         jobs = {j.role: j for j in phase.jobs}
         a, b = jobs.get('syncprobe-a'), jobs.get('syncprobe-b')
@@ -206,6 +260,26 @@ class Suite:
             self.vary_reason = (f'two games with different sync seeds differ ({how})' if same is False else
                                 'the sync-seed probe could not compare the games; sync seeds by default')
         self.log(f'ensemble varies the {self.vary} seed: {self.vary_reason}')
+
+    def decide_noprobe(self, phase):
+        """A DLL without state digests can only be compared through the fingerprint, so a game without any probe
+        cannot be compared with the trajectory game: the probe-off reference then takes sparse fingerprints instead
+        (every sparse_every turns), and dense against sparse tells whether the per-turn probe changes the game."""
+        if self.fingerprint is None or getattr(self, 'noprobe_decided', False):
+            return
+        done = [j for j in phase.jobs if j.state == 'completed' and j.run_dir]
+        if not done:
+            return
+        self.noprobe_decided = True
+        if any(exact.digest_log(j.run_dir) for j in done):
+            return
+        every = max(2, int(self.settings.sparse_every))
+        for p in self.phases:
+            for j in p.jobs:
+                if j.role == 'noprobe' and j.state == 'pending':
+                    j.fingerprint = dict(every=every, turns=[], split=None)
+                    self.log(f'{j.name}: no state digests from this DLL, so sparse fingerprints (every {every} turns) '
+                             'against the dense ones')
 
     def _prior_curves(self):
         """The base game's curve from this machine's history (same setup), as the cost model's prior."""
@@ -277,7 +351,13 @@ class Suite:
         return hashlib.sha256(blob).hexdigest()[:12].upper()
 
     def inputs(self):
-        mods = [dict(id=m.id, version=m.version, name=m.name) for m in self.cfg.active_mods]
+        s = self.settings
+        if s.no_mods:
+            mods = []
+        elif s.mods:
+            mods = [dict(id=m.split(':')[0], version=m.split(':')[1] if ':' in m else None, name=None) for m in s.mods]
+        else:
+            mods = [dict(id=m.id, version=m.version, name=m.name) for m in self.cfg.active_mods]
         mods_key = hashlib.sha256(json.dumps(sorted(f"{m['id']}:{m['version']}" for m in mods)).encode()).hexdigest()[:12].upper()
         return dict(dll=dict(path=str(self.dll), sha256=dbcache.sha256_file(self.dll) if self.dll.is_file() else None),
                     exe=dict(path=str(self.exe), sha256=dbcache.sha256_file(self.exe) if self.exe.is_file() else None),
@@ -288,7 +368,9 @@ class Suite:
     def write_plan(self):
         host_run.write(self.out / 'plan.json', dict(
             format=FORMAT, mode=self.settings.mode, settings=self.settings.to_dict(), capabilities=self.caps.to_dict(),
-            inputs=self.inputs(), probes=[str(p) for p in self.probes], estimateSeconds=round(self.estimate, 1),
+            inputs=self.inputs(), probes=[str(p) for p in self.probes], fingerprint=self.fingerprint,
+            fingerprintProbe=str(self.caps.fingerprint_probe) if self.caps.fingerprint_probe else None,
+            pinning=self.pinning, estimateSeconds=round(self.estimate, 1),
             notes=self.notes, phases=[dict(name=p.name, workers=p.workers, throughput=p.throughput, jobs=[j.to_dict() for j in p.jobs])
                                       for p in self.phases],
             trimmed=[j.to_dict() for j in getattr(self, '_trimmed', [])],
@@ -299,8 +381,9 @@ class Suite:
     def execute(self):
         s = self.settings
         real_state = {'phase': None}
+        self.pins = pins.Pins() if self.pinning else None
         host = hostside.HostSide(self.cfg, s, self.phases, self.out, self.deadline, self.t0, str(self.db), self.cost,
-                                 play=self.play, log=self.log, between=self.between)
+                                 play=self.play, log=self.log, between=self.between, pins=self.pins, pin_spec=self.pin_spec)
         timeline = perf.LoadTimeline(self.t0, hosts=host.sample, real_state=real_state).start()
         real = None
         try:
@@ -315,16 +398,22 @@ class Suite:
                 else:
                     self.log(f'real game: {len(self.real_games)} game(s) in one session')
                     side = realside.RealSide(self.cfg, s, self.caps.session_class, self.out, self.real_games, self.probes,
-                                             self.deadline, self.t0, log=self.log, state=real_state)
+                                             self.deadline, self.t0, log=self.log, state=real_state,
+                                             fingerprint=self.fingerprint, pins=self.pins,
+                                             fingerprint_module=self.caps.fingerprint)
                     real = side.run()
                     self.log('real game: done' + (f" ({'; '.join(real['errors'])})" if real.get('errors') else ''))
             while host.thread.is_alive():
                 host.join(1.0)
         except KeyboardInterrupt:
             host.stop.set()
+            if self.pins is not None:
+                self.pins.close('interrupted')
             self.log('interrupted: the running host games are killed with their job objects')
             raise
         finally:
+            if self.pins is not None:
+                self.pins.close('the real game did not start it')
             timeline.stop()
             self.write_execution(host, timeline)
         return real

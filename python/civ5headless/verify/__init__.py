@@ -6,7 +6,7 @@ and how fast and lean the host is against the real game (docs/verification.md).
              [--seeds MAP SYNC] [--ensemble N] [--ensemble-seed SYNC] [--workers N] [--reference-workers N]
              [--no-single-phase] [--frame-skew K] [--heap-perturb SEED] [--setups FILE | --no-setups]
              [--standard-turns N] [--victory-games N] [--host-arg ARG]... [--affinity p-first|none]
-             [--dll DLL] [--db DB]
+             [--dll DLL] [--db DB] [--mod ID[:VERSION]... | --no-mods]
   c5h verify --analyse DIR [--self-test [--foreign RUN]... [--shift 0.05]] [--no-history]
 
 Modes (plan section 5.5):
@@ -72,6 +72,10 @@ def parser():
     ap.add_argument('--affinity', choices=['p-first', 'none'], help='host worker pinning')
     ap.add_argument('--dll', help='game DLL for the host (default: the configuration)')
     ap.add_argument('--db', help='built game database for the host (default: the configuration or the cache)')
+    mm = ap.add_mutually_exclusive_group()
+    mm.add_argument('--mod', action='append', dest='mods', metavar='ID[:VERSION]',
+                    help='an activated mod (repeatable): the mod set, instead of the configuration')
+    mm.add_argument('--no-mods', action='store_true', default=None, help='no mods (host, database and real game)')
     ap.add_argument('--analyse', '--analyze', metavar='DIR', help='checks and report again from a finished run folder')
     ap.add_argument('--no-history', action='store_true', help='--analyse: do not append to the history file')
     ap.add_argument('--self-test', action='store_true', help='also run the statistics self-test on the ensemble')
@@ -85,7 +89,7 @@ def overrides(a):
     o = {k: getattr(a, k) for k in ('budget_minutes', 'out', 'strict', 'turns', 'spec', 'map', 'size', 'players',
                                      'city_states', 'ensemble', 'ensemble_seed', 'workers', 'reference_workers',
                                      'single_phase', 'frame_skew', 'heap_perturb', 'setups', 'standard_turns',
-                                     'victory_games', 'host_args', 'affinity', 'dll', 'db')}
+                                     'victory_games', 'host_args', 'affinity', 'dll', 'db', 'mods', 'no_mods')}
     if a.seeds:
         o['seeds'] = list(a.seeds)
     if a.no_setups:
