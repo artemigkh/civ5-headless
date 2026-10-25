@@ -427,8 +427,8 @@ def load(path=None, system=None):
     if 'dll' not in given:
         dll, note = find_dll(cfg)
         cfg.set('dll', dll, 'discovery', note)
-    for key in ('snapshot', 'db'):
-        default(key, None, 'unset', 'not discovered; set it in the file or pass it on the command line')
+    default('snapshot', None, 'unset', "built from the game's files when needed (c5h snapshot)")
+    default('db', None, 'unset', 'games use the cached build for the mods and DLL')
     default('db_cache', cfg.workspace / 'cache/db', 'default', 'workspace\\cache\\db')
     default('runs', cfg.workspace / 'runs', 'default', 'workspace\\runs')
     if 'exe' not in given:

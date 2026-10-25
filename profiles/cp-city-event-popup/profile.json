@@ -1,0 +1,13 @@
+{
+ "name": "cp-city-event-popup",
+ "description": "CP's CityEventPopup.lua (Core Files\\New UI, an InGameUIAddin) OnPopup for BUTTONPOPUP_MODDER_7, the single-choice city event result that CvCity::DoStartEvent queues for a human owner: outside the spy branch it adds the owner's NOTIFICATION_GENERIC 'City Event: <title>' (game state) and shows the popup, which stays up.",
+ "hook": "popup",
+ "popupTypes": ["BUTTONPOPUP_MODDER_7"],
+ "lua": "city-event-popup.lua",
+ "order": 40,
+ "select": [
+  {"file": "CityEventPopup.lua", "sha256": ["6707d032935fa5246114e477feeeb80faee3433830effa04ae2df7973f067790"]},
+  {"file": "CityEventPopup.lua", "contains": ["TXT_KEY_CITY_EVENT_NOTIFICATION", "owner:AddNotification"]}
+ ],
+ "covers": [{"file": "CityEventPopup.lua", "methods": ["AddNotification"]}]
+}

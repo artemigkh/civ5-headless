@@ -52,15 +52,7 @@ class ImportTest(unittest.TestCase):
         self.assertEqual(project['project']['requires-python'], '>=3.11')
         self.assertEqual(project['project']['dependencies'], [])
         self.assertEqual(project['tool']['setuptools']['package-dir'], {'': 'python'})
-
-    def test_realgame_tools_stop_clearly(self):
-        from civ5headless.realgame import dbcapture, probe, record
-        cfg = config.Config()
-        with mock.patch.dict(sys.modules, {'vpbench': None}):
-            for mod, argv in ((probe, ['--run', 'x']), (record, ['matrix.json']), (dbcapture, ['--run', 'x'])):
-                with self.subTest(module=mod.__name__), self.assertRaises(SystemExit) as stop:
-                    mod.main(argv, cfg)
-                self.assertIn('not functional yet', str(stop.exception))
+        self.assertEqual(project['tool']['setuptools']['package-data'], {'civ5headless.realgame': ['*.lua']})
 
 
 class CliTest(unittest.TestCase):
@@ -100,7 +92,7 @@ class CliTest(unittest.TestCase):
     def test_doctor_runs(self):
         code, out, _ = call(['doctor'])
         self.assertIn(code, (0, 1))
-        self.assertIn('checks:', out)
+        self.assertIn('host games:', out)
         code, out, _ = call(['doctor', '--json'])
         self.assertEqual(set(json.loads(out)['values']), set(config.KEYS))
 
@@ -187,8 +179,8 @@ class QueueTest(unittest.TestCase):
 
 class NoMachinePathsTest(unittest.TestCase):
     """Committed code, docs, examples and tests of this workstream name no drive paths, user folders or user name."""
-    FILES = ['README.md', 'docs/user-guide.md', 'pyproject.toml', 'civ5headless.example.toml', 'tools/phase_speed.py',
-             'tools/dbbuild_test_edits.py', 'tools/get_toolchain.py']
+    FILES = ['README.md', 'docs/user-guide.md', 'docs/database-builder.md', 'pyproject.toml', 'civ5headless.example.toml',
+             'c5h.cmd', 'tools/phase_speed.py', 'tools/dbbuild_test_edits.py', 'tools/get_toolchain.py']
     TREES = ['python/civ5headless', 'examples', 'tests/platform_tests']
 
     def files(self):

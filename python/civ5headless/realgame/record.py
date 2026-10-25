@@ -1,16 +1,12 @@
 """Record real-game references for the headless parity matrix (plan section 6, M5).
 
-NOT FUNCTIONAL YET: ported from the source repository, where it runs on that repository's vpbench module (launcher,
-FireTuner calls, mod activation). Milestone 2 rebuilds it on realgame/session.py. Until then main() stops with a
-message unless a vpbench module is importable (PYTHONPATH).
-
   python -m civ5headless.realgame.record MATRIX.json [--only REGEX] [--limit N] [--retry-failed]
          [--host-digest TEMPLATE [--require-host] [--diverge-turns K]]
 
 MATRIX.json is {"prefix": "hh-m5", "cases": [{"name": ..., "turns": N, "spec": {...spec...}}, ...]}.
-Each case runs realgame/probe.py --spec (seeds pinned, digest on, autoplay armed before the load
-screen closes) into <runs>/<prefix>-<name>, with state dumps at the load screen and after the last
-turn. The deployed DLL is used as is; its SHA-256 is recorded per case.
+Each case runs realgame/probe.py --spec (its own game launch, seeds pinned through config.ini, digest on,
+autoplay armed before the load screen closes) into <runs>/<prefix>-<name>, with state dumps at the load screen and
+after the last turn. The configured DLL is used as is; its SHA-256 is recorded per case.
 
 Status: <runs>/<prefix>-matrix.json (one entry per case: state, run, dllSha, seconds, utc). The
 recorder is resumable: finished cases are skipped, failed ones only with --retry-failed. Stop it between
@@ -19,7 +15,7 @@ cases by creating <runs>/<prefix>-matrix.stop (checked before each case).
 To save real-game time, run the host on each case first (c5h host-first: same spec, DLL and turns) and pass
 --host-digest with a path template such as "first-{run}/Logs/HeadlessDigest.log" (relative to the runs folder;
 {run} = <prefix>-<name>, {name} =
-the case name): game_probe then compares the live digests with that log and quits K turns after the first
+the case name): the probe then compares the live digests with that log and quits K turns after the first
 difference (divergence.json, live-compare.json in the run). Cases without a host log run in full, or are skipped
 with --require-host. --rolling-dumps K also keeps the DLL's per-turn dumps around the divergence (<run>/HeadlessDumps).
 """
@@ -28,7 +24,7 @@ import argparse, json, os, re, subprocess, sys, time
 from datetime import datetime, timezone
 
 from .. import config
-from .dbcapture import sha256, vpbench_module
+from .dbcapture import sha256
 
 PACKAGE_PARENT = Path(__file__).resolve().parents[2]
 
@@ -49,7 +45,6 @@ def main(argv=None, cfg=None):
     ap.add_argument('--diverge-turns', type=int, default=2)
     ap.add_argument('--rolling-dumps', type=int, default=0, help='Dump every turn, keep the last K (around a divergence)')
     args = ap.parse_args(argv)
-    vpbench_module('realgame.record')
     probes = config.System().repository()
     if probes is None:
         raise SystemExit('realgame.record needs the repository checkout (its probes/ folder)')
@@ -89,7 +84,7 @@ def main(argv=None, cfg=None):
         spec_path = runs / f'{run}.spec.json'
         spec_path.write_text(json.dumps(case['spec'], indent=1) + '\n', encoding='utf-8')
         dll_sha = sha256(installed_dll)
-        command = [sys.executable, '-m', 'civ5headless.realgame.probe', '--run', run, '--dll-sha', dll_sha,
+        command = [sys.executable, '-m', 'civ5headless.realgame.probe', '--run', run,
                    '--spec', str(spec_path), '--turns', str(case['turns']),
                    '--probe', f'InGame@start={probes / "dump-state.lua"}', '--probe', f'InGame@end={probes / "dump-state.lua"}']
         if host_digest: command += ['--host-digest', str(host_digest), '--diverge-turns', str(args.diverge_turns)]
@@ -103,9 +98,7 @@ def main(argv=None, cfg=None):
             env['C5H_CONFIG'] = str(cfg.file)
         with (runs / f'{run}.out').open('wb') as out:
             code = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, env=env).returncode
-        last = (runs / f'{run}.out').read_text(encoding='utf-8', errors='replace').rstrip().splitlines()[-1:]
-        quit_ok = bool(last) and '"action": "quit"' in last[0] and ('"gameExited": true' in last[0] or '"killed": true' in last[0])
-        entry.update(state='done' if code == 0 and quit_ok else 'failed', exitCode=code, seconds=round(time.monotonic() - started, 1), utc=utc())
+        entry.update(state='done' if code == 0 else 'failed', exitCode=code, seconds=round(time.monotonic() - started, 1), utc=utc())
         save()
         print(f'{utc()} {name}: {entry["state"]} in {entry["seconds"]} s', flush=True)
         done += 1

@@ -4,6 +4,7 @@
 #pragma once
 #include "HHCommon.h"
 #include "setup/HHJson.h"
+#include "setup/HHAddins.h"
 
 class HHScriptSystem;
 class HHEngineUtility;
@@ -20,6 +21,10 @@ struct HHNewGameInterfaces
 	ICvDLLDatabaseUtility1* pDbUtil;
 	HHEngineUtility* pEngine;
 	class HHUserInterface* pUI;
+	Database::Connection* pDb;   // the game database (profile selection)
+	int iMaxMajorCivs;           // Defines.MAX_MAJOR_CIVS (HHQueryMaxMajorCivs)
+	HHNewGameInterfaces() : pContext(NULL), pPreGame(NULL), pPreGame2(NULL), pGame(NULL), pMap(NULL), pWBLoader(NULL), pScripts(NULL),
+		pDbUtil(NULL), pEngine(NULL), pUI(NULL), pDb(NULL), iMaxMajorCivs(22) {}
 };
 
 struct HHNewGameResult
@@ -32,15 +37,18 @@ struct HHNewGameResult
 	std::string digestTotal;                                 // Game.GetHeadlessDigest().total, if the DLL has it
 	std::string seedMode;                                    // how the spec seeds reached the game
 	unsigned int uiExeSeed;                                  // pregame seeds before Game.Init (the engine's own)
+	bool hostChoseCivs;                                      // random civilizations or city-states chosen by the host
 	// Autoplay (M3)
 	bool bAutoplayOk;
 	int iTurnsPlayed, iUpdates;
 	std::vector<std::pair<int, double> > turnSeconds;        // game turn -> wall seconds spent in it
 	std::vector<std::pair<int, int> > turnUpdates;           // game turn -> Update calls
-	std::vector<std::string> addins;                         // gameplay add-ins loaded
+	std::vector<std::string> addins;                         // UI add-in Lua files run
+	std::vector<HHAddinContext> uiAddins;                    // every UI add-in context: run, failed, skipped
+	std::vector<std::string> probeErrors;                    // --lua-probe files that failed
 	std::map<std::string, int> netMessages;                  // send* counts by kind
 	HHNewGameResult() : bPregameOk(false), bStarted(false), bOutputsOk(false), iWidth(0), iHeight(0), uiExeSeed(0),
-		bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
+		hostChoseCivs(false), bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
 };
 
 // Pregame from the resolved spec (Task 1). Every engine call is appended to kResult.steps.
@@ -56,8 +64,16 @@ bool HHLoadScreen(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 
 bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 
-// The gameplay InGameUIAddin scripts of the activated mods (plan M3.2): each in its own Lua thread.
-bool HHLoadGameplayAddins(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+// Defines.MAX_MAJOR_CIVS of the game database (22 when missing): the setup screen's major slots.
+int HHQueryMaxMajorCivs(Database::Connection& kDb);
+// The in-game UI after the game started: engine bindings for the stub UI contexts, the UI emulation profiles
+// selected and started (setup/HHProfiles.h).
+void HHStartUI(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+// Every InGameUIAddin of the activated mods in a stub UI context (setup/HHAddins.h), then
+// Events.SequenceGameInitComplete.
+void HHLoadUIAddinsStep(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+// --lua-probe files, in order, in one InGame context, before autoplay is armed.
+void HHRunLuaProbes(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 
 // M3: arms autoplay for nTurns the way the reference runs do (game_probe: ARM, then the load screen's
 // CONTINUE) and drives ICvGame1::Update until autoplay ends at turn nTurns; writes dump-tNNN.

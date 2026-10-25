@@ -281,10 +281,11 @@ faith, wonders, religions founded, wars and cities captured.
 
 ```
 s = RealGameSession(config, run_dir)
-s.launch()                                 # start Civ V with the tuner on; wait for the main menu; launch timings
+s.launch(map_seed=None, sync_seed=None)    # start Civ V with the tuner on (and these seeds pinned); wait for the main menu
 s.set_mods(mod_ids)                        # activate exactly these mods (empty: none)
-s.start_game(spec, map_seed, sync_seed, lua_probes=[...])   # config.ini seeding, setup, start, inject probes, continue
-s.autoplay(turns, max_seconds=None)        # observer autoplay; per-turn wall times; stops at victory
+s.start_game(spec, map_seed, sync_seed, lua_probes=[...])   # setup, start, inject probes; stays paused at turn 0
+s.autoplay(turns, max_seconds=None)        # arm observer autoplay, then close the load screen (the host's order);
+                                           # per-turn wall times; stops at victory
 s.to_main_menu()                           # for the next setup in the same session
 s.collect_logs(dest)                       # Lua.log and, if present, the digest logs
 s.process_stats()                          # peak working set, peak private bytes, CPU seconds
@@ -293,3 +294,7 @@ s.quit()
 
 The verification suite codes against this interface; until it exists it uses a fake with the same methods. The host
 side is `run.play(...)` (one game, returns the run folder and its report) and `queue` for many.
+
+The game reads the `config.ini` seeds when its DLL loads, so each distinct seed pair costs a relaunch: pass the first
+game's seeds to `launch()`. With the digest-addition DLL, `start_game` checks the pinned seeds and fails on a
+mismatch. Return values are dicts (see `realgame/session.py`).

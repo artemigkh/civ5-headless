@@ -1,24 +1,31 @@
-# Headless host: database builder (M4)
+# Database builder
 
-The builder makes the game database for a set of activated mods without launching the game. It starts
-from the DLC snapshot and applies the mods with Firaxis's own loader code, which
-`CvGameDatabaseWin32Final Release.dll` exports. Plan section 4.5 gives the design.
+The builder makes the game database for a set of activated mods without launching the game. It starts from the DLC
+snapshot (the database with the base game, the expansions and the installed DLC), which it also builds from the game's
+files, and applies the mods with Firaxis's own loader code, which `CvGameDatabaseWin32Final Release.dll` exports. Plan
+section 4.5 gives the design.
 
 ## Usage
 
 ```
-python work/build-headless.py --config release          # civ5headless.exe with the builddb command
-python work/headless/build_db.py --mods-dir <MODS> --mods-db <Civ5ModsDatabase.db> --out <built.db> \
-       --dll <CvGameCore_Expansion2.dll> [--oracle <game Civ5DebugDatabase.db>]
+c5h dbcache                                             # the cached database for the configured mods and DLL
+c5h dbbuild --mods-dir <MODS> --mods-db <Civ5ModsDatabase.db> --out <built.db> [--dll <DLL>] [--oracle <game.db>]
+c5h snapshot [--out <snapshot.db>] [--oracle <captured snapshot>] [--dll <DLL>]
 ```
+
+Host games use `c5h dbcache` (through `dbcache.database`): one build per (mods input, DLL, snapshot, host exe), kept
+in `<db_cache>/<key>/built.db`. `c5h dbbuild` builds one database; inputs left out come from the configuration
+(`c5h doctor`).
 
 Inputs:
 
 - `--mods-dir` is a MODS folder or a pinned copy of one. Only the `.modinfo`, `.xml`, `.sql` and `.lua` files are read.
 - `--mods-db` is the game's `Civ5ModsDatabase.db`. It supplies the activated mods (`Activated = 1`, in RowID order)
   and a cross-check of the modinfo action lists. Use `--mod GUID[:version]` (repeatable) to name the mods instead.
-- `--snapshot` defaults to `<main>/work/headless/db/dlc-snapshot-CBF411E4.db`.
-- `--dll` is the game DLL used for post-processing. It defaults to the DLL in the CP mod folder.
+- `--snapshot` defaults to the configured `snapshot`, else to the snapshot built from the game's files (`c5h
+  snapshot`, cached in `<db_cache>/snapshot/<key>/`).
+- `--dll` is the game DLL used for post-processing. It defaults to the DLL in the CP mod folder (`c5h dbcache`: the
+  configured DLL).
 - `--path-as` sets the MODS folder recorded in `MapScripts.FileName`. It defaults to the user's real MODS folder, so a
   build from a pinned copy matches the game's database.
 
@@ -36,14 +43,22 @@ Exit code 0 means the build succeeded and, when `--oracle` was given, matched it
 
 ### Results
 
+Pinned inputs of the source repository against databases the game wrote (`Civ5DebugDatabase.db`), built from a DLC
+snapshot captured from the game:
+
 | Pair (pinned input → game database) | dbdiff |
 |---|---|
 | `mods-reference-08D19878-input` → `mods-reference-08D19878.db` | identical |
 | `mods-headless-host-0ed40de35-input` → `mods-headless-host-0ed40de35.db` | identical (and it differs from the first pair by the 20 `Stacking_Settings` rows, as the inputs do) |
 
-- **Speed:** the host step takes about 2 s and the whole wrapper about 3 s. A cold file cache adds a few seconds.
-- **Map script rule check:** `python work/headless/dbbuild_check_mapscripts.py` re-registers the 35 base and DLC map
-  scripts from a snapshot whose map script tables were emptied. The result is identical to the game's rows.
+With the snapshot built from the game's files instead, the modded databases are identical to those built from the
+captured snapshot (Vox Populi, 5 mods; see [DLC snapshot](#dlc-snapshot)).
+
+- **Speed:** the host step takes about 2 s and the whole build about 3 s; the DLC snapshot about 1 s more the first
+  time. A cold file cache adds a few seconds.
+- **Map script rule check:** `tests/platform_tests/test_dbbuild_mapscripts.py` (with `C5H_INTEGRATION=1` and a
+  captured snapshot configured) re-registers the base and DLC map scripts from a snapshot whose map script tables
+  were emptied. The result is identical to the game's rows.
 
 ### Building without the wrapper
 
@@ -51,12 +66,44 @@ Exit code 0 means the build succeeded and, when `--oracle` was given, matched it
 civ5headless.exe builddb --game-dir <game> --plan <plan.txt> --out <built.db> [--dll <dll>] [--run <dir>]
 ```
 
-The plan format is documented at the top of `Civ5Headless/setup/HHDbBuilder.cpp`. Each line is one step: `snapshot`,
-`phase`, `mod`, `attach`, `detach`, `xml`, `sql`, `missing`, `vfs`, `mapscript` or `postprocess`.
+The plan format is documented at the top of `host/setup/HHDbBuilder.cpp`. Each line is one step: `snapshot`, `phase`,
+`mod`, `attach`, `detach`, `xml`, `sql`, `missing`, `vfs`, `mapscript` or `postprocess`.
+
+## DLC snapshot
+
+The game builds its database at start-up in two layers, and `c5h snapshot` (`snapshot.py`) repeats them with the same
+`builddb` steps:
+
+1. **Core:** the game's cached `Civ5CoreDatabase.db` (cache folder), which the game writes at its first start from
+   the base game and expansion XML (its `ScannedFiles` table lists them). It is copied as is, so the game must have
+   been started once (it writes `Localization-Merged.db` then too, which host games need anyway).
+2. **DLC:** every `Assets/DLC/*/*.Civ5Pkg` in (`Priority`, folder name) order; a package without `Priority` counts as
+   0. Each package applies its top-level `<GameData>` files and those of every `<Gameplay>` section. A file comes from
+   `<gameplay owner>/DLC/<package folder>/` when the owner has one by that name, else from the package's own folder;
+   the owner is the highest-priority package whose `<Gameplay>` names a `<GameCore>` (Expansion2): it carries updated
+   copies of the older DLC's data, which the originals would fail against (DLC_03 and DLC_06 insert into columns
+   Brave New World renamed).
+3. **PackageID:** rows a package adds to `Civilizations` and `Leaders` get its `PackageID` (the GUID without braces
+   and dashes, upper case); base rows keep NULL.
+4. **DownloadableContent:** one row per package with a `<Key>` (by folder name, first of each GUID): `TXT_KEY_<id>_NAME`
+   and `_DESCRIPTION`, the package's `Version`, `IsFiraxisContent` 1, `IsActive` 0 for an `<Upgrade>` package,
+   `IsBaseContentUpgrade` 1 for `Ownership` FREE.
+5. **Map scripts:** `Assets/Maps/*.lua`, then the user's `Maps` folder (recorded with its full path), then each
+   package's `<MapDirectory>` in package order, each folder alphabetically.
+6. **Post-processing** is not run by default: every modded build runs it with its own DLL. `--dll` runs it here too.
+
+Against a snapshot captured from the game (`Civ5DebugDatabase.db` at the main menu without mods), the built one
+differs only in the tables post-processing fills (`Defines`, `Resources.ResourceUsage`); with the Vox Populi DLL as
+`--dll`, only in the three defines that DLL adds. The stock Expansion2 DLL crashes the host's post-processing step at
+the time of writing, so that variant is unchecked.
+
+The cache key covers the DLC and map folders (file names, sizes and times), the core database, the host and the DLL,
+so a game update or a new DLC gives a new snapshot. `<snapshot>.dlc.json` next to it records the DLC manifest the
+staleness check below reads.
 
 ## Steps
 
-1. **DLC snapshot.** `build_db.py` checks the snapshot against the installed game:
+1. **DLC snapshot.** `dbbuild` checks the snapshot against the installed game:
    - keyed DLC packages that are installed but missing from the snapshot's `DownloadableContent` produce a warning;
    - when a manifest is present (`<snapshot>.dlc.json`, written with `--write-dlc-manifest`), the hashes of each DLC
      folder's data files and of the game exe/database DLL are compared, and changes produce a warning.
@@ -103,8 +150,9 @@ The plan format is documented at the top of `Civ5Headless/setup/HHDbBuilder.cpp`
    - `ResourceUsage`;
    - the hard-coded defines.
 
-   The snapshot already went through post-processing at the DLC level, and that is harmless: the remapping changes
-   nothing there, and the defines are `INSERT OR REPLACE`.
+   A captured snapshot already went through post-processing at the DLC level, and that is harmless: the remapping
+   changes nothing there, and the defines are `INSERT OR REPLACE`. A built snapshot has not, and gives the same
+   database.
 
 ## Findings
 
@@ -130,10 +178,10 @@ The plan format is documented at the top of `Civ5Headless/setup/HHDbBuilder.cpp`
   `Civ5ModsDatabase` adds no rows to the game database.
 - `sqlite_stat1` and `sqlite_sequence` are not compared. The DLL runs `ANALYZE` itself in `CacheGameDatabaseData`.
 
-## Test edits (acceptance against game launches; main session)
+## Test edits (acceptance against game launches)
 
-`work/headless/dbbuild_test_edits.py` changes only existing UpdateDatabase files, so no modinfo or registry change is
-needed:
+`tools/dbbuild_test_edits.py` changes only existing UpdateDatabase files of Vox Populi and the Community Patch, so no
+modinfo or registry change is needed:
 
 | Edit | File | Change | Built value (unedited game) |
 |---|---|---|---|
@@ -142,18 +190,20 @@ needed:
 | `newtable` | CP `StackingFormations.sql` | `+ CREATE TABLE HeadlessBuilderTest` with 3 rows | 3 rows (no table) |
 | `sqlerror` | VP `Units/UnitChanges.sql` | `+` an insert into a missing table, then Scout Cost + 7 | 90 (90): the update is skipped |
 
-- `python work/headless/dbbuild_test_edits.py` builds the edited scratch copy and prints the checks. All four pass.
+- `python tools/dbbuild_test_edits.py --input <pinned input>` builds the edited scratch copy and prints the checks.
+  All four pass.
 - To check against the game:
   1. Run `--apply-to "<Documents>\My Games\Sid Meier's Civilization 5\MODS"`. It backs up each file as
      `*.hhtest-orig`.
-  2. Launch the game with the benchmark mods and capture `cache\Civ5DebugDatabase.db`.
+  2. Launch the game with the mods and capture `cache\Civ5DebugDatabase.db` (`python -m
+     civ5headless.realgame.dbcapture`).
   3. Run `--revert` on the same folder.
   4. Build from a pinned copy of the edited deployment with `--oracle <captured db>`, or run this script on the
      matching unedited input with `--oracle`.
   5. dbdiff should print `identical`.
 - If the game applies the Scout update in `sqlerror`, the engine does not stop at the first SQL error. The builder's
   `sql` step must then change.
-- **Checked 2026-10-25** (run `work/test-runs/hh-m4-testedits`, trace DLL 008A4227, headless-host package): the game
+- **Checked 2026-10-25** (source repository run `hh-m4-testedits`, trace DLL 008A4227, headless-host package): the game
   gave 47, 11, 3 rows and Scout Cost 90, and its `Database.log` has `no such table: HeadlessBuilderMissingTable`.
   So the engine also stops an SQL file at its first error. The built database (input
   `mods-headless-host-0ed40de35-input` plus the edits) is identical to the game's (dbdiff).
@@ -164,6 +214,7 @@ needed:
   game, which stops that SQL file or rolls back that XML file, but succeeds in the builder. No current mod does this.
   An attached pre-mod `Localization-Merged.db` would close the gap.
 - **Blocked DLC:** a blocked DLC whose GameData uses `<Update>`/`<Delete>` cannot be undone from the snapshot, and the
-  builder stops with a message. Rebuild the snapshot in that case.
+  builder stops with a message. Building the snapshot without that package (`snapshot.py`) would handle it; not done
+  yet, since Vox Populi blocks only DLC_SP_Maps, whose rows the current removal handles.
 - **Map script environment:** the map script Lua state is a front-end subset. `Locale` functions other than
   `Lookup`/`ConvertTextKey` return their first argument.

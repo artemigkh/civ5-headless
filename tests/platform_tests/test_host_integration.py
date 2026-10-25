@@ -1,7 +1,8 @@
 """run.play with the real civ5headless.exe: a short Tiny game, played twice (the host reproduces itself).
 
 Integration test: runs only with C5H_INTEGRATION=1 and a configuration that can play games (c5h doctor: game_dir,
-dll, exe, and db or a snapshot). Two host processes, a few seconds each. Run folders go to a temporary folder.
+dll, exe, and db, a snapshot or the game's cache to build one). Two host processes, a few seconds each. Run folders
+go to a temporary folder.
 """
 import os
 from pathlib import Path
@@ -18,8 +19,8 @@ REPO = Path(__file__).resolve().parents[2]
 class HostGameTest(unittest.TestCase):
     def test_tiny_game_twice(self):
         cfg = config.load()
-        if not (cfg.game_dir and cfg.dll and cfg.exe and (cfg.db or cfg.snapshot)):
-            self.skipTest('needs game_dir, dll, exe and db or snapshot in the configuration')
+        if not (cfg.game_dir and cfg.dll and cfg.exe and (cfg.db or cfg.snapshot or cfg.cache_dir)):
+            self.skipTest('needs game_dir, dll, exe and a game database (db, snapshot or the game cache)')
         with tempfile.TemporaryDirectory() as tmp:
             results = [run.play(REPO / 'examples/specs/continents-tiny.json', 3, run_dir=Path(tmp) / f'aa-{k}', cfg=cfg)
                        for k in (1, 2)]

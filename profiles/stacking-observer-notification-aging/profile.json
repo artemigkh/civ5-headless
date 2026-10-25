@@ -1,0 +1,12 @@
+{
+ "name": "stacking-observer-notification-aging",
+ "description": "This fork's EUI NotificationPanel.lua (VP - EUI Compatibility Files), STACKING OBSERVER NOTIFICATION AGING: while autoplay runs, every NotificationAdded sweeps away (UI.RemoveNotification) the active player's shown notifications older than Stacking_Settings UIObserverNotificationLifetimeTurns (default 3). The dismiss sets the serialized Notification::m_bDismissed.",
+ "hook": "notification-added",
+ "lua": "observer-aging.lua",
+ "order": 20,
+ "select": [
+  {"file": "NotificationPanel.lua", "sha256": ["18f838c7b145c1e40706fb86d4e5188d36eab5b011653eef323958e606cdd3ae"]},
+  {"file": "NotificationPanel.lua", "contains": ["UIObserverNotificationLifetimeTurns", "UI.RemoveNotification"]}
+ ],
+ "covers": [{"file": "NotificationPanel.lua", "methods": ["RemoveNotification"]}]
+}

@@ -24,3 +24,6 @@ package-dir = {"" = "python"}
 
 [tool.setuptools.packages.find]
 where = ["python"]
+
+[tool.setuptools.package-data]
+"civ5headless.realgame" = ["*.lua"]

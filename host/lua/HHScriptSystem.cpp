@@ -49,6 +49,16 @@ namespace
 		return 1;
 	}
 
+	// __HHReportError(message, where): see HHScriptSystem::RecordError (not counted: listener errors).
+	int HHLuaReportError(lua_State* L)
+	{
+		HHScriptSystem* pSystem = (HHScriptSystem*)lua_touserdata(L, lua_upvalueindex(1));
+		const char* szMessage = lua_tostring(L, 1);
+		const char* szWhere = lua_tostring(L, 2);
+		pSystem->RecordError(szWhere ? szWhere : "Lua", szMessage, false);
+		return 0;
+	}
+
 	// include(name[, bPattern]): see HHScriptSystem::Include.
 	int HHLuaInclude(lua_State* L)
 	{
@@ -321,7 +331,7 @@ void HHScriptSystem::HideDebugLibrary()
 	HHLog("Lua: debug library removed from _G (the boot-time VP_LUAAPI thread is done)");
 }
 
-HHScriptSystem::HHScriptSystem() : m_L(NULL), m_iErrors(0), m_pUtility(NULL)
+HHScriptSystem::HHScriptSystem() : m_L(NULL), m_iErrors(0), m_iErrorTotal(0), m_bCountErrors(true), m_pUtility(NULL)
 {
 	m_L = luaL_newstate();
 	luaL_openlibs(m_L);
@@ -358,6 +368,55 @@ HHScriptSystem::HHScriptSystem() : m_L(NULL), m_iErrors(0), m_pUtility(NULL)
 	lua_pushlightuserdata(m_L, this);
 	lua_pushcclosure(m_L, HHLuaInclude, 1);
 	lua_setglobal(m_L, "include");
+
+	// __HHReportError(message, where): errors the Lua side catches itself (listeners), for the run report.
+	lua_pushlightuserdata(m_L, this);
+	lua_pushcclosure(m_L, HHLuaReportError, 1);
+	lua_setglobal(m_L, "__HHReportError");
+}
+
+void HHScriptSystem::Failed(lua_State* L, const char* szMessage)
+{
+	const std::string message = szMessage ? szMessage : "(no message)";
+	RecordError(StateName(L), message.c_str(), m_bCountErrors);
+	if(m_bCountErrors)
+		++m_iErrors;
+}
+
+// Splits "<chunk>:<line>: <text>" (the chunk may be a path with a drive letter) and keeps the first line of the text.
+void HHScriptSystem::RecordError(const std::string& strContext, const char* szMessage, bool bCounted)
+{
+	++m_iErrorTotal;
+	if(m_errorRecords.size() >= kMaxErrorRecords)
+		return;
+	HHLuaErrorRecord r;
+	r.context = strContext;
+	r.line = -1;
+	r.phase = HHGetPhase();
+	r.counted = bCounted;
+	std::string msg = szMessage ? szMessage : "(no message)";
+	const size_t eol = msg.find('\n');
+	if(eol != std::string::npos)
+		msg.erase(eol);
+	for(size_t i = 0; i < msg.size(); ++i)
+	{
+		if(msg[i] != ':' || i + 1 >= msg.size() || !isdigit((unsigned char)msg[i + 1]))
+			continue;
+		size_t j = i + 1;
+		while(j < msg.size() && isdigit((unsigned char)msg[j]))
+			++j;
+		if(j < msg.size() && msg[j] == ':')
+		{
+			r.file = msg.substr(msg[0] == '@' ? 1 : 0, msg[0] == '@' ? i - 1 : i);
+			r.line = atoi(msg.c_str() + i + 1);
+			msg = msg.substr(j + 1);
+			while(!msg.empty() && msg[0] == ' ')
+				msg.erase(0, 1);
+			break;
+		}
+	}
+	r.message = msg;
+	m_errorRecords.push_back(r);
 }
 
 HHScriptSystem::~HHScriptSystem()
@@ -510,8 +569,8 @@ bool HHScriptSystem::RunFile(lua_State* L, const std::string& strPath)
 	{
 		HHLogError("Lua syntax error: %s", lua_tostring(L, -1));
 		GetLuaLog()->Msg("Syntax Error: %s", lua_tostring(L, -1));
+		Failed(L, lua_tostring(L, -1));
 		lua_pop(L, 1);
-		++m_iErrors;
 		return false;
 	}
 	return ProtectedCall(L, 0, 0, strPath.c_str());
@@ -601,8 +660,8 @@ bool HHScriptSystem::ProtectedCall(lua_State* L, int nArgs, int nRet, const char
 		const char* szError = lua_tostring(L, -1);
 		HHLogError("Lua error in %s: %s", szWhat, szError ? szError : "(no message)");
 		GetLuaLog()->Msg("Runtime Error: %s", szError ? szError : "(no message)");
+		Failed(L, szError);
 		lua_pop(L, 1);
-		++m_iErrors;
 		if(nRet != LUA_MULTRET)
 			for(int i = 0; i < nRet; ++i)
 				lua_pushnil(L);
@@ -631,8 +690,8 @@ bool HHScriptSystem::RunString(lua_State* L, const char* szChunk, const char* sz
 	if(luaL_loadbuffer(L, szChunk, strlen(szChunk), szChunkName) != 0)
 	{
 		HHLogError("Lua syntax error in %s: %s", szChunkName, lua_tostring(L, -1));
+		Failed(L, lua_tostring(L, -1));
 		lua_pop(L, 1);
-		++m_iErrors;
 		return false;
 	}
 	return ProtectedCall(L, 0, 0, szChunkName);
@@ -664,8 +723,8 @@ bool HHScriptSystem::CallCFunction(lua_State* L, lua_CFunction func, void* args)
 		const char* szError = lua_tostring(L, -1);
 		HHLogError("Lua error in CallCFunction: %s", szError ? szError : "(no message)");
 		GetLuaLog()->Msg("Runtime Error: %s", szError ? szError : "(no message)");
+		Failed(L, szError);
 		lua_pop(L, 1);
-		++m_iErrors;
 		return false;
 	}
 	return true;
@@ -718,8 +777,10 @@ bool HHScriptSystem::DispatchGameEvent(const char* szName, ICvEngineScriptSystem
 	}
 	else
 	{
-		++m_iErrors;
 		HHLogError("GameEvents.%s: %s", szName, lua_tostring(T, -1));
+		RecordError(std::string("GameEvents.") + szName, lua_tostring(T, -1), m_bCountErrors);
+		if(m_bCountErrors)
+			++m_iErrors;
 	}
 	lua_settop(L, top);
 	return bHandled;

@@ -1,0 +1,107 @@
+{
+ "about": "Curated input of the UI hazard scan (python -m civ5headless.hazards). methods: DLL Lua methods known to change game state although the source derivation misses them or names them less clearly. engine: Lua calls that the real game turns into DLL calls and the host does not. notHazards: derived methods that do not change state after all (vetted). harmlessCaches: functions that write a cache whose value does not depend on when it is computed (lookup indexes, scratch buffers); the derivation does not follow them.",
+ "methods": [
+  {
+   "class": "Game",
+   "name": "Rand",
+   "why": "advances the game's synchronised random number generator (CvGame::getJonRandNum): every later random draw changes"
+  },
+  {
+   "class": "Map",
+   "name": "Rand",
+   "why": "advances the map random number generator (CvGame::getMapRandNum)"
+  },
+  {
+   "class": "Player",
+   "name": "CalculateGoldRate",
+   "why": "stock BNW and VP before the 2026 determinism fix: the treasury cost calculation stores the unit maintenance (CvTreasury::m_iExpensePerTurnUnitMaintenance, saved)"
+  },
+  {
+   "class": "Player",
+   "name": "CalculateGoldRateTimes100",
+   "why": "as CalculateGoldRate"
+  },
+  {
+   "class": "Player",
+   "name": "GetMilitaryMight",
+   "why": "lazy: recomputed at most once per turn (stock: elapsed turn, VP: turn slice) and stored; which caller comes first decides the stored value"
+  },
+  {
+   "class": "Player",
+   "name": "GetPower",
+   "why": "calls the military might getter (lazy, as GetMilitaryMight)"
+  }
+ ],
+ "engine": [
+  {
+   "pattern": "\\bNetwork\\s*\\.\\s*(Send\\w+)\\s*\\(",
+   "why": "in the real game a network message that the DLL applies (CvDllNetMessageHandler); the host's Network table does nothing"
+  }
+ ],
+ "notHazards": [
+  {
+   "class": "Unit",
+   "name": "CreateFreeLuxuryCheck",
+   "why": "checks whether a free luxury can be created; no write"
+  },
+  {
+   "class": "Unit",
+   "name": "CreateFreeLuxuryCheckCopy",
+   "why": "as CreateFreeLuxuryCheck"
+  }
+ ],
+ "harmlessCaches": [
+  {
+   "function": "CvGameReligions::GetReligion",
+   "why": "index of religion positions (m_religionIndex), rebuilt from the religion list"
+  },
+  {
+   "function": "CvCityBuildings::CacheBuildingTypeByClass",
+   "why": "building type per class for the civilization, from the database"
+  },
+  {
+   "function": "CvCityBuildings::SetBuildingTypeByClassDirty",
+   "why": "dirty flag of the building-type-by-class lookup"
+  },
+  {
+   "function": "CvPlot::updateWaterFlags",
+   "why": "fresh water, lake and coast flags derived from the surrounding terrain"
+  },
+  {
+   "function": "CvCityReligions::GetMajorityReligion",
+   "why": "pointer to the city's majority religion, reset when the majority changes"
+  },
+  {
+   "function": "CvMap::GetPlotsAtRangeX",
+   "why": "shared scratch list of plots at a range"
+  },
+  {
+   "function": "CvAStar::FindPathWithCurrentConfiguration",
+   "why": "path finder generation counter (scratch node data)"
+  },
+  {
+   "function": "CvAStar::GetBest",
+   "why": "path finder open list (scratch)"
+  },
+  {
+   "function": "CvPlot::plotCheck",
+   "why": "const overload calling the non-const one; no write"
+  },
+  {
+   "function": "CvDiplomacyAI::GetDiploTextFromTag",
+   "why": "text buffer for the returned string"
+  },
+  {
+   "function": "CvAIOperation::GetInfoString",
+   "why": "text buffer for the returned string"
+  },
+  {
+   "function": "CvUnit::GetMissionInfo",
+   "why": "text buffer for the returned string"
+  },
+  {
+   "function": "CvGame::GetDiploResponse",
+   "why": "prepared database query kept for reuse"
+  }
+ ]
+}

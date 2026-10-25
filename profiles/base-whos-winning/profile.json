@@ -1,0 +1,17 @@
+{
+ "name": "base-whos-winning",
+ "description": "The base game's WhosWinningPopup.lua (BNW: Assets\\DLC\\Expansion2) OnPopup, run as it is in this profile's stub UI context: it rolls the synced RNG (the presenter out of 7, then list modes) and reads the scores of the mode. The popup stays up.",
+ "hook": "popup",
+ "popupTypes": ["BUTTONPOPUP_WHOS_WINNING"],
+ "script": "WhosWinningPopup.lua",
+ "function": "OnPopup",
+ "staysUp": true,
+ "group": "whos-winning",
+ "order": 61,
+ "select": [
+  {"file": "WhosWinningPopup.lua", "sha256": [
+   "7518289a57dda5f35e91bf90f168f62b448c245a34c20a928863eb6c24b2e32b",
+   "f888f7a1362073bb88c31f78661c402950fb66a8fab8489bfd3099bd7c8e8d1a"]}
+ ],
+ "covers": [{"file": "WhosWinningPopup.lua", "methods": ["Rand", "GetMilitaryMight"]}]
+}
