@@ -119,8 +119,13 @@ commit it with the change it describes.
   (past the old T125 divergence: the three DLL fixes hold). From T141 only `pregame` differs (game, map, players
   identical through T143); the real game stopped at T144 with dumps T137–143. Cause: one slot's status (two arrays,
   pregame offsets 718 and 11271): real SS_COMPUTER, host SS_CLOSED: the host's "dead city-state slots closed" emulation
-  closes a slot the real engine kept open. With the host agent (find the engine's real rule, fix, verify). Then the
-  final game is recorded again.
+  closes a slot the real engine kept open. Cause (hh-host 2cc045925, merged 42871835a): city-state 36 died at T125
+  (both closed its slot) and was liberated at T140; the real engine reopened the slot (SS_COMPUTER), the host only
+  ever closed dead city-states. The DLL tells the engine itself (`CvPlayer::setAlive` -> `closeSlot`/`openSlot`); the
+  host now implements those calls (any player, closed on death, reopened when alive again) instead of polling. Verified:
+  attempt 1 identical T0–T143 with the new host, host A/A, and the batch-1/smoke cases that close slots. Attempt 1's
+  runs kept as `*-attempt1`. Attempt 2 running (same DLL CB6B0BED, host exe
+  `work/wt/hh-host/work/headless-output/Release/20261025-164925`).
 - **Seeding with a stock DLL works (2026-10-25):** `config.ini` `MapRandSeed`/`SyncRandSeed` (Firaxis
   `CvPreGame::loadFromIni`) pin a menu-started game's seeds before the random civs are drawn. Two real Tiny launches
   without our seeds file (`game_probe --engine-seeds`, runs `hh-seedtest-a/-b`) were identical (civs, all 33 turn-0
