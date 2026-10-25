@@ -36,6 +36,9 @@ struct HHNewGameResult
 
 // Pregame from the resolved spec (Task 1). Every engine call is appended to kResult.steps.
 bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+// The engine's net loopback: delivers every queued send* as its Response*; returns the count.
+size_t HHDeliverNetMessages(HHNewGameInterfaces& kIf);
+
 // "Start game" (Task 4): close slots, preload a premade map, Init, Init2, game started.
 bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 // T000 outputs (Task 5): t000-map.json, checkpoints/turn-0000.json, t000-digest.json.

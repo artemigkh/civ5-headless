@@ -5,6 +5,19 @@
 #include "HHCommon.h"
 #include "gen/HHStubs.gen.h"
 
+// A net message the engine loops back to the DLL as NetMessageHandler::Response* (contract 6.4).
+struct HHNetMessage
+{
+	enum Kind
+	{
+		PLAYER_OPTION, PLEDGE_MINOR_PROTECTION, MINOR_BULLY_GOLD, MINOR_BULLY_UNIT, MINOR_GIFT_GOLD,
+		MINOR_GIFT_TILE_IMPROVEMENT, MINOR_BUYOUT, GREAT_PERSON_CHOICE, MAYA_BONUS_CHOICE,
+		FAITH_GREAT_PERSON_CHOICE, GOODY_CHOICE
+	};
+	Kind eKind;
+	int a[6];
+};
+
 struct HHPlayerOption
 {
 	std::string type;
@@ -18,9 +31,15 @@ public:
 	// Player options (the engine's user settings): filled from the PlayerOptions table.
 	void AddPlayerOption(const char* szType, int iIndex, bool bValue);
 	bool SetPlayerOptionValue(const std::string& strType, bool bValue);
-	// The engine's loopback of sendPlayerOption: ResponsePlayerOption for each sent value.
-	void DeliverPlayerOptions(ICvNetMessageHandler1* pHandler, PlayerTypes ePlayer);
-	size_t GetPendingPlayerOptionCount() const { return m_pendingOptions.size(); }
+	// The engine's net loopback: every queued send* is delivered as its Response*, in send order,
+	// after the inbound call that sent it returns (contract 6.4). Returns the number delivered.
+	size_t DeliverNetMessages(ICvNetMessageHandler1* pHandler);
+	size_t GetPendingNetMessageCount() const { return m_pendingNet.size(); }
+	const std::map<std::string, int>& GetNetMessageCounts() const { return m_netCounts; }
+	// Pregame (active player, slot status) for the loopback and IsPlayerConnected.
+	void SetPreGame(ICvPreGame1* pPreGame) { m_pPreGame = pPreGame; }
+	// End of an Update: a SendAICivsProcessed of this update becomes visible (contract 6.3).
+	void EndOfUpdate();
 	// Engine roles: IsGameCoreThread answers true only inside ICvGame1::Update.
 	void SetInGameCoreUpdate(bool bInUpdate) { m_bInGameCoreUpdate = bInUpdate; }
 	int GetGameCoreLockDepth() const { return m_iLockDepth; }
@@ -84,6 +103,30 @@ public:
 	void GameplayMinimapUnitSelect(int iX, int iY);
 	void TradeVisuals_DeactivatePopupRoute();
 
+	// Turn gates (contract 6.3)
+	bool CanAdvanceTurn();
+	bool allAICivsProcessedThisTurn() const;
+	void SendAICivsProcessed() const;
+	void sendPlayerInitialAIProcessed() const;
+	bool HasReceivedTurnComplete(PlayerTypes ePlayer);
+	bool IsPlayerConnected(PlayerTypes playerId);
+	void PublishNewGameTurn(int gameTurn);
+	// Autosaves: the engine writes the game only on turn 0 and every 10th turn; every Write side effect
+	// is normalised in the digest, so the host writes nothing (contract 6.5).
+	void AutoSave(bool bInitial, bool bPostTurn);
+
+	// Net messages with a Response* (queued, see DeliverNetMessages)
+	void sendMinorPledgeProtection(PlayerTypes eMajor, PlayerTypes eMinor, bool bProtect, bool bPledgeNowBroken);
+	void sendMinorGiftGold(PlayerTypes eMinor, int iGold);
+	void sendMinorGiftTileImprovement(PlayerTypes eMajor, PlayerTypes eMinor, int iPlotX, int iPlotY);
+	void sendMinorBullyGold(PlayerTypes eBully, PlayerTypes eMinor, int iGold);
+	void sendMinorBullyUnit(PlayerTypes eBully, PlayerTypes eMinor, UnitTypes eUnitType);
+	void sendMinorBuyout(PlayerTypes eMajor, PlayerTypes eMinor);
+	void sendGreatPersonChoice(PlayerTypes ePlayer, UnitTypes eUnit);
+	void sendMayaBonusChoice(PlayerTypes ePlayer, UnitTypes eUnit);
+	void sendFaithGreatPersonChoice(PlayerTypes ePlayer, UnitTypes eUnit);
+	void sendGoodyChoice(PlayerTypes ePlayerID, int iPlotX, int iPlotY, GoodyTypes eGoody, int iUnitID);
+
 	// Network (single player: no-ops)
 	void sendPlayerInfo(PlayerTypes eActivePlayer);
 	void BeginSendBundle();
@@ -94,7 +137,13 @@ private:
 	std::string m_strCacheFolder;
 	bool m_bDone;
 	std::map<unsigned int, HHPlayerOption> m_playerOptions;   // FStringHash(type) -> option
-	std::vector<std::pair<int, bool> > m_pendingOptions;     // sent, not yet delivered
+	std::vector<HHNetMessage> m_pendingNet;                  // sent, not yet delivered
+	std::map<std::string, int> m_netCounts;
+	ICvPreGame1* m_pPreGame;
+	mutable bool m_bAICivsProcessed;                         // allAICivsProcessedThisTurn
+	mutable bool m_bAICivsProcessedPending;                  // set by SendAICivsProcessed, visible after the Update
+	void Queue(HHNetMessage::Kind eKind, const char* szName, int a0 = 0, int a1 = 0, int a2 = 0, int a3 = 0, int a4 = 0, int a5 = 0);
+	PlayerTypes ActivePlayer() const;
 	int m_iLockDepth;
 	bool m_bInGameCoreUpdate;
 };

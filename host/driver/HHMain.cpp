@@ -27,6 +27,7 @@
 #include "lua/HHLuaGlobals.h"
 #include "setup/HHDbBuilder.h"
 #include <float.h>
+#include <psapi.h>
 
 // From shlobj.h, which does not compile after the Firaxis Win32 header's NO* switches.
 extern "C" __declspec(dllimport) HRESULT __stdcall SHGetFolderPathW(HWND hwnd, int csidl, HANDLE hToken, DWORD dwFlags, LPWSTR pszPath);
@@ -180,6 +181,7 @@ namespace
 			else if(a == "--mods-db") { o.modsDbPath = v; ++i; }
 			else if(a == "--player-option") { o.playerOptions.push_back(v); ++i; }
 			else if(a == "--exe-seed") { o.exeSeed = _strtoi64(v.c_str(), NULL, 10); ++i; }
+			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-srand") { o.crtSrand = _strtoi64(v.c_str(), NULL, 10); ++i; }
 			else if(a == "--mod")
@@ -694,6 +696,7 @@ namespace
 		nif.pScripts = pScripts;
 		nif.pDbUtil = pDbUtil;
 		nif.pEngine = pEngine;
+		pEngine->SetPreGame(nif.pPreGame);
 		const int iLuaErrorsBefore = pScripts->GetErrorCount();
 		if(bNewGame && s.bPostOk && s.bCacheOk)
 		{
@@ -704,6 +707,26 @@ namespace
 				// Lua's math.random is the CRT rand() of the calling thread (MSVCR90, per-thread state,
 				// seeded 1); map scripts that use it (Continental_Drift) depend on that state, which in
 				// the real game is whatever the UI thread's earlier rand() calls left.
+				if(o.crtSse2 >= 0)
+				{
+					// Every MSVCR90 instance in the process (the host's and the one lua51_Win32.dll uses can differ)
+					HMODULE mods[512];
+					DWORD cb = 0;
+					EnumProcessModules(GetCurrentProcess(), mods, sizeof(mods), &cb);
+					for(DWORD k = 0; k < cb / sizeof(HMODULE); ++k)
+					{
+						wchar_t name[MAX_PATH];
+						if(!GetModuleFileNameW(mods[k], name, MAX_PATH))
+							continue;
+						typedef int (__cdecl *SetSse2)(int);
+						SetSse2 pfn = (SetSse2)GetProcAddress(mods[k], "_set_SSE2_enable");
+						if(pfn)
+						{
+							const int prev = pfn(o.crtSse2);
+							HHLog("_set_SSE2_enable(%d) in %s: was %d", o.crtSse2, HHNarrow(name).c_str(), prev);
+						}
+					}
+				}
 				if(o.fpuPrecision)
 				{
 					unsigned int cw = 0;

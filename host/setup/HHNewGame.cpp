@@ -343,6 +343,17 @@ namespace
 	}
 }
 
+size_t HHDeliverNetMessages(HHNewGameInterfaces& kIf)
+{
+	if(!kIf.pEngine || kIf.pEngine->GetPendingNetMessageCount() == 0)
+		return 0;
+	ICvNetMessageHandler1* pHandler = kIf.pContext->GetNetMessageHandler();
+	const size_t n = kIf.pEngine->DeliverNetMessages(pHandler);
+	if(pHandler)
+		pHandler->Destroy();
+	return n;
+}
+
 bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 {
 	ICvPreGame1* pg = kIf.pPreGame;
@@ -494,10 +505,7 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	}
 	if(kIf.pEngine)
 	{
-		ICvNetMessageHandler1* pHandler = kIf.pContext->GetNetMessageHandler();
-		const size_t nOptions = kIf.pEngine->GetPendingPlayerOptionCount();
-		if(pHandler)
-			kIf.pEngine->DeliverPlayerOptions(pHandler, pg->activePlayer());
+		const size_t nOptions = HHDeliverNetMessages(kIf);
 		kResult.steps.push_back(HHFormat("NetMessageHandler.ResponsePlayerOption(%d, option, value) x%u", (int)pg->activePlayer(), (unsigned)nOptions));
 	}
 	// The in-game UI's first frame (trace S1/S3b): SelectSettler (selects the active player's

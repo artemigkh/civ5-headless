@@ -639,33 +639,96 @@ bool HHScriptSystem::CallFunction(lua_State* L, unsigned int nArgs, unsigned int
 	return ProtectedCall(L, (int)nArgs, (int)nRet, "CallFunction");
 }
 
-// GameEvents arrive in M3; until then no listener exists and every hook is "not handled".
-bool HHScriptSystem::CallHook(const char*, ICvEngineScriptSystemArgs1*, bool&)
+// GameEvents (contract 10.1): the listeners live in the Lua prelude's __HHGameEventListeners; the
+// dispatch (__HHGameEventDispatch) runs every listener in registration order with the hook's
+// arguments. Returns handled; dValue is the in/out value. A name without listeners costs two table
+// lookups and returns not handled with the value unchanged.
+bool HHScriptSystem::DispatchGameEvent(const char* szName, ICvEngineScriptSystemArgs1* pArgs, const char* szMode, double& dValue)
+{
+	lua_State* L = m_L;
+	if(!L || !szName)
+		return false;
+	const int top = lua_gettop(L);
+	lua_getglobal(L, "__HHGameEventListeners");
+	if(!lua_istable(L, -1))
+	{
+		lua_settop(L, top);
+		return false;
+	}
+	lua_getfield(L, -1, szName);
+	const bool bListeners = lua_istable(L, -1) && lua_objlen(L, -1) > 0;
+	lua_settop(L, top);
+	if(!bListeners)
+		return false;
+	// A thread of its own: the DLL can raise a hook while Lua code runs on the main state.
+	lua_State* T = lua_newthread(L);
+	lua_getglobal(T, "__HHGameEventDispatch");
+	lua_pushstring(T, szName);
+	lua_pushstring(T, szMode);
+	lua_pushnumber(T, dValue);
+	int nArgs = 0;
+	if(pArgs)
+		nArgs = static_cast<HHScriptArgs*>(pArgs)->PushAll(T);
+	bool bHandled = false;
+	if(lua_pcall(T, 3 + nArgs, 2, 0) == 0)
+	{
+		bHandled = lua_toboolean(T, -2) != 0;
+		if(lua_isnumber(T, -1))
+			dValue = lua_tonumber(T, -1);
+		else
+			dValue = lua_toboolean(T, -1) ? 1.0 : 0.0;
+	}
+	else
+	{
+		++m_iErrors;
+		HHLogError("GameEvents.%s: %s", szName, lua_tostring(T, -1));
+	}
+	lua_settop(L, top);
+	return bHandled;
+}
+
+// CallHook's value is always false (measured), whatever the listeners return.
+bool HHScriptSystem::CallHook(const char* szName, ICvEngineScriptSystemArgs1* args, bool& value)
 {
 	HH_IMPL_CALL("ICvEngineScriptSystem1::CallHook");
-	return false;
+	double d = 0.0;
+	const bool bHandled = DispatchGameEvent(szName, args, "hook", d);
+	value = false;
+	return bHandled;
 }
 
-bool HHScriptSystem::CallAccumulator(const char*, ICvEngineScriptSystemArgs1*, int&)
+bool HHScriptSystem::CallAccumulator(const char* szName, ICvEngineScriptSystemArgs1* args, int& value)
 {
 	HH_IMPL_CALL("ICvEngineScriptSystem1::CallAccumulator");
-	return false;
+	double d = value;
+	const bool bHandled = DispatchGameEvent(szName, args, "accum", d);
+	value = (int)d;
+	return bHandled;
 }
 
-bool HHScriptSystem::CallAccumulator(const char*, ICvEngineScriptSystemArgs1*, float&)
+bool HHScriptSystem::CallAccumulator(const char* szName, ICvEngineScriptSystemArgs1* args, float& value)
 {
 	HH_IMPL_CALL("ICvEngineScriptSystem1::CallAccumulator");
-	return false;
+	double d = value;
+	const bool bHandled = DispatchGameEvent(szName, args, "accum", d);
+	value = (float)d;
+	return bHandled;
 }
 
-bool HHScriptSystem::CallTestAll(const char*, ICvEngineScriptSystemArgs1*, bool&)
+bool HHScriptSystem::CallTestAll(const char* szName, ICvEngineScriptSystemArgs1* args, bool& value)
 {
 	HH_IMPL_CALL("ICvEngineScriptSystem1::CallTestAll");
-	return false;
+	double d = value ? 1.0 : 0.0;
+	const bool bHandled = DispatchGameEvent(szName, args, "testall", d);
+	value = d != 0.0;
+	return bHandled;
 }
 
-bool HHScriptSystem::CallTestAny(const char*, ICvEngineScriptSystemArgs1*, bool&)
+bool HHScriptSystem::CallTestAny(const char* szName, ICvEngineScriptSystemArgs1* args, bool& value)
 {
 	HH_IMPL_CALL("ICvEngineScriptSystem1::CallTestAny");
-	return false;
+	double d = value ? 1.0 : 0.0;
+	const bool bHandled = DispatchGameEvent(szName, args, "testany", d);
+	value = d != 0.0;
+	return bHandled;
 }

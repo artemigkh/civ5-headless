@@ -23,7 +23,8 @@ namespace
 // HHEngineUtility
 //------------------------------------------------------------------------------
 HHEngineUtility::HHEngineUtility(ICvEngineScriptSystem1* pScriptSystem)
-	: m_pScriptSystem(pScriptSystem), m_bDone(false), m_iLockDepth(0), m_bInGameCoreUpdate(false)
+	: m_pScriptSystem(pScriptSystem), m_bDone(false), m_pPreGame(NULL), m_bAICivsProcessed(false), m_bAICivsProcessedPending(false),
+	  m_iLockDepth(0), m_bInGameCoreUpdate(false)
 {
 	m_strCacheFolder = HHGetPaths().cache;
 }
@@ -199,15 +200,107 @@ void HHEngineUtility::sendPlayerOption(PlayerOptionTypes eOption, bool bValue)
 	// (the base game's PlayerOptions rows 0..10) and with the type hash for any other row
 	// (PLAYEROPTION_QUICK_SELECTION_ADVANCE, row 11, arrives as -542730216).
 	const int iDelivered = (it->second.index >= 0 && it->second.index < kEngineKnownPlayerOptions) ? it->second.index : (int)eOption;
-	m_pendingOptions.push_back(std::make_pair(iDelivered, bValue));
+	// Delivered for the player that was active when it was sent (AA100: player 8 after SetAIAutoPlay).
+	Queue(HHNetMessage::PLAYER_OPTION, "PlayerOption", (int)ActivePlayer(), iDelivered, bValue ? 1 : 0);
 }
 
-void HHEngineUtility::DeliverPlayerOptions(ICvNetMessageHandler1* pHandler, PlayerTypes ePlayer)
+PlayerTypes HHEngineUtility::ActivePlayer() const
 {
-	for(size_t i = 0; i < m_pendingOptions.size(); ++i)
-		pHandler->ResponsePlayerOption(ePlayer, (PlayerOptionTypes)m_pendingOptions[i].first, m_pendingOptions[i].second);
-	m_pendingOptions.clear();
+	return m_pPreGame ? m_pPreGame->activePlayer() : (PlayerTypes)0;
 }
+
+void HHEngineUtility::Queue(HHNetMessage::Kind eKind, const char* szName, int a0, int a1, int a2, int a3, int a4, int a5)
+{
+	HHNetMessage m;
+	m.eKind = eKind;
+	m.a[0] = a0; m.a[1] = a1; m.a[2] = a2; m.a[3] = a3; m.a[4] = a4; m.a[5] = a5;
+	m_pendingNet.push_back(m);
+	++m_netCounts[szName];
+}
+
+size_t HHEngineUtility::DeliverNetMessages(ICvNetMessageHandler1* pHandler)
+{
+	if(!pHandler || m_pendingNet.empty())
+		return 0;
+	ICvNetMessageHandler2* pHandler2 = pHandler->QueryInterface<ICvNetMessageHandler2>();
+	ICvNetMessageHandler3* pHandler3 = pHandler->QueryInterface<ICvNetMessageHandler3>();
+	// A Response can send again; the loop delivers that too (the engine would on its next frame,
+	// still before the next Update).
+	size_t n = 0;
+	for(size_t i = 0; i < m_pendingNet.size(); ++i, ++n)
+	{
+		const HHNetMessage m = m_pendingNet[i];
+		const int* a = m.a;
+		switch(m.eKind)
+		{
+		case HHNetMessage::PLAYER_OPTION: pHandler->ResponsePlayerOption((PlayerTypes)a[0], (PlayerOptionTypes)a[1], a[2] != 0); break;
+		case HHNetMessage::MINOR_GIFT_GOLD: pHandler->ResponseMinorCivGiftGold((PlayerTypes)a[0], (PlayerTypes)a[1], a[2]); break;
+		case HHNetMessage::GREAT_PERSON_CHOICE: pHandler->ResponseGreatPersonChoice((PlayerTypes)a[0], (UnitTypes)a[1]); break;
+		case HHNetMessage::PLEDGE_MINOR_PROTECTION: if(pHandler2) pHandler2->ResponsePledgeMinorProtection((PlayerTypes)a[0], (PlayerTypes)a[1], a[2] != 0, a[3] != 0); break;
+		case HHNetMessage::MINOR_BULLY_GOLD: if(pHandler2) pHandler2->ResponseMinorCivBullyGold((PlayerTypes)a[0], (PlayerTypes)a[1], a[2]); break;
+		case HHNetMessage::MINOR_BULLY_UNIT: if(pHandler2) pHandler2->ResponseMinorCivBullyUnit((PlayerTypes)a[0], (PlayerTypes)a[1], (UnitTypes)a[2]); break;
+		case HHNetMessage::MINOR_GIFT_TILE_IMPROVEMENT: if(pHandler2) pHandler2->ResponseMinorCivGiftTileImprovement((PlayerTypes)a[0], (PlayerTypes)a[1], a[2], a[3]); break;
+		case HHNetMessage::MINOR_BUYOUT: if(pHandler2) pHandler2->ResponseMinorCivBuyout((PlayerTypes)a[0], (PlayerTypes)a[1]); break;
+		case HHNetMessage::MAYA_BONUS_CHOICE: if(pHandler2) pHandler2->ResponseMayaBonusChoice((PlayerTypes)a[0], (UnitTypes)a[1]); break;
+		case HHNetMessage::FAITH_GREAT_PERSON_CHOICE: if(pHandler2) pHandler2->ResponseFaithGreatPersonChoice((PlayerTypes)a[0], (UnitTypes)a[1]); break;
+		case HHNetMessage::GOODY_CHOICE: if(pHandler3) pHandler3->ResponseGoodyChoice((PlayerTypes)a[0], a[1], a[2], (GoodyTypes)a[3], a[4]); break;
+		}
+	}
+	m_pendingNet.clear();
+	if(pHandler3)
+		pHandler3->Destroy();
+	if(pHandler2)
+		pHandler2->Destroy();
+	return n;
+}
+
+void HHEngineUtility::sendMinorPledgeProtection(PlayerTypes eMajor, PlayerTypes eMinor, bool bProtect, bool bPledgeNowBroken)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMinorPledgeProtection"); Queue(HHNetMessage::PLEDGE_MINOR_PROTECTION, "PledgeMinorProtection", eMajor, eMinor, bProtect, bPledgeNowBroken); }
+// The sender of a message without a player argument is the local (active) player.
+void HHEngineUtility::sendMinorGiftGold(PlayerTypes eMinor, int iGold)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMinorGiftGold"); Queue(HHNetMessage::MINOR_GIFT_GOLD, "MinorGiftGold", ActivePlayer(), eMinor, iGold); }
+void HHEngineUtility::sendMinorGiftTileImprovement(PlayerTypes eMajor, PlayerTypes eMinor, int iPlotX, int iPlotY)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMinorGiftTileImprovement"); Queue(HHNetMessage::MINOR_GIFT_TILE_IMPROVEMENT, "MinorGiftTileImprovement", eMajor, eMinor, iPlotX, iPlotY); }
+void HHEngineUtility::sendMinorBullyGold(PlayerTypes eBully, PlayerTypes eMinor, int iGold)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMinorBullyGold"); Queue(HHNetMessage::MINOR_BULLY_GOLD, "MinorBullyGold", eBully, eMinor, iGold); }
+void HHEngineUtility::sendMinorBullyUnit(PlayerTypes eBully, PlayerTypes eMinor, UnitTypes eUnitType)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMinorBullyUnit"); Queue(HHNetMessage::MINOR_BULLY_UNIT, "MinorBullyUnit", eBully, eMinor, eUnitType); }
+void HHEngineUtility::sendMinorBuyout(PlayerTypes eMajor, PlayerTypes eMinor)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMinorBuyout"); Queue(HHNetMessage::MINOR_BUYOUT, "MinorBuyout", eMajor, eMinor); }
+void HHEngineUtility::sendGreatPersonChoice(PlayerTypes ePlayer, UnitTypes eUnit)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendGreatPersonChoice"); Queue(HHNetMessage::GREAT_PERSON_CHOICE, "GreatPersonChoice", ePlayer, eUnit); }
+void HHEngineUtility::sendMayaBonusChoice(PlayerTypes ePlayer, UnitTypes eUnit)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMayaBonusChoice"); Queue(HHNetMessage::MAYA_BONUS_CHOICE, "MayaBonusChoice", ePlayer, eUnit); }
+void HHEngineUtility::sendFaithGreatPersonChoice(PlayerTypes ePlayer, UnitTypes eUnit)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendFaithGreatPersonChoice"); Queue(HHNetMessage::FAITH_GREAT_PERSON_CHOICE, "FaithGreatPersonChoice", ePlayer, eUnit); }
+void HHEngineUtility::sendGoodyChoice(PlayerTypes ePlayerID, int iPlotX, int iPlotY, GoodyTypes eGoody, int iUnitID)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendGoodyChoice"); Queue(HHNetMessage::GOODY_CHOICE, "GoodyChoice", ePlayerID, iPlotX, iPlotY, eGoody, iUnitID); }
+
+// Turn gates (contract 6.3). CanAdvanceTurn: true (single player, nobody to wait for).
+bool HHEngineUtility::CanAdvanceTurn() { HH_IMPL_CALL("ICvEngineUtility1::CanAdvanceTurn"); return true; }
+// SendAICivsProcessed is seen by allAICivsProcessedThisTurn from the next Update on; a new turn clears it.
+bool HHEngineUtility::allAICivsProcessedThisTurn() const { HH_IMPL_CALL("ICvEngineUtility3::allAICivsProcessedThisTurn"); return m_bAICivsProcessed; }
+void HHEngineUtility::SendAICivsProcessed() const { HH_IMPL_CALL("ICvEngineUtility3::SendAICivsProcessed"); m_bAICivsProcessedPending = true; }
+void HHEngineUtility::sendPlayerInitialAIProcessed() const { HH_IMPL_CALL("ICvEngineUtility1::sendPlayerInitialAIProcessed"); }
+void HHEngineUtility::EndOfUpdate()
+{
+	if(m_bAICivsProcessedPending)
+	{
+		m_bAICivsProcessed = true;
+		m_bAICivsProcessedPending = false;
+	}
+}
+// ASSUMPTION (trace): the engine clears its "AI civs processed" flag when a new turn is published.
+void HHEngineUtility::PublishNewGameTurn(int) { HH_IMPL_CALL("ICvEngineUtility1::PublishNewGameTurn"); m_bAICivsProcessed = false; m_bAICivsProcessedPending = false; }
+// UI Lua asks on every update; nobody ends a turn through the network (contract 6.3).
+bool HHEngineUtility::HasReceivedTurnComplete(PlayerTypes) { HH_IMPL_CALL("ICvEngineUtility1::HasReceivedTurnComplete"); return false; }
+// ASSUMPTION (trace): measured true for the local human (player 0); only the human slot is connected.
+bool HHEngineUtility::IsPlayerConnected(PlayerTypes ePlayer)
+{
+	HH_IMPL_CALL("ICvEngineUtility1::IsPlayerConnected");
+	return m_pPreGame && ePlayer >= 0 && ePlayer < MAX_PLAYERS && m_pPreGame->slotStatus(ePlayer) == SS_TAKEN;
+}
+void HHEngineUtility::AutoSave(bool, bool) { HH_IMPL_CALL("ICvEngineUtility1::AutoSave"); }
 
 const char* HHEngineUtility::GetCacheFolderPath()
 {

@@ -34,10 +34,11 @@ struct HHOptions
 	bool luaDebugLibrary;    // keep the debug table in _G (see HHScriptSystem)
 	std::vector<std::string> playerOptions; // TYPE=0|1 overrides of the PlayerOptions defaults
 	__int64 exeSeed;         // pregame seeds before Game.Init (-1: the spec's map seed)
+	int crtSse2;             // _set_SSE2_enable(v) in every loaded MSVCR90 instance (-1: untouched)
 	int fpuPrecision;        // x87 precision bits for the new game (24, 53, 64; 0: untouched)
 	__int64 crtSrand;        // srand() on the main thread before the new game (-1: untouched, CRT default 1)
 	HHOptions() : language("en_US"), strict(false), verbose(false), gameLogging(false), freeLibrary(true),
-		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0) {}
+		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1) {}
 };
 
 struct HHPaths
