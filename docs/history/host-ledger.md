@@ -15,9 +15,10 @@ commit it with the change it describes.
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
   Staging packs the mod files of the checkout it runs in, so restore from an `ai-improvements` checkout
   (a temporary worktree with the toolchain junction), not from this branch.
-- **Deployed now:** headless-host trace build `work/msvc-output/Release-trace/20261025-005905` (DLL
-  `008A4227…17F91B5D`: digest additions plus the early seed pin), with this branch's mod package. Matching
-  normal build: `work/msvc-output/Release/20261025-005758`.
+- **Deployed now:** headless-host trace build `work/msvc-output/Release-trace/20261025-013645` (DLL
+  `2CF44F11…A1E75703`, bfa298d6b: digest additions, early seed pin, trace cap periods restarting at game init
+  and the first update, x87 logged at game init), with this branch's mod package. Matching normal build:
+  `work/msvc-output/Release/20261025-013559`.
 - **Agents in flight** (Opus, high effort; own worktree and branch; `RESUME.md` in the worktree on pause):
   - host: M2, worktree `work/wt/hh-host`, branch `hh-host`. Work order: merge headless-host; T000
     load-screen state byte-identical to the real game's `dump-t000` for continents (s1b), earth (s3b),
@@ -51,7 +52,8 @@ commit it with the change it describes.
     (`mods-reference-08D19878`) and this branch's package (`mods-headless-host-0ed40de35`).
 - **Re-recorded references** (trace DLL 008A4227, early pin; every run logs `HHSEEDS point=gameStarted`):
   `hh-m0-s1b-continents` (vpbench order, to T5), `hh-m0-s3b-earth`, `hh-m0-communitu`, `hh-m0-cdrift`
-  (game_probe order: load-screen `dump-t000` and a dump after 2–3 turns).
+  (game_probe order: load-screen `dump-t000` and a dump after 2–3 turns); `hh-m0-s1c-continents` (trace DLL
+  2CF44F11, game_probe order, 5 turns, dumps at T0 and T5, phase-reset trace: the best M3 reference).
 - **Real-game A/A** (`hh-m0-aa100b-a`, `-b` with digest, `-c` without; Continents spec, 100 turns): same civs;
   pregame, map and support digests identical every turn; every T100 dump section has the same size in all
   three runs, and the differences are short byte runs (2 bytes at a 507-byte stride in `game` from T14, 3
@@ -99,3 +101,5 @@ commit it with the change it describes.
   references and the A/A pair.
 - 2026-10-25: references re-recorded with the early pin; real-game A/A over 100 turns shows identical games
   (digest differences are uninitialised bytes only); M4 test edits checked against a game launch: identical.
+- 2026-10-25: trace cap periods restart at game init and the first update; x87 at game init is 0x027F on the
+  UI thread too; S1c recorded. Contract open questions 1–4 resolved.
