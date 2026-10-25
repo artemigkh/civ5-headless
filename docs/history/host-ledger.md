@@ -213,8 +213,9 @@ commit it with the change it describes.
   1. Restore the AI program's DLL and mods before handing the real game back (see "AI program" above).
   2. Optional: re-measure parallel scaling on an idle machine (`work/headless/m6/queues/scale-w<W>.json`).
   3. Optional: normalise the tactical map build stamp in the digest; M7 saves.
-  4. Later, user's call: the test suite design (config.ini seeding works with stock DLLs), the repository migration
-     ([headless-repo-migration.md](headless-repo-migration.md)), upstream VP PRs for the determinism fixes.
+  4. Next project, planned in [headless-standalone-plan.md](headless-standalone-plan.md) (2026-10-25): own repository,
+     any DLL or mod set, the `c5h verify` suite (under 30 min) with the performance benchmark, upstream VP fixes.
+     Waiting on the user's decisions in its section 6.
 - **Uncommitted files:** none besides this ledger.
 
 ## Milestones
