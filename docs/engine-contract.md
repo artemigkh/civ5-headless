@@ -674,7 +674,8 @@ Counts are exact totals per trace (SUM lines). Threads: core = game-core thread,
 | ICvEngineUtility1::UninitGlobals | 1 | 1 | 1 | 1 | shutdown | ui | void | impl | N: no-op |
 | ICvEngineUtility1::getPlayerOption | 36 | 36 | 12 | 36 | newgame,turnloop | core,ui | `false`, `true` | impl | E: user profile: WAIT_END_TURN=true, SAFE_AUTOMATION=true, others false (by hash) |
 | ICvEngineUtility1::netMessageDebugLog | 669 | 207 |  | 24611 | turnloop | core | void | stub | N: no-op or log |
-| ICvEngineUtility1::openSlot | 25 | 19 | 19 | 25 | newgame | ui | void | stub | N: no-op |
+| ICvEngineUtility1::openSlot | 25 | 19 | 19 | 25 | newgame | ui | void | stub | Y: a closed slot becomes SS_COMPUTER (CvPlayer::setAlive(true): a liberated or revived player; hh-m5z-continents-s1 city-state 36, T140) |
+| ICvEngineUtility1::closeSlot | – | – | – | – | game | ui | void | stub | Y: an AI or human slot becomes SS_CLOSED (CvPlayer::setAlive(false), majors and city-states; M5 era-medieval, hh-m5g-continents-s1 slot 5). Gameplay reads slot status: CvPreGame::isHuman, CvPlayer::init and the load path (flavor recipients, traits, potentially-alive minors), CvPreGame save (civ of non-AI slots written as none), observer hand-over (CvGame, SS_CLOSED slots) |
 | ICvEngineUtility1::sendMinorBullyGold |  |  |  | 3 | turnloop | core | void | stub | E: net loopback: deliver ResponseMinorCivBullyGold(same args) after the Update returns |
 | ICvEngineUtility1::sendMinorPledgeProtection |  |  |  | 19 | turnloop | core | void | stub | E: net loopback: deliver ResponsePledgeMinorProtection(same args) after the Update returns |
 | ICvEngineUtility1::sendPlayerInfo | 63 | 63 | 63 | 63 | newgame | ui | void | stub | N: no-op (pregame broadcast) |
