@@ -68,13 +68,15 @@ commit it with the change it describes.
 - **M4 accepted** (`hh-m4-testedits`): the four test edits in a real launch gave the builder's values, the
   engine also stops an SQL file at its first error, and the built database equals the game's (dbdiff).
 - **M2 references** (field-map DLL 39F621D3): `hh-m2-cdrift`, `hh-m2-continents`, `hh-m2-earth`,
-  `hh-m2-communitu` (load-screen dump and one after 2–5 turns, Lua.log kept), `hh-m2-aa100-a` (100 turns).
-- **Runs in flight:** `hh-m2-aa100-b` (second half of the A/A pair).
+  `hh-m2-communitu` (load-screen dump and one after 2–5 turns, Lua.log kept), `hh-m2-aa100-a`, `-b` (100 turns).
+- **Real-game A/A is exact:** `hh-m2-aa100-a` vs `-b`: per-turn digests identical at all 100 points
+  (`hhdigest.py compare`), and all 57 sections of the T100 dumps byte-identical (`parity_t000.py`). With the
+  digest normalisation and the three fixes, the real game is a reproducible oracle for M3.
+- **Runs in flight:** none.
 - **Next steps:**
-  1. Check the `hh-m2-aa100` A/A pair: with the normalisation and the fixes, every digest should match.
-  2. Review and merge the host agent's work (cdrift, then M3 milestones).
-  3. M5 breadth parity and M6 tooling after M3.
-  4. Restore the AI build and mods before handing back.
+  1. Review and merge the host agent's work (cdrift, then M3 milestones).
+  2. M5 breadth parity and M6 tooling after M3.
+  3. Restore the AI build and mods before handing back.
 - **Uncommitted files:** none besides this ledger.
 
 ## Milestones
@@ -112,3 +114,4 @@ commit it with the change it describes.
   M2 references re-recorded; host agent moves on to M3.
 - 2026-10-25: paused for an app restart (host agent at WIP 6e587ab57, chain stopped after hh-m2-aa100-a);
   resumed: hh-m2-aa100-b started, host agent continues M3 from its RESUME.md.
+- 2026-10-25: real-game A/A with the normalisation and fixes is byte-exact over 100 turns (hh-m2-aa100-a/-b).
