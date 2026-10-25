@@ -814,6 +814,28 @@ namespace
 		return v;
 	}
 
+	// The stateful part of one in-game UI frame of the reference profile (EUI, DLC\UI_bc1). Run after
+	// every game core Update, when the real UI gets a frame with the core idle.
+	// - NotificationPanel.lua UpdateCivListNow (the civ ribbon; refreshed on AIProcessingStarted/Ended,
+	//   SerialEventCityInfoDirty and so on, i.e. every turn): for every ever-alive major in the ribbon
+	//   that is alive, met by the active team and not at war with it, player:CalculateGoldRate(), which
+	//   recomputes CvTreasury::m_iExpensePerTurnUnitMaintenance (serialized). Without it that field lags
+	//   behind the reference whenever units or cities change after the player's DoGold (first seen at the
+	//   turn-0 doTurnBegin digest of every major that founded its capital in turn 0; hh-m2-aa100-a T100).
+	// ASSUMPTION: the ribbon is shown (EUI option CivRibbon, default on) and no other UI getter is stateful.
+	const char* kUiFrameLua =
+		"local a = Game.GetActivePlayer()\n"
+		"local at = Teams[Players[a]:GetTeam()]\n"
+		"local n = 0\n"
+		"for i = 0, GameDefines.MAX_MAJOR_CIVS - 1 do\n"
+		"  local p = Players[i]\n"
+		"  if p and p:IsEverAlive() and not p:IsMinorCiv() and i ~= a and p:IsAlive() and at:IsHasMet(p:GetTeam())\n"
+		"     and not Teams[p:GetTeam()]:IsAtWar(at:GetID()) then\n"
+		"    p:CalculateGoldRate(); n = n + 1\n"
+		"  end\n"
+		"end\n"
+		"return n\n";
+
 	std::string DumpState(HHScriptSystem& kScripts, const std::string& folder)
 	{
 		std::string chunk = "if Game.DumpHeadlessState == nil then return nil end\nreturn Game.DumpHeadlessState([==[" + folder + "]==])\n";
@@ -915,6 +937,8 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		kIf.pEngine->SetInGameCoreUpdate(false);
 		kIf.pEngine->EndOfUpdate();
 		HHDeliverNetMessages(kIf);
+		if(!HHGetOptions().noUiFrame)
+			LuaInt(kScripts, kUiFrameLua, 0);
 		++kResult.iUpdates;
 		++iTurnUpdates;
 		const int iNow = kIf.pGame->GetGameTurn();
@@ -949,6 +973,20 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	kResult.netMessages = kIf.pEngine->GetNetMessageCounts();
 	kResult.timings.push_back(std::make_pair(std::string("autoplay"), Now() - t0));
 
+	if(!HHGetOptions().luaBeforeDump.empty())
+	{
+		std::string chunk;
+		if(HHReadTextFile(HHGetOptions().luaBeforeDump, chunk))
+		{
+			if(lua_State* L = RunReturning(kScripts, "--lua-before-dump", chunk.c_str()))
+			{
+				kResult.steps.push_back(HHFormat("--lua-before-dump %s -> %s", HHGetOptions().luaBeforeDump.c_str(), lua_isstring(L, -1) ? lua_tostring(L, -1) : "?"));
+				kScripts.FreeLuaThread(L);
+			}
+		}
+		else
+			HHLogError("cannot read %s", HHGetOptions().luaBeforeDump.c_str());
+	}
 	const std::string folder = HHGetPaths().run + HHFormat("dump-t%03d", kResult.iTurnsPlayed);
 	const std::string line = DumpState(kScripts, folder);
 	kResult.steps.push_back("Game.DumpHeadlessState(" + folder + ")");

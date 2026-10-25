@@ -49,3 +49,4 @@ std::string HHJsonNumber(double d);
 std::string HHLuaToJson(lua_State* L, int idx, int iIndent = 1);
 
 bool HHWriteTextFile(const std::string& strPath, const std::string& strText);
+bool HHReadTextFile(const std::string& strPath, std::string& strText);

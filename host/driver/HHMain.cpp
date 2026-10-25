@@ -164,6 +164,7 @@ namespace
 			else if(a == "--verbose") o.verbose = true;
 			else if(a == "--game-logging") o.gameLogging = true;
 			else if(a == "--no-game-logging") o.noGameLogging = true;
+			else if(a == "--no-ui-frame") o.noUiFrame = true;
 			else if(a == "--keep-dll-loaded") o.freeLibrary = false;
 			else if(a == "--no-mods") o.noMods = true;
 			else if(a == "--no-lua-debug") o.luaDebugLibrary = false;
@@ -190,6 +191,7 @@ namespace
 				++i;
 			}
 			else if(a == "--turns") { o.turns = atoi(v.c_str()); ++i; }
+			else if(a == "--lua-before-dump") { o.luaBeforeDump = v; ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
