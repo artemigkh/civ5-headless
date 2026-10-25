@@ -150,15 +150,19 @@ commit it with the change it describes.
 - **Map options identical** (`hh-m5b-mapopt-*`, DLL 6C73DC9A, Tiny): Continents, Communitu_79a and Continental_Drift
   with every option at min, max and random: 9/9 identical (digests T0–T2 and both dumps; `parity_run.py --matrix
   work/test-runs/hh-m5b-matrix.json --tag b`). About 75 s of real time per case.
-- **PAUSED 2026-10-25 (user):** no real-game runs in flight (the real game is idle; deployed DLL 6C73DC9A). The host
-  agent (`a4cb41447b56da966`, worktree `work/wt/hh-host`, branch `hh-host`) was told to let its running sweep pairs
-  finish, start nothing new, WIP-commit and update `work/wt/hh-host/RESUME.md` with the sweep table so far and the
-  commands for the remaining cases. Merged into headless-host so far: through hh-host 8c4406842 (23bb05ebf).
-  Not merged yet: hh-host 3241633ea (unit maintenance computed on each call), a91e6a4ec (trade connections version
-  bumped only on load), 960ed22f9 (`work/headless/skew_sweep.py`), plus whatever the sweep adds.
+- **PAUSED 2026-10-25 (user):** nothing runs (real game idle, deployed DLL 6C73DC9A; no host processes). The host agent
+  (`a4cb41447b56da966`, worktree `work/wt/hh-host`, branch `hh-host` at 960ed22f9, clean but for the untracked
+  `RESUME.md`) checkpointed the frame-skew sweep (tag s6, field-map DLL of 3241633ea at
+  `work/wt/hh-host/work/msvc-output/Release/20261025-081842`, host exe `.../headless-output/Release/20261025-075337`):
+  - K=2 identical: 15 cases (6 batch-2 100-turn cases, 8 m5-long Tiny games, Standard continents-s1);
+  - K=2 transient only (notification `m_bDismissed`, UI timing): players-teams2 (T72–73), victory-time150 (T109);
+    Standard s1 K=7 separate pair: one transient at T125, same kind;
+  - persistent: none so far; not run yet: Standard continents-s2 at K=2, all 18 cases at K=7.
+  Not merged into headless-host yet: hh-host a91e6a4ec, 3241633ea, 36508d3e5, 4af9bec1f, 960ed22f9 (and the merge
+  6d2b61370 of headless-host into hh-host).
 - **On resume:** read `work/wt/hh-host/RESUME.md`, check `git -C work/wt/hh-host status` and its log, then relaunch the
-  agent with its work order (the frame-skew sweep at K=0/2/7 over the 7 batch-2 100-turn cases, the 9 m5-long games
-  and Standard s1/s2; each persistent dependence fixed as its own DLL commit) plus the checkpoint. When the sweep is
+  agent with its work order plus the checkpoint: finish the sweep (K=7 for all 18 cases under a new tag, Standard s2 at
+  K=2); fix each persistent dependence as its own DLL commit; then the UI-only digest normalisation (below). When the sweep is
   clean: merge hh-host, build the field-map DLL from the merge (`tools/headless/fieldmap_transform.py apply`,
   `work/build-vp-msvc.py --no-ltcg --pch-memory 400`, `git checkout -- CvGameCoreDLL_Expansion2`), deploy
   (`work/stage_vp.py --dll/--pdb`, `--verify`, `work/deploy-vp.ps1`), host_first for m5-long and the 7 remaining
