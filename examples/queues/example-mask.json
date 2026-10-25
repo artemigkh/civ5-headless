@@ -1,0 +1,8 @@
+{"out": "work/test-runs/hh-mask-example", "workers": 12,
+ "defaults": {"spec": "work/headless/specs/continents-standard.json", "turns": 100,
+              "dll": "E:/Projects/Civ5StackMod/work/msvc-output/Release/20261024-085658/CvGameCore_Expansion2.dll",
+              "modsDir": "E:/Projects/Civ5StackMod/work/headless/db/mods-reference-08D19878-input/MODS",
+              "modsDb": "E:/Projects/Civ5StackMod/work/headless/db/mods-reference-08D19878-input/Civ5ModsDatabase.db",
+              "maxSeconds": 3600},
+ "variants": {"m0": {"improvedMask": 0}, "m85": {"improvedMask": 85}, "m170": {"improvedMask": 170}},
+ "seeds": [[1001, 2002], [3101, 3202], [4101, 4202], [5101, 5202]]}

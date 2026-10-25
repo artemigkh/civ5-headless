@@ -71,7 +71,14 @@ namespace
 		"  --dump-turns <a:b>   newgame: the DLL dumps the state at doTurnBegin of turns a..b (Logs\\HeadlessDumps)\n"
 		"  --no-ui-frame        newgame: no UI frame emulation after each Update (civ ribbon, notification aging,\n"
 		"                       popups, human-turn unit cycle)\n"
-		"  --lua-before-dump <file>  newgame (experiment): run a Lua file after autoplay, before the final dump\n"
+		"  --lua-before-dump <file>  newgame: run a Lua file after autoplay, before the final dump; its result goes to\n"
+		"                       lua-before-dump.json\n"
+		"  --lua-before-arm <file>   newgame: run a Lua file after the T000 outputs, before autoplay is armed (e.g.\n"
+		"                       Game.SetStackingDiagnosticsLevel); its result goes to lua-before-arm.json\n"
+		"  --checkpoint-lua <file>   newgame: run a Lua file whenever the game turn advances (every n turns, see\n"
+		"                       --checkpoint-every) and once after autoplay; results go to checkpoints\\turn-NNNN.json\n"
+		"                       and turn-NNNN-final.json in vpbench's format ({utc, seconds, data})\n"
+		"  --checkpoint-every <n>    newgame: checkpoint turns that are multiples of n (default 1)\n"
 		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
 		"  --game-log-flags <m> with game logging: 1 AILog, 2 AIPerfLog, 4 BuilderAILog, 8 PlayerAndCityAILogSplit\n"
 		"                       (default 15, as the reference profile; diagnostics of log-dependent results)\n"
@@ -203,6 +210,9 @@ namespace
 			}
 			else if(a == "--turns") { o.turns = atoi(v.c_str()); ++i; }
 			else if(a == "--lua-before-dump") { o.luaBeforeDump = v; ++i; }
+			else if(a == "--lua-before-arm") { o.luaBeforeArm = v; ++i; }
+			else if(a == "--checkpoint-lua") { o.checkpointLua = v; ++i; }
+			else if(a == "--checkpoint-every") { o.checkpointEvery = atoi(v.c_str()); ++i; }
 			else if(a == "--rand-log") { o.randLog = atoi(v.c_str()); ++i; }
 			else if(a == "--game-log-flags") { o.gameLogFlags = atoi(v.c_str()); ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
