@@ -6,8 +6,12 @@ commit it with the change it describes.
 ## Resume here
 
 **PAUSED 2026-10-25 ~02:05 (user restarting the app).** To resume:
-- Host agent (worktree `work/wt/hh-host`, branch `hh-host`): told to pause; it writes a WIP commit and
-  `RESUME.md` there. Relaunch it with its work order (below, "Agents in flight") plus `RESUME.md`.
+- Host agent (worktree `work/wt/hh-host`, branch `hh-host`): paused. WIP commit `6e587ab57` (M3 start: net
+  loopback queue, CanAdvanceTurn, AI-processed flag, IsPlayerConnected, AutoSave no-op, GameEvents dispatch;
+  not built yet); checkpoint `work/wt/hh-host/RESUME.md` (uncommitted). Status at pause: T000 parity exact
+  (no masking) on hh-m2-continents, -earth, -communitu; cdrift still differs (Lua.logs agree until the land
+  statistics after Continental_Drift's plot-type loop; map RNG calls 283789 real vs 283290 host; the real
+  game is deterministic there). Relaunch it with its work order (below, "Agents in flight") plus `RESUME.md`.
 - Real-game chain `m0-chain3.sh`: stopped after `hh-m2-aa100-a` (that run was allowed to finish). Not run:
   `hh-m2-aa100-b`. To finish it:
   `python work/headless/game_probe.py --run hh-m2-aa100-b --dll-sha 39F621D3C716FB68ADC7ABD562A617C11DF2569B0B5ABF95933DCB06111F192D --spec work/headless/specs/continents-standard.json --turns 100 --probe InGame@start=work/headless/probes/dump-state.lua --probe InGame@end=work/headless/probes/dump-state.lua`
