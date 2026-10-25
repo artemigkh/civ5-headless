@@ -14,9 +14,14 @@ per-turn digest on, as vpbench newgame --spec). WHEN picks the moment:
   end    after --turns N turns of AI autoplay (the observer setup vpbench uses), game core idle
 `{RUN}` in a probe is replaced by the run folder (forward slashes), e.g. for Game.DumpHeadlessState.
 The headless logs (digest, runtime, trace) are copied into the run folder at the end.
+
+--dump-from A --dump-to B has the DLL dump the state at doTurnBegin of turns A..B (field-level detail around a
+divergence); the dumps are copied to <run>/HeadlessDumps. --stop-turn S quits once turn S is reached while still
+arming --turns N, so a short re-record of a long game keeps the same autoplay count (it is in the digest); the @end
+probes are skipped then.
 """
 from pathlib import Path
-import argparse, json, subprocess, sys, time
+import argparse, json, shutil, subprocess, sys, time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'work/vpbench'))
@@ -47,7 +52,11 @@ def main():
     ap.add_argument('--max-seconds', type=int, default=10800, help='Overall cap on the autoplay (default 3 h)')
     ap.add_argument('--stall-seconds', type=int, default=900, help='Fail when no turn passes for this long (default 15 min)')
     ap.add_argument('--no-digest', dest='digest', action='store_false')
+    ap.add_argument('--dump-from', type=int, help='With --spec: DLL state dumps at doTurnBegin from this turn')
+    ap.add_argument('--dump-to', type=int, help='... to this turn (default: --dump-from)')
+    ap.add_argument('--stop-turn', type=int, default=0, help='With --spec and --turns: quit once this turn is reached')
     args = ap.parse_args()
+    if args.dump_from is not None and args.dump_to is None: args.dump_to = args.dump_from
     probes = []
     for item in args.probe:
         target, _, path = item.partition('=')
@@ -57,6 +66,11 @@ def main():
             ap.error(f'bad probe moment: {item}')
         probes.append((context, when, Path(path)))
     if args.no_mods and args.spec: ap.error('--spec needs the mods')
+    if (args.dump_from is not None or args.stop_turn) and not args.spec: ap.error('--dump-from and --stop-turn need --spec')
+    dumps = vpbench.GAME_DOCS / 'Logs/HeadlessDumps'
+    if args.dump_from is not None and dumps.exists():
+        # Earlier runs' dumps of the same turns would be overwritten in place; keep them apart.
+        dumps.rename(dumps.with_name(f'HeadlessDumps-{time.strftime("%Y%m%d-%H%M%S")}'))
     b = vpbench.Bench(args.run)
     since = time.time()
     if args.no_mods:
@@ -99,7 +113,9 @@ def main():
             write(b.run / 'spec-resolved.json', resolved)
             write(b.run / 'pregame.json', b.call('ModsSinglePlayer', gamespec.pregame_lua(resolved), 'pregame-setup'))
             seeds = resolved['seeds']
-            vpbench.HEADLESS_SEEDS.write_text(f"map={seeds['map']}\nsync={seeds['sync']}\ndigest={int(args.digest)}\nnormalise=1\n", encoding='ascii')
+            dump_range = f"dumpfrom={args.dump_from}\ndumpto={args.dump_to}\n" if args.dump_from is not None else ''
+            vpbench.HEADLESS_SEEDS.write_text(f"map={seeds['map']}\nsync={seeds['sync']}\ndigest={int(args.digest)}\nnormalise=1\n{dump_range}",
+                                              encoding='ascii')
             b.call('ModsSinglePlayer', vpbench.START, 'start-game')
             b.wait_loaded()
             write(b.run / 'setup.json', b.call('InGame', vpbench.SETUP, 'setup-info'))
@@ -118,9 +134,12 @@ def main():
                     if state['turn'] != last_turn: last_turn, last_change = state['turn'], now
                     if state['winner'] >= 0 or state['state'] != 0: break
                     if state['turn'] >= args.turns and state['autoplay'] == 0: break
+                    if args.stop_turn and state['turn'] >= args.stop_turn: break
                     if now - last_change >= args.stall_seconds: raise TimeoutError(f'autoplay stalled: {state}')
                     if now - started >= args.max_seconds: raise TimeoutError(f'autoplay over the time cap: {state}')
                 b.log('autoplay_done', **state)
+                if args.stop_turn and state['turn'] >= args.stop_turn and state['winner'] < 0 and state['state'] == 0:
+                    return 0
                 time.sleep(3)
                 write(b.run / 'victory.json', dict(utc=utc(), **b.call('InGame', VICTORY, 'victory')))
             run_probes('end')
@@ -128,6 +147,8 @@ def main():
         b.quit()
         if args.spec and vpbench.HEADLESS_SEEDS.exists(): vpbench.HEADLESS_SEEDS.unlink()
         vpbench.collect_headless_logs(b, since)
+        if args.dump_from is not None and dumps.exists():
+            shutil.copytree(dumps, b.run / 'HeadlessDumps', dirs_exist_ok=True)
     return 0
 
 
