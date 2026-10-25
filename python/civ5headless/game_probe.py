@@ -21,10 +21,11 @@ arming --turns N, so a short re-record of a long game keeps the same autoplay co
 probes are skipped then.
 
 --host-digest HOST_LOG compares the game's live HeadlessDigest.log with a host run of the same case (same spec,
-DLL and --turns), point by point as the turns pass. At the first difference it writes <run>/divergence.json and
-quits --diverge-turns turns later (default 2), so a long reference costs real-game time only up to its divergence.
---rolling-dumps K dumps every turn and keeps the last K (after a divergence: from K turns before it), so the run
-that finds a divergence also has the field-level dumps around it (about 85 MB per Tiny dump).
+DLL and --turns), point by point as the turns pass. A difference that matches again within --diverge-turns turns
+(default 2) is recorded as a transient and the game goes on; one that persists that long writes
+<run>/divergence.json and quits, so a long reference costs real-game time only up to its divergence.
+--rolling-dumps K dumps every turn and keeps the last K turns plus K turns around every difference, so the run that
+finds a divergence also has the field-level dumps around it (about 85 MB per Tiny dump).
 """
 from pathlib import Path
 import argparse, json, re, shutil, subprocess, sys, time
@@ -47,26 +48,36 @@ VICTORY = ("local ok,v=pcall(function() return Game.GetVictory() end);"
            "return {turn=Game.GetGameTurn(),winner=Game.GetWinner(),victory=ok and v or -2,state=Game.GetGameState()}")
 
 
-def prune_dumps(dumps, keep_from):
-    """Delete the DLL's doTurnBegin dumps of turns before keep_from (never the one being written: it is newer)."""
+def prune_dumps(dumps, keep):
+    """Delete the DLL's doTurnBegin dumps of the turns keep(turn) rejects (the one being written is the newest: kept)."""
     if not dumps.exists(): return
     for d in dumps.iterdir():
         m = re.fullmatch(r'doTurnBegin-t(\d+)', d.name)
-        if m and int(m.group(1)) < keep_from: shutil.rmtree(d, ignore_errors=True)
+        if m and not keep(int(m.group(1))): shutil.rmtree(d, ignore_errors=True)
 
 
 class LiveDigest:
-    """Reads the game's HeadlessDigest.log as it grows and compares each new point with a host run's log."""
+    """Reads the game's HeadlessDigest.log as it grows and compares each new point with a host run's log.
+
+    open: the first point of the current run of differences (None while the points match); a run that matches
+    again goes to transients with the turn it matched again (until)."""
 
     def __init__(self, live_path, host_path):
         self.live_path, self.offset, self.pending = live_path, 0, b''
         self.host = hhdigest.digest_lines(host_path)
         self.compared = 0
+        self.last_turn = -1
         self.first = None
+        self.open = None
+        self.transients = []
+
+    def runs(self):
+        """(first turn, last turn or None while open) of every run of differences so far."""
+        return [(t['turn'], t['until']) for t in self.transients] + ([(self.open['turn'], None)] if self.open else [])
 
     def poll(self):
-        """Compare the points logged since the last poll; returns the first divergence once there is one."""
-        if self.first or not self.live_path.exists(): return self.first
+        """Compare the points logged since the last poll; returns the open run of differences, if any."""
+        if not self.live_path.exists(): return self.open
         with self.live_path.open('rb') as f:
             f.seek(self.offset)
             data = f.read()
@@ -81,13 +92,18 @@ class LiveDigest:
             key = (fields.get('point'), int(fields['turn']))
             if key not in self.host: continue
             self.compared += 1
+            self.last_turn = key[1]
             host_fields, host_order = self.host[key]
             names = [n for n in order + [n for n in host_order if n not in fields] if n not in hhdigest.META]
             sections = [n for n in names if fields.get(n) != host_fields.get(n) and n not in hhdigest.EXCLUDED]
             if fields['total'] != host_fields['total'] or sections:
-                self.first = dict(turn=key[1], point=key[0], sections=sections, compared=self.compared)
-                break
-        return self.first
+                difference = dict(turn=key[1], point=key[0], sections=sections, compared=self.compared)
+                self.first = self.first or difference
+                self.open = self.open or difference
+            elif self.open:
+                self.transients.append(dict(self.open, until=key[1]))
+                self.open = None
+        return self.open
 
 
 def main():
@@ -193,21 +209,27 @@ def main():
                     if state['winner'] >= 0 or state['state'] != 0: break
                     if state['turn'] >= args.turns and state['autoplay'] == 0: break
                     if args.stop_turn and state['turn'] >= args.stop_turn: early = True; break
-                    if live and not live.first and live.poll():
-                        write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, **live.first))
-                        b.log('diverged', **live.first)
-                    if live and live.first and state['turn'] >= live.first['turn'] + args.diverge_turns: early = True; break
+                    if live:
+                        live.poll()
+                        if live.open and live.last_turn >= live.open['turn'] + args.diverge_turns:
+                            write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, transients=live.transients, **live.open))
+                            b.log('diverged', **live.open)
+                            early = True
+                            break
                     if args.rolling_dumps:
-                        prune_dumps(dumps, (live.first['turn'] if live and live.first else state['turn']) - args.rolling_dumps)
+                        k, turn, runs = args.rolling_dumps, state['turn'], live.runs() if live else []
+                        prune_dumps(dumps, lambda t: t > turn - k or any(a - k <= t and (u is None or t <= u + k) for a, u in runs))
                     if now - last_change >= args.stall_seconds: raise TimeoutError(f'autoplay stalled: {state}')
                     if now - started >= args.max_seconds: raise TimeoutError(f'autoplay over the time cap: {state}')
                 b.log('autoplay_done', early=early, **state)
                 if live:
                     time.sleep(3)
-                    if not live.first and live.poll():
-                        write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, **live.first))
+                    live.poll()
+                    if live.open and not early:
+                        write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, transients=live.transients, **live.open))
                     write(b.run / 'live-compare.json', dict(utc=utc(), hostDigest=args.host_digest, compared=live.compared,
-                                                            first=live.first, stoppedAt=state['turn'], early=early))
+                                                            first=live.first, open=live.open, transients=live.transients,
+                                                            stoppedAt=state['turn'], early=early))
                 if early: return 0
                 time.sleep(3)
                 write(b.run / 'victory.json', dict(utc=utc(), **b.call('InGame', VICTORY, 'victory')))
