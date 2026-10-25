@@ -197,3 +197,70 @@ kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes
 if __name__ == '__main__':
     for eff, mask in cores():
         print(f'efficiency class {eff}: mask {mask:#x}')
+
+
+# ---- background load (measurements must say what else ran) ----
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [('dwSize', wintypes.DWORD), ('cntUsage', wintypes.DWORD), ('th32ProcessID', wintypes.DWORD),
+                ('th32DefaultHeapID', ctypes.c_size_t), ('th32ModuleID', wintypes.DWORD), ('cntThreads', wintypes.DWORD),
+                ('th32ParentProcessID', wintypes.DWORD), ('pcPriClassBase', ctypes.c_long), ('dwFlags', wintypes.DWORD),
+                ('szExeFile', ctypes.c_wchar * 260)]
+
+
+kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+kernel32.GetSystemTimes.argtypes = [ctypes.POINTER(ctypes.c_ulonglong)] * 3
+
+
+def pids(prefix):
+    """Process ids whose exe name starts with prefix (case-insensitive)."""
+    snap = kernel32.CreateToolhelp32Snapshot(2, 0)
+    e = PROCESSENTRY32W(); e.dwSize = ctypes.sizeof(e)
+    out = []
+    ok = kernel32.Process32FirstW(snap, ctypes.byref(e))
+    while ok:
+        if e.szExeFile.lower().startswith(prefix.lower()):
+            out.append(e.th32ProcessID)
+        ok = kernel32.Process32NextW(snap, ctypes.byref(e))
+    kernel32.CloseHandle(snap)
+    return out
+
+
+def pid_cpu_seconds(pid):
+    h = kernel32.OpenProcess(0x1000, False, int(pid))
+    if not h:
+        return None
+    c, e, k, u = (ctypes.c_ulonglong() for _ in range(4))
+    ok = kernel32.GetProcessTimes(h, ctypes.byref(c), ctypes.byref(e), ctypes.byref(k), ctypes.byref(u))
+    kernel32.CloseHandle(h)
+    return (k.value + u.value) / 1e7 if ok else None
+
+
+class LoadMeter:
+    """System busy cores and the real game's CPU between start() and stop()."""
+
+    def __init__(self, game_prefix='CivilizationV'):
+        self.game_prefix = game_prefix
+
+    def _sample(self):
+        idle, kern, user = (ctypes.c_ulonglong() for _ in range(3))
+        kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kern), ctypes.byref(user))
+        game = {p: pid_cpu_seconds(p) for p in pids(self.game_prefix)}
+        return time.monotonic(), idle.value, kern.value + user.value, game
+
+    def start(self):
+        self.a = self._sample()
+        return self
+
+    def stop(self):
+        t1, i1, b1, g1 = self._sample()
+        t0, i0, b0, g0 = self.a
+        wall = max(t1 - t0, 1e-6)
+        busy = ((b1 - b0) - (i1 - i0)) / 1e7 / wall  # kernel time includes idle
+        game = sum((g1[p] or 0) - (g0.get(p) or 0) for p in g1 if p in g0) / wall
+        return dict(seconds=round(wall, 1), logicalCPUs=os.cpu_count(), systemBusyCores=round(busy, 2),
+                    gameRunning=bool(g1), gameBusyCores=round(game, 2))
+
+
+import time  # noqa: E402

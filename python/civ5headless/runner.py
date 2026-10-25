@@ -214,6 +214,7 @@ def run(args):
                   f"host {status.get('hostSeconds')} s, peak {round((proc.get('PeakWorkingSet') or 0) / 2 ** 20)} MB"
                   + (f", error {status.get('error')}" if status.get('error') else ''))
 
+    meter = winproc.LoadMeter().start()
     threads = [threading.Thread(target=worker, args=(i,), daemon=True) for i in range(workers)]
     for th in threads:
         th.start()
@@ -228,6 +229,7 @@ def run(args):
         raise
     finally:
         with q.lock:
+            q.state['queue']['background'] = meter.stop()
             q.state['queue'].update(state='stopped' if (q.stop_path.exists() or stopping.is_set()) else 'finished', finished=utc(),
                                     seconds=round(previous + time.monotonic() - started, 1))
             q.save()
@@ -255,6 +257,11 @@ def summary(q, batch_seconds=None):
     batch = batch_seconds or qs.get('seconds')
     if batch:
         totals.update(batchSeconds=round(batch, 1), gameTurnsPerHour=round(totals['gameTurns'] * 3600 / batch))
+    if qs.get('background'):
+        bg = dict(qs['background'])
+        hosts = sum(r['cpuSeconds'] or 0 for r in done)
+        bg['otherBusyCores'] = round(bg['systemBusyCores'] - hosts / max(bg['seconds'], 1e-6), 2)
+        totals['background'] = bg  # last session; otherBusyCores = everything but the hosts (real game, OS, ...)
     print(f"{'job':<28}{'state':<11}{'turns':>6}{'autoplay s':>11}{'s/turn':>8}{'host s':>8}{'CPU s':>8}{'peak MB':>8}  end")
     for r in rows:
         print(f"{r['name']:<28}{r['state']:<11}{r['turns'] or '':>6}{r['wallSeconds'] or '':>11}{r['secondsPerTurn'] or '':>8}"

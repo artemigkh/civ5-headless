@@ -240,6 +240,7 @@ def newgame(a, quiet=False):
                                                 dllSHA256=dll_sha, database=dbinfo))
         affinity = int(a.affinity, 0) if isinstance(a.affinity, str) else a.affinity
         job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity)
+        meter = winproc.LoadMeter().start()  # what else ran (the real game) during this run
         started = time.monotonic(); started_utc = utc()
         with open(run.dir / 'host-stdout.txt', 'wb') as out:
             proc = subprocess.Popen(cmd, cwd=str(run.dir), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
@@ -275,6 +276,8 @@ def newgame(a, quiet=False):
             rows, offset = turn_lines(run.dir / 'turn-times.jsonl', offset)
             for r in rows: seen[r['turn']] = round(r['seconds'], 3)
             pstats = winproc.process_stats(proc)
+            load = meter.stop()
+            load['otherBusyCores'] = round(load['systemBusyCores'] - (pstats.get('CPUSeconds') or 0) / max(host_seconds, 1e-6), 2)
             jstats = job.stats()
         report = read(run.dir / 'newgame-report.json', {}) or {}
         ng = report.get('newgame', {})
@@ -307,7 +310,7 @@ def newgame(a, quiet=False):
                       spec=str(Path(a.spec).resolve()), replayMessages=len(final.get('messages') or []), exitCode=code,
                       hostStatus=report.get('status'), hostError=report.get('error') or ng.get('error'),
                       luaErrors=ng.get('lua_errors'), updates=(ng.get('autoplay') or {}).get('updates'),
-                      diagnosticsLogPrefix=prefixes[-1] if prefixes else None, logsFolder=str((run.dir / 'Logs').resolve()))
+                      background=load, diagnosticsLogPrefix=prefixes[-1] if prefixes else None, logsFolder=str((run.dir / 'Logs').resolve()))
         victory = final.get('victory') or {}
         if victory.get('winner', -1) is not None and victory.get('winner', -1) >= 0:
             status.update(endReason='victory', winner=victory['winner'], victory=victory.get('victory'))
