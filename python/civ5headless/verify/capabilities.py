@@ -1,7 +1,7 @@
 """What this installation can do, detected at run time: missing pieces become "not available" checks, not crashes.
 
 - host options: parsed from civ5headless.exe's usage text (--lua-probe, --frame-skew, --heap-perturb, ...);
-- civ5headless.fingerprint: read() for the C5HFP sections and C5HM metrics, and its probe file;
+- civ5headless.fingerprint: read() for the C5HFP sections and C5HM metrics; its probe (civ5headless.probes);
 - civ5headless.realgame.session.RealGameSession: the real-game session;
 - civ5headless.hazards: the UI hazard scan.
 """
@@ -12,7 +12,6 @@ import re
 import subprocess
 
 from .. import config, winproc
-from . import probes
 
 
 @dataclass
@@ -60,6 +59,20 @@ def _module(name, attribute=None):
     return mod, None
 
 
+def fingerprint_probe(cfg, fingerprint):
+    """(the fingerprint probe both sides run, why not): the configured probes folder's fingerprint.lua
+    (civ5headless.probes, which run.play and RealGameSession.start_game use), else fingerprint.probe_path()."""
+    try:
+        from .. import probes
+        return probes.fingerprint_lua(cfg or config.load()), None
+    except (ImportError, config.ConfigError) as error:
+        first = str(error)
+    try:
+        return fingerprint.probe_path(), None
+    except (AttributeError, FileNotFoundError) as error:
+        return None, f'no fingerprint probe: {first}; {error}'
+
+
 def detect(exe, cfg=None, overrides=None):
     """Capabilities of this installation. overrides: {name: value} that replaces a detection (tests, fakes):
     host_options, fingerprint, session_class, hazards."""
@@ -79,10 +92,12 @@ def detect(exe, cfg=None, overrides=None):
         cap.fingerprint, why = _module('civ5headless.fingerprint', 'read')
         if why:
             cap.notes['fingerprint'] = why
-    repo = config.System().repository()
-    cap.fingerprint_probe = overrides.get('fingerprint_probe') or probes.fingerprint_probe(cap.fingerprint, repo)
-    if cap.fingerprint is not None and cap.fingerprint_probe is None:
-        cap.notes['fingerprintProbe'] = 'civ5headless.fingerprint is installed but its probe file was not found'
+    if 'fingerprint_probe' in overrides:
+        cap.fingerprint_probe = overrides['fingerprint_probe']
+    elif cap.fingerprint is not None:
+        cap.fingerprint_probe, why = fingerprint_probe(cfg, cap.fingerprint)
+        if why:
+            cap.notes['fingerprintProbe'] = why
     if 'session_class' in overrides:
         cap.session_class = overrides['session_class']
     else:

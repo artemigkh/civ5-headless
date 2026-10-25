@@ -8,8 +8,8 @@ and, with C5H_FAKE_HOST_REPORT=1, host-report.json.
 Environment: C5H_FAKE_SYNC_MATTERS=1 (the sync seed changes the game), C5H_FAKE_SKEW_DIVERGE=T and
 C5H_FAKE_PERTURB_DIVERGE=T (--frame-skew / --heap-perturb change the game from turn T), C5H_FAKE_PROBE_DIVERGE=T (the
 Lua probes change it), C5H_FAKE_NONDETERMINISTIC=T (every run differs from turn T), C5H_FAKE_VICTORY=T (victory at
-turn T), C5H_FAKE_LUA_ERROR=1 (a Lua error line), C5H_FAKE_HOST_CHOSE_CIVS=1 (host-report.json says the host chose
-civilizations).
+turn T), C5H_FAKE_LUA_ERROR=1 (a Lua error line), C5H_FAKE_HOST_CHOSE_CIVS=1 (the DLL leaves city-states to the exe, so
+the host chooses them: the spec's minorCivs, else its own draw; host-report.json says so).
 """
 import json
 import os
@@ -60,7 +60,8 @@ def main(argv):
     diverge = min(t for t, _ in changes) if changes else None
     tag = '+'.join(sorted(x for _, x in changes))
     game = fakegame.Game(spec, sync_matters=os.environ.get('C5H_FAKE_SYNC_MATTERS') == '1', diverge_at=diverge, tag=tag,
-                         victory_turn=env_int('C5H_FAKE_VICTORY'))
+                         victory_turn=env_int('C5H_FAKE_VICTORY'),
+                         chooser='host' if os.environ.get('C5H_FAKE_HOST_CHOSE_CIVS') == '1' else 'dll')
     end = game.end_turn(turns)
     (out / 'Logs').mkdir(parents=True, exist_ok=True)
     (out / 'checkpoints').mkdir(exist_ok=True)
@@ -72,6 +73,7 @@ def main(argv):
     if any('C5HPG' in p for p in probes):
         lua += ['[0.2] ' + line for line in game.pregame_lines()]
     if any('C5HFP' in p for p in probes):
+        lua += ['[0.3] ' + line for line in game.meta_lines()]
         for t in range(end):
             lua += ['[%d.0] ' % (t + 1) + line for line in game.fingerprint_lines(t)]
     if os.environ.get('C5H_FAKE_LUA_ERROR') == '1':
@@ -90,9 +92,11 @@ def main(argv):
         engine_calls=[dict(method='ICvEngineUtility1::Thing', stub=True, count=3, first_phase='start')],
         newgame=dict(lua_errors=0, autoplay=dict(updates=end * 13)))), encoding='utf-8')
     if os.environ.get('C5H_FAKE_HOST_REPORT') == '1':
+        minors = game.minor_report()
         (out / 'host-report.json').write_text(json.dumps(dict(
             format='civ5headless-host-report/1', status='passed',
-            dll=dict(digestAdditions=True, hostChoseCivs=os.environ.get('C5H_FAKE_HOST_CHOSE_CIVS') == '1'),
+            dll=dict(digestAdditions=True, hostChoseCivs=any(x['chosenBy'] == 'host' for x in minors['slots'])),
+            minorCivs=minors,
             stubCalls=dict(unknownCount=1, calls=[dict(method='ICvEngineUtility1::Harmless', count=5, knownHarmless=True),
                                                   dict(method='ICvEngineUtility1::Unknown', count=2, knownHarmless=False)]),
             luaErrors=dict(failing=0, total=0, list=[]), uiFiles=dict(unknownCount=0, unknown=[]),

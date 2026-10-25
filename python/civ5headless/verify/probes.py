@@ -1,11 +1,11 @@
-"""Lua probes the suite injects into both the host (--lua-probe) and the real game (RealGameSession.start_game).
+"""Lua probes of the suite's own, injected into both the host (--lua-probe) and the real game (start_game lua_probes).
 
 - pregame.lua (this module): every PreGame value the stock Lua API can read, printed once when the probe runs (game
   started, before turn 0 is processed) as "C5HPG|<key>|<value>" lines in Lua.log. Only numbers, strings and
   booleans are printed; a getter the DLL lacks is skipped. The nickname and passwords are never printed (the real
   game's nickname is the Steam name).
-- fingerprint.lua: the any-DLL workstream's probe (plan 9.3), found through civ5headless.fingerprint (PROBE or
-  probe_path()) or probes/fingerprint.lua in the repository.
+- the fingerprint probe (probes/fingerprint.lua, plan 9.3) is not here: run.play(fingerprint=...) and
+  RealGameSession.start_game(fingerprint=...) run it, with the same files at the same point, before these.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -51,19 +51,3 @@ def write_pregame(folder):
     path = Path(folder) / 'pregame.lua'
     path.write_text(PREGAME, encoding='utf-8')
     return path
-
-
-def fingerprint_probe(fingerprint, repository=None):
-    """The fingerprint probe file, or None: the module's PROBE or probe_path(), else probes/fingerprint.lua."""
-    if fingerprint is not None:
-        p = getattr(fingerprint, 'PROBE', None)
-        if p is None and callable(getattr(fingerprint, 'probe_path', None)):
-            try:
-                p = fingerprint.probe_path()
-            except Exception:  # noqa: BLE001
-                p = None
-        if p and Path(p).is_file():
-            return Path(p)
-    if repository and (Path(repository) / 'probes/fingerprint.lua').is_file():
-        return Path(repository) / 'probes/fingerprint.lua'
-    return None

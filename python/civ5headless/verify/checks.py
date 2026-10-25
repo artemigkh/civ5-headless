@@ -351,18 +351,7 @@ def health_checks(ctx):
         out.append(check('health.lua-errors', title, 'warn' if rows else 'pass',
                          f'{len(rows)} Lua error message(s) in the host (no real game to tell which are host-only)' if rows else 'no Lua errors in the host',
                          hostErrors=rows[:50], hostReports=[dict(message=m, runs=sorted(set(v))[:6]) for m, v in sorted(reported.items())][:50]))
-    # Civilizations and city-states the host chose (a DLL that leaves them to the exe: the real game chooses others)
-    chose = sorted({d.name for d, r in _reports(ctx) if (r.get('dll') or {}).get('hostChoseCivs')})
-    title = 'Every civilization and city-state named, none chosen by the host'
-    if not _reports(ctx):
-        out.append(check('setup.civ-choice', title, 'n/a', 'no host-report.json (an older civ5headless.exe)'))
-    elif chose:
-        out.append(check('setup.civ-choice', title, 'fail' if ctx.real_mode else 'warn',
-                         f'this DLL leaves random civilizations or city-states to the exe, and the host chose them in {len(chose)} '
-                         'run(s): the real game chooses others, so real and host games differ from the start; name them in the specs',
-                         runs=chose[:20]))
-    else:
-        out.append(check('setup.civ-choice', title, 'pass', 'the DLL or the specs chose every civilization and city-state'))
+    out.append(civ_choice_check(ctx))
     # Stubbed engine calls
     reports = _reports(ctx)
     title = 'No stubbed engine calls outside the known-harmless list'
@@ -399,7 +388,7 @@ def health_checks(ctx):
             hits = _hazard_scan(ctx.hazards, report_path)
             findings = [dict(file=h.get('file'), line=h.get('line'), call=h.get('call'), kind=h.get('kind'),
                              function=h.get('function'), why=h.get('why'), triggers=h.get('triggers') or [],
-                             reach=h.get('reach') or hazard_reach(h.get('triggers')),
+                             reach=h.get('reach') or 'game',
                              review=(h.get('review') or {}).get('why')) for h in hits if not h.get('covered')]
             findings.sort(key=lambda f: f['reach'] == 'input')
             notes.append(f'hazard scan of the UI files of {report_path.parent.name}: {len(hits)} call(s), '
@@ -421,8 +410,8 @@ def health_checks(ctx):
         if game:
             summary.append(f'{len(game)} state-changing UI call(s) without a profile that a game can reach')
         if len(findings) > len(game):
-            summary.append(f'{len(findings) - len(game)} more reached only through player input (clicks, buttons), '
-                           'which an autoplayed game does not send')
+            summary.append(f'{len(findings) - len(game)} more reached only through player input (clicks, buttons, '
+                           'tooltips), which an autoplayed game does not send')
         if unknown_files:
             summary.append(f'{len(unknown_files)} UI file(s) not known to any profile')
         out.append(check('health.ui-hazards', title, status, '; '.join(summary) or 'clean', findings=findings[:80],
@@ -432,20 +421,72 @@ def health_checks(ctx):
     return out
 
 
-# Triggers of a hazard (civ5headless.hazards) that only player input fires: a hazard whose every trigger is one of
-# these cannot run in an autoplayed game. Anything else (load, GameEvents, Events, LuaEvents, per-frame updates,
-# show/hide, no trigger found) counts as reachable.
-INPUT_TRIGGERS = ('Mouse.', 'MouseEvents.', 'AddButton', 'RegisterCallback', 'RegisterCheckHandler',
-                  'RegisterSelectionCallback', 'RegisterSliderCallback', 'SetInputHandler', 'CommitConfirm',
-                  'InterfaceModeMessageHandler', 'ToolTip', 'LEFT_CLICK', 'RIGHT_CLICK')
-
-
-def hazard_reach(triggers):
-    """'input' when every trigger of a hazard is player input, else 'game'."""
-    triggers = [t for t in (triggers or []) if t]
-    if triggers and all(any(k in t for k in INPUT_TRIGGERS) for t in triggers):
-        return 'input'
-    return 'game'
+def civ_choice_check(ctx):
+    """Who chose each compared host game's civilizations and city-states (host-report.json dll.hostChoseCivs and
+    minorCivs). A DLL that leaves random choices to the exe (the stock DLL) gets them from the host, which cannot draw
+    what the exe drew: the specs name the major civilizations, and the host games compared with a real game get its
+    city-states (pins.py). Real mode: fail when the host drew anything for a compared game, or when a compared game's
+    city-states differ from the real game's (allMatch false); host-only: warn when the host drew anything."""
+    title = 'Civilizations and city-states named, or chosen by the DLL; the real game\'s in compared games'
+    reports = {d.name: r for d, r in _reports(ctx)}
+    if not reports:
+        return check('setup.civ-choice', title, 'n/a', 'no host-report.json (an older civ5headless.exe)')
+    compared = ([j for j in ctx.jobs.values() if j.get('kind') in ('setup', 'trajectory', 'reference', 'standard')]
+                if ctx.real_mode else list(ctx.jobs.values()))
+    rows, drew, mismatch, unpinned, others = [], [], [], [], []
+    for j in compared:
+        r = reports.get(j['name'])
+        if r is None:
+            continue
+        mc = r.get('minorCivs') or {}
+        slots = mc.get('slots') or []
+        by = {}
+        for x in slots:
+            by[x.get('chosenBy')] = by.get(x.get('chosenBy'), 0) + 1
+        host = bool((r.get('dll') or {}).get('hostChoseCivs')) or by.get('host', 0) > 0
+        row = dict(game=j['name'], chosenBy=mc.get('chosenBy'), slots=by, hostDrew=host, pinned=j.get('pinned'),
+                   pinNote=j.get('pinNote'), allMatch=mc.get('allMatch'),
+                   differing=[dict(slot=x.get('slot'), type=x.get('type'), pinned=x.get('pinnedType'))
+                              for x in slots if x.get('match') is False][:12])
+        rows.append(row)
+        if host:
+            drew.append(j['name'])
+        if ctx.real_mode and j.get('pinned') and mc.get('allMatch') is False and not host:
+            mismatch.append(j['name'])
+        if ctx.real_mode and not j.get('pinned'):
+            unpinned.append(j['name'])
+    if ctx.real_mode:
+        others = sorted(n for n, r in reports.items() if (r.get('dll') or {}).get('hostChoseCivs')
+                        and n not in {j['name'] for j in compared})
+    if not rows:
+        return check('setup.civ-choice', title, 'n/a', 'no host-report.json for the compared host games')
+    parts = []
+    if drew:
+        what = 'the real game chooses others, so they differ from the start' if ctx.real_mode else \
+            'a real game would choose others; a real-game comparison pins them from the real game'
+        parts.append(f'the host drew civilizations or city-states at random in {len(drew)} of {len(rows)} '
+                     f"{'compared ' if ctx.real_mode else ''}game(s) (this DLL leaves the choice to the exe): {what}")
+    if mismatch:
+        parts.append(f"the DLL chose other city-states than the real game in {len(mismatch)} compared game(s): "
+                     + ', '.join(mismatch[:6]))
+    if not parts:
+        dll = sum(1 for r in rows if r['chosenBy'] == 'dll')
+        pinned = [r for r in rows if r['pinned']]
+        text = f'no draw by the host in {len(rows)} ' + ('compared game(s)' if ctx.real_mode else 'game(s)')
+        if pinned and ctx.real_mode:
+            text += (f"; {len(pinned)} pinned to the real game's city-states, "
+                     + ('the DLL chose the same ones' if dll else 'the host applied them'))
+        elif dll:
+            text += '; the DLL chose the city-states'
+        parts.append(text)
+    if unpinned:
+        parts.append(f'{len(unpinned)} compared game(s) played without the real game\'s city-states '
+                     f"({next((r['pinNote'] for r in rows if r['game'] in unpinned and r.get('pinNote')), 'see details')})")
+    if others:
+        parts.append(f'the host drew them in {len(others)} other game(s) (the ensemble: not compared game by game)')
+    status = ('fail' if ctx.real_mode else 'warn') if (drew or mismatch) else 'pass'
+    return check('setup.civ-choice', title, status, '; '.join(parts), games=rows[:40], hostDrew=drew[:20],
+                 differ=mismatch[:20], unpinned=unpinned[:20], otherHostDraws=len(others))
 
 
 def _hazard_scan(hazards, report_path):

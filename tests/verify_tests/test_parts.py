@@ -7,7 +7,7 @@ import re
 import tempfile
 import unittest
 
-from civ5headless.verify import checks, exact, hostside, perf, realside, report, series, settings as settings_mod
+from civ5headless.verify import exact, hostside, perf, pins, realside, report, series, settings as settings_mod
 
 import fakegame
 
@@ -238,16 +238,39 @@ class ReportTest(unittest.TestCase):
         self.assertNotIn('<script', html)
 
 
-class HazardReachTest(unittest.TestCase):
-    def test_reach(self):
-        self.assertEqual(checks.hazard_reach(['callback Mouse.eLClick']), 'input')
-        self.assertEqual(checks.hazard_reach(['via callback Mouse.eLClick', 'passed to AddButton']), 'input')
-        self.assertEqual(checks.hazard_reach(['via ContextPtr:SetInputHandler']), 'input')
-        self.assertEqual(checks.hazard_reach(['Events.SequenceGameInitComplete', 'via callback Mouse.eLClick']), 'game')
-        self.assertEqual(checks.hazard_reach(['GameEvents.PlayerCityFounded']), 'game')
-        self.assertEqual(checks.hazard_reach(['via ContextPtr:SetUpdate']), 'game')
-        self.assertEqual(checks.hazard_reach([]), 'game')   # no trigger found: may run at load
-        self.assertEqual(checks.hazard_reach(None), 'game')
+class PinsTest(unittest.TestCase):
+    def test_from_fingerprint(self):
+        from civ5headless import fingerprint
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'Lua.log'
+            game = fakegame.Game({'seeds': {'map': 3, 'sync': 4}}, chooser='exe')
+            log.write_text('\n'.join(['[1.0] InGame: ' + x for x in game.meta_lines() + game.fingerprint_lines(0)]) + '\n',
+                           encoding='utf-8')
+            types, info = pins.from_fingerprint(fingerprint.read(log))
+        self.assertEqual(types, game.minors)
+        self.assertEqual(info['maxMajors'], 22)
+        self.assertEqual(sorted(info['slots']), ['22', '23', '24'])
+
+    def test_gap_is_noted(self):
+        class FP:
+            meta = {'maxMajors': '22'}
+            players = {0: {'civ': 'CIVILIZATION_X'}, 22: {'minor': 'MINOR_CIV_A'}, 24: {'minor': 'MINOR_CIV_C'}}
+        types, info = pins.from_fingerprint(FP())
+        self.assertEqual(types, ['MINOR_CIV_A'])
+        self.assertIn('not contiguous', info['note'])
+
+    def test_wait_publish_close(self):
+        import threading
+        p = pins.Pins()
+        self.assertIsNone(p.wait('x', 0.05)['minorCivs'])  # nothing yet: times out
+        threading.Timer(0.1, p.publish, args=('x', ['MINOR_CIV_A'])).start()
+        self.assertEqual(p.wait('x', 5)['minorCivs'], ['MINOR_CIV_A'])
+        p.publish('x', None, reason='later')  # the first value stays
+        self.assertEqual(p.get('x')['minorCivs'], ['MINOR_CIV_A'])
+        threading.Timer(0.1, p.close, args=('the real game stopped',)).start()
+        got = p.wait('y', 5)
+        self.assertIsNone(got['minorCivs'])
+        self.assertEqual(got['reason'], 'the real game stopped')
 
 
 class NoMachinePathsTest(unittest.TestCase):

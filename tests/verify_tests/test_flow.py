@@ -15,8 +15,20 @@ from civ5headless import config
 from civ5headless.verify import capabilities, settings as settings_mod, suite
 
 from fake_session import FakeRealGameSession
+import fakegame
 
 HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+
+
+class FakeHazards:
+    """civ5headless.hazards' scan_report as the check uses it: hits with reach and covered."""
+    @staticmethod
+    def scan_report(report_path):
+        hit = dict(file='X.lua', line=1, call='Network.SendX', kind='writes', function='f', why='writes', triggers=[])
+        return [dict(hit, reach='game', covered=False), dict(hit, reach='load', covered=False),
+                dict(hit, reach='input', covered=False), dict(hit, reach='input', covered=False),
+                dict(hit, reach='game', covered=True, coveredBy='profile')]
 
 SCHEMA = [
     'CREATE TABLE Worlds(ID INTEGER, Type TEXT, DefaultPlayers INTEGER, DefaultMinorCivs INTEGER)',
@@ -30,6 +42,7 @@ SCHEMA = [
     'CREATE TABLE Victories(ID INTEGER, Type TEXT)',
     'CREATE TABLE GameOptions(ID INTEGER, Type TEXT, SupportsSinglePlayer INTEGER)',
     'CREATE TABLE Civilizations(ID INTEGER, Type TEXT, Playable INTEGER)',
+    'CREATE TABLE MinorCivilizations(ID INTEGER, Type TEXT)',
 ]
 ROWS = {
     'Worlds': [(0, 'WORLDSIZE_DUEL', 2, 4), (1, 'WORLDSIZE_TINY', 4, 8), (2, 'WORLDSIZE_SMALL', 6, 12), (3, 'WORLDSIZE_STANDARD', 8, 16)],
@@ -44,6 +57,7 @@ ROWS = {
     'Civilizations': [(0, 'CIVILIZATION_AMERICA', 1), (1, 'CIVILIZATION_GREECE', 1), (2, 'CIVILIZATION_EGYPT', 1),
                       (3, 'CIVILIZATION_JAPAN', 1), (4, 'CIVILIZATION_SWEDEN', 1), (5, 'CIVILIZATION_CHINA', 1),
                       (6, 'CIVILIZATION_BARBARIAN', 0)],
+    'MinorCivilizations': [(i, t) for i, t in enumerate(fakegame.MINOR_POOL)],
 }
 
 
@@ -77,7 +91,8 @@ class FlowTest(unittest.TestCase):
         for name in ('mods.db', 'loc.db', 'game.dll'):
             (tmp / name).write_bytes(b'x')
         self.cfg = config.Config(game_dir=tmp / 'game', mods_dir=tmp / 'MODS', mods_db=tmp / 'mods.db', loc_db=tmp / 'loc.db',
-                                 dll=tmp / 'game.dll', exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs')
+                                 dll=tmp / 'game.dll', exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs',
+                                 probes=REPO / 'probes')
         self.env = mock.patch.dict(os.environ, {'C5H_TEST_PYTHON': sys.executable, 'C5H_FAKE_LUA_PROBE': '1'})
         self.env.start()
         for k in [k for k in os.environ if k.startswith('C5H_FAKE_') and k != 'C5H_FAKE_LUA_PROBE']:
@@ -88,6 +103,7 @@ class FlowTest(unittest.TestCase):
         FakeRealGameSession.scale = 1.0
         FakeRealGameSession.fail_in = None
         FakeRealGameSession.with_extras = True
+        FakeRealGameSession.exe_chooses = False
         FakeRealGameSession.instances = []
 
     def tearDown(self):
@@ -142,6 +158,18 @@ class FlowTest(unittest.TestCase):
         self.assertEqual([x['civ'] for x in spec['slots'][:4]], ['CIVILIZATION_GREECE', 'CIVILIZATION_EGYPT',
                                                                  'CIVILIZATION_JAPAN', 'CIVILIZATION_SWEDEN'])
         self.assertEqual(self.status('setup.civ-choice'), 'n/a')  # no host-report.json from this fake host run
+        # the fingerprint probe through run.play and start_game; the compared host games got the real city-states
+        plan = json.loads((out / 'plan.json').read_text(encoding='utf-8'))
+        self.assertTrue(plan['pinning'])
+        self.assertEqual([p['name'] for p in plan['phases']], ['probe', 'ensemble', 'setups', 'single', 'references'])
+        jobs = {j['name']: j for j in doc['jobs']}
+        real = {g['name']: g for g in doc['real']['games']}
+        self.assertEqual(jobs['trajectory']['pinned'], real['trajectory']['minorCivs']['types'])
+        self.assertEqual(jobs['trajectory-aa']['pinned'], real['trajectory']['minorCivs']['types'])
+        self.assertEqual(jobs['setup-earth-b']['pinned'], real['setup-earth']['minorCivs']['types'])
+        self.assertIsNone(jobs['ensemble-01']['pinned'])
+        self.assertIn('C5HFP|v=1|player|', (out / 'host/trajectory/Logs/Lua.log').read_text(encoding='utf-8'))
+        self.assertIn('replay_data', s.calls)
         # the ensemble varied the map seed (the fake game ignores the sync seed)
         self.assertEqual(self.checks['statistics.ensemble']['details']['vary'], 'map')
         # history: one line; a second analysis does not add another
@@ -209,11 +237,56 @@ class FlowTest(unittest.TestCase):
         tp = {r['workers'] for r in doc['performance']['throughput']}
         self.assertEqual(tp, {1, 2, 4})
 
-    def test_host_chose_civs(self):
+    def test_stock_dll_gets_the_real_city_states(self):
+        # the DLL leaves city-states to the exe: the real game's are a draw the host cannot make, so the compared
+        # host games take them from the real game's turn-0 fingerprint
         os.environ['C5H_FAKE_HOST_REPORT'] = '1'
         os.environ['C5H_FAKE_HOST_CHOSE_CIVS'] = '1'
+        FakeRealGameSession.exe_chooses = True
+        doc = self.run_suite('quick')
+        self.assertEqual(self.status('setup.civ-choice'), 'pass', self.checks['setup.civ-choice']['summary'])
+        self.assertIn('the host applied them', self.checks['setup.civ-choice']['summary'])
+        self.assertIn('other game(s)', self.checks['setup.civ-choice']['summary'])  # the unpinned ensemble
+        for cid in ('setup.turn0', 'trajectory.real', 'trajectory.aa'):
+            self.assertEqual(self.status(cid), 'pass', (cid, self.checks[cid]['summary']))
+        failing = [c['id'] for c in doc['checks'] if c['status'] == 'fail']
+        self.assertEqual(failing, ['health.stubs'])  # the fake host report names one unknown stub
+
+    def test_stock_dll_without_pins_fails(self):
+        os.environ['C5H_FAKE_HOST_REPORT'] = '1'
+        os.environ['C5H_FAKE_HOST_CHOSE_CIVS'] = '1'
+        FakeRealGameSession.exe_chooses = True
+        doc = self.run_suite('quick', pin_minor_civs=False)
+        self.assertEqual(self.status('setup.civ-choice'), 'fail')
+        self.assertIn('drew', self.checks['setup.civ-choice']['summary'])
+        self.assertEqual(self.status('setup.turn0'), 'fail')
+        self.assertEqual(doc['real']['games'][0].get('minorCivs'), None)
+
+    def test_dll_choice_other_than_the_real_game(self):
+        # the DLL chooses city-states itself, but not the ones the real game has: pins compared, not applied
+        os.environ['C5H_FAKE_HOST_REPORT'] = '1'
+        FakeRealGameSession.exe_chooses = True
         self.run_suite('quick')
         self.assertEqual(self.status('setup.civ-choice'), 'fail')
+        self.assertIn('other city-states than the real game', self.checks['setup.civ-choice']['summary'])
+
+    def test_host_only_names_city_states(self):
+        os.environ['C5H_FAKE_HOST_REPORT'] = '1'
+        os.environ['C5H_FAKE_HOST_CHOSE_CIVS'] = '1'
+        doc = self.run_suite('host-only')
+        self.assertEqual(self.status('setup.civ-choice'), 'pass', self.checks['setup.civ-choice']['summary'])
+        spec = json.loads((Path(doc['run']) / 'specs/trajectory.json').read_text(encoding='utf-8'))
+        self.assertEqual([m['type'] for m in spec['minorCivs']][:2], ['MINOR_CIV_GENEVA', 'MINOR_CIV_BUDAPEST'])
+        self.run_suite('host-only', pin_minor_civs=False)
+        self.assertEqual(self.status('setup.civ-choice'), 'warn')
+
+    def test_ui_hazards_by_reach(self):
+        os.environ['C5H_FAKE_HOST_REPORT'] = '1'
+        self.run_suite('host-only', caps=dict(hazards=FakeHazards))
+        c = self.checks['health.ui-hazards']
+        self.assertEqual(c['status'], 'warn')
+        self.assertEqual((c['details']['gameReachable'], c['details']['inputOnly']), (2, 2))
+        self.assertIn('2 more reached only through player input', c['summary'])
 
     def test_shared_seeds_need_one_launch(self):
         setups = [dict(x) for x in SMALL['setups']]
