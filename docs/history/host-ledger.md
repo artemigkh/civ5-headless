@@ -15,9 +15,8 @@ commit it with the change it describes.
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
   Staging packs the mod files of the checkout it runs in, so restore from an `ai-improvements` checkout
   (a temporary worktree with the toolchain junction), not from this branch.
-- **Deployed now:** the field-map DLL `work/msvc-output/Release-fieldmap/20261025-015157` (`39F621D3…111F192D`,
-  headless-host 98d7661bf with `tools/headless/fieldmap_transform.py` applied: dumps also write
-  `<section>.fields.txt`; otherwise identical to the normal build `work/msvc-output/Release/20261025-015258`).
+- **Batch-1 references** were recorded with the pre-fix field-map DLL `work/msvc-output/Release-fieldmap/20261025-015157`
+  (`39F621D3…`, headless-host 98d7661bf; dumps also write `<section>.fields.txt`).
 - **Agents in flight** (Opus, high effort; own worktree and branch; `RESUME.md` in the worktree on pause):
   - host: M5, worktree `work/wt/hh-host`, branch `hh-host`. Work order: Continental Drift (first divergent map
     RNG call 189922 from `work/test-runs/hh-m3-cdrift-randlog/RandCalls.csv`: the real game makes one more
@@ -108,7 +107,14 @@ commit it with the change it describes.
   control -1, else 0; stock iterator). The map script keeps its height grids from `maps[0]`, so the real game adds
   grid 0 and the stock-Lua host did not. `debug` is nil in the real front end and unusable in the map-script
   thread. The host agent is matching both.
-- **Runs in flight:** none.
+- **M5 matrix batch 1 complete (1d70b7db0): all 58 cases identical** (pre-fix DLL as recorded; vp-west-vs-east needs
+  the `m_iFreeMoveAcross` init, speed-marathon `--pregame-turn-timer 1` as an old reference). Last fixes: engine
+  `ipairs` and per-thread `debug` (Continental Drift), era-start unit selection, CP city-event popup notification,
+  great-person reward popup, closed slots of dead city-states, turn-timer pin in gamespec and host.
+- **Deployed now:** fixed field-map DLL `work/msvc-output/Release-fieldmap/20261025-053635` (`89F146A7…BA619A6408B`,
+  DLL source = headless-host 1d70b7db0: logging-neutral AI, uninitialised-member fixes).
+- **Runs in flight:** smoke re-record with the fixed DLL: `work/headless/record_matrix.py
+  work/headless/matrix/m5-smoke-fixed.json` (prefix `hh-m5f`, 11 cases, status `work/test-runs/hh-m5f-matrix.json`).
 - **Next steps:**
   1. Review and merge the host agent's work (cdrift, then M3 milestones).
   2. Re-measure parallel scaling on an idle machine (`work/headless/m6/queues/scale-w<W>.json`, see
@@ -160,3 +166,4 @@ commit it with the change it describes.
 - 2026-10-25: M5 part 1 merged (f551e3815): two logging-dependent AI decisions fixed; heap perturbation changes nothing.
 - 2026-10-25: M5 matrix comparisons merged (bc8b57f5a): 49 cases identical; Continental Drift, era selection and
   the options cases open.
+- 2026-10-25: M5 matrix batch 1 fully identical (1d70b7db0); fixed DLL deployed; smoke re-record started.
