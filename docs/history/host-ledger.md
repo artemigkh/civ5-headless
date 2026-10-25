@@ -28,7 +28,7 @@ commit it with the change it describes.
   plus the checkpoint.
 - **Merged into headless-host:**
   - D1 recorder (021ba53f4), D2–D5 digest (92caccb78), M4 database builder (0c240f6bb).
-  - M2 first part (hh-host 67b9a9887, merge 2a8b1b3b1-ish "Merge hh-host"): `civ5headless.exe newgame --spec`,
+  - M2 first part (hh-host 67b9a9887, merge 7f4e2a49c): `civ5headless.exe newgame --spec`,
     pregame from a resolved spec, VFS and include, map-script Lua, start sequence. All test maps generate
     under `--strict`; the Earth T000 map section is byte-identical to the real game's; HHSEEDS and the
     whole HHPREGAME snapshot match S1 and S3 line for line.
