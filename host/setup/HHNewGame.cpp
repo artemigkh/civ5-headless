@@ -2,6 +2,7 @@
 #include "lua/HHScriptSystem.h"
 #include "engine/HHEngineServices.h"
 #include "engine/HHRuntime.h"
+#include "setup/HHVfs.h"
 
 // Every engine-side call that changes DLL state is recorded in kResult.steps, so the run
 // folder documents the exact sequence (newgame-report.json "steps").
@@ -400,7 +401,11 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	{
 		const std::string seedFile = HHGetPaths().cache + "HeadlessSeeds.txt";
 		// Same keys as vpbench's driver (digest=1: per-turn digest logging from turn 0).
-		HHWriteTextFile(seedFile, HHFormat("map=%u\nsync=%u\ndigest=1\n", uiMapSeed, uiSyncSeed));
+		std::string seeds = HHFormat("map=%u\nsync=%u\ndigest=1\n", uiMapSeed, uiSyncSeed);
+		// --dump-turns FROM:TO: the DLL dumps the state at doTurnBegin of those turns (Logs\HeadlessDumps).
+		if(HHGetOptions().dumpFrom >= 0)
+			seeds += HHFormat("dumpfrom=%d\ndumpto=%d\n", HHGetOptions().dumpFrom, HHGetOptions().dumpTo);
+		HHWriteTextFile(seedFile, seeds);
 		kResult.steps.push_back(HHFormat("write %s: map=%u sync=%u", seedFile.c_str(), uiMapSeed, uiSyncSeed));
 		kResult.seedMode = "HeadlessSeeds.txt";
 	}
@@ -771,4 +776,182 @@ void HHEndNewGame(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
 	// ICvGame1::Uninit (CvDllGame::Uninit traps while it is set).
 	HH_STEP("setGameStarted(false)", kIf.pPreGame->setGameStarted(false));
 	HH_STEP("Game.Uninit()", kIf.pGame->Uninit());
+}
+
+//------------------------------------------------------------------------------
+// M3: gameplay add-ins and the autoplay turn loop
+//------------------------------------------------------------------------------
+namespace
+{
+	// InGameUIAddin scripts that register gameplay GameEvents listeners and need no UI (plan M3.2,
+	// appendix C). Every other InGameUIAddin of the activated mods is UI-only and skipped (logged).
+	const char* kGameplayAddins[] = { "GlobalCityBombardRange.lua", "CBP_IncaFunctions.lua" };
+
+	std::string BaseName(const std::string& path)
+	{
+		const size_t slash = path.find_last_of("\/");
+		return slash == std::string::npos ? path : path.substr(slash + 1);
+	}
+
+	bool IsGameplayAddin(const std::string& file)
+	{
+		const std::string base = BaseName(file);
+		for(size_t i = 0; i < sizeof(kGameplayAddins) / sizeof(kGameplayAddins[0]); ++i)
+			if(_stricmp(base.c_str(), kGameplayAddins[i]) == 0)
+				return true;
+		return false;
+	}
+
+	int LuaInt(HHScriptSystem& kScripts, const char* szChunk, int iDefault)
+	{
+		int v = iDefault;
+		if(lua_State* L = RunReturning(kScripts, "Headless query", szChunk))
+		{
+			if(lua_isnumber(L, -1))
+				v = (int)lua_tointeger(L, -1);
+			kScripts.FreeLuaThread(L);
+		}
+		return v;
+	}
+
+	std::string DumpState(HHScriptSystem& kScripts, const std::string& folder)
+	{
+		std::string chunk = "if Game.DumpHeadlessState == nil then return nil end\nreturn Game.DumpHeadlessState([==[" + folder + "]==])\n";
+		std::string line;
+		if(lua_State* L = RunReturning(kScripts, "Headless dump", chunk.c_str()))
+		{
+			if(lua_isstring(L, -1))
+				line = lua_tostring(L, -1);
+			kScripts.FreeLuaThread(L);
+		}
+		return line;
+	}
+}
+
+bool HHLoadGameplayAddins(HHNewGameInterfaces& kIf, HHNewGameResult& kResult)
+{
+	bool bOk = true;
+	const std::vector<HHActivatedMod>& mods = HHGetVfs().GetMods();
+	for(size_t m = 0; m < mods.size(); ++m)
+	{
+		for(size_t e = 0; e < mods[m].entryPoints.size(); ++e)
+		{
+			const HHModEntryPoint& ep = mods[m].entryPoints[e];
+			if(_stricmp(ep.type.c_str(), "InGameUIAddin") != 0)
+				continue;
+			if(!IsGameplayAddin(ep.file))
+			{
+				HHLog("InGameUIAddin skipped (UI only): %s / %s", mods[m].name.c_str(), ep.file.c_str());
+				continue;
+			}
+			std::string path = mods[m].folder + "\\" + Slashes(ep.file);
+			if(GetFileAttributesW(HHWiden(path).c_str()) == INVALID_FILE_ATTRIBUTES)
+			{
+				const std::vector<HHVfsEntry>* pFound = HHGetVfs().Find(BaseName(ep.file));
+				path = pFound && !pFound->empty() ? (*pFound)[0].path : std::string();
+			}
+			if(path.empty())
+			{
+				HHLogError("gameplay add-in not found: %s / %s", mods[m].name.c_str(), ep.file.c_str());
+				bOk = false;
+				continue;
+			}
+			// Each add-in is its own context: a thread with its own environment, kept alive for the game
+			// (its listeners close over it).
+			lua_State* L = kIf.pScripts->CreateLuaThread(BaseName(path).c_str());
+			if(!L || !kIf.pScripts->LoadFile(L, path.c_str()))
+			{
+				HHLogError("gameplay add-in failed: %s", path.c_str());
+				bOk = false;
+				continue;
+			}
+			kResult.addins.push_back(path);
+			kResult.steps.push_back("InGameUIAddin " + path);
+		}
+	}
+	return bOk;
+}
+
+bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurns, int nIdleUpdates)
+{
+	const double t0 = Now();
+	HHScriptSystem& kScripts = *kIf.pScripts;
+	// ARM (work/headless/game_probe.py, InGame context, while the load screen is up): quick combat and
+	// quick movement are game options (serialized state); SetAIAutoPlay moves the active player to an
+	// observer slot and re-sends the player options for it.
+	const std::string arm = HHFormat(
+		"Game.SetOption('GAMEOPTION_QUICK_COMBAT',true);Game.SetOption('GAMEOPTION_QUICK_MOVEMENT',true);"
+		"Game.SetAIAutoPlay(%d,0);return Game.GetAIAutoPlay()", nTurns);
+	int iArmed = 0;
+	if(lua_State* L = RunReturning(kScripts, "Headless arm-autoplay", arm.c_str()))
+	{
+		iArmed = (int)lua_tointeger(L, -1);
+		kScripts.FreeLuaThread(L);
+	}
+	kResult.steps.push_back(HHFormat("ARM: QUICK_COMBAT, QUICK_MOVEMENT, Game.SetAIAutoPlay(%d, 0) -> %d; active player %d", nTurns, iArmed,
+	                                 (int)kIf.pPreGame->activePlayer()));
+	kResult.steps.push_back(HHFormat("NetMessageHandler.Response* x%u", (unsigned)HHDeliverNetMessages(kIf)));
+	if(iArmed != nTurns)
+	{
+		kResult.error = "SetAIAutoPlay did not arm autoplay";
+		return false;
+	}
+	// CONTINUE (vpbench.CONTINUE, LoadScreen context): Events.LoadScreenClose() and UI.SetDontShowPopups(false)
+	// are UI; Game.SetPausePlayer(-1) unpauses the game core.
+	HH_STEP("Game.SetPausePlayer(-1)", kIf.pGame->SetPausePlayer(NO_PLAYER));
+	HHDeliverNetMessages(kIf);
+
+	// The game core: ICvGame1::Update until the autoplay counter is back to 0 at turn nTurns (the
+	// engine calls it once per frame from its core thread; one call processes one player).
+	int iTurn = kIf.pGame->GetGameTurn();
+	double tTurn = Now();
+	int iTurnUpdates = 0;
+	int iIdle = -1;
+	const int kMaxUpdatesPerTurn = 2000;
+	for(;;)
+	{
+		kIf.pEngine->SetInGameCoreUpdate(true);
+		kIf.pGame->Update();
+		kIf.pEngine->SetInGameCoreUpdate(false);
+		kIf.pEngine->EndOfUpdate();
+		HHDeliverNetMessages(kIf);
+		++kResult.iUpdates;
+		++iTurnUpdates;
+		const int iNow = kIf.pGame->GetGameTurn();
+		if(iNow != iTurn)
+		{
+			kResult.turnSeconds.push_back(std::make_pair(iTurn, Now() - tTurn));
+			kResult.turnUpdates.push_back(std::make_pair(iTurn, iTurnUpdates));
+			HHLog("turn %d: %d updates, %.2f s", iTurn, iTurnUpdates, Now() - tTurn);
+			iTurn = iNow;
+			tTurn = Now();
+			iTurnUpdates = 0;
+		}
+		if(kIf.pGame->GetGameState() != GAMESTATE_ON)
+		{
+			HHLog("game state %d at turn %d", (int)kIf.pGame->GetGameState(), iNow);
+			break;
+		}
+		if(iIdle < 0 && iNow >= nTurns && LuaInt(kScripts, "return Game.GetAIAutoPlay()", -1) == 0)
+			iIdle = 0;   // autoplay ended: the human turn; the reference keeps running Updates until its end probe
+		if(iIdle >= 0 && iIdle++ >= nIdleUpdates)
+			break;
+		if(iTurnUpdates > kMaxUpdatesPerTurn)
+		{
+			kResult.error = HHFormat("watchdog: turn %d did not end after %d updates", iNow, iTurnUpdates);
+			HHLogError("%s", kResult.error.c_str());
+			break;
+		}
+	}
+	kResult.turnSeconds.push_back(std::make_pair(iTurn, Now() - tTurn));
+	kResult.turnUpdates.push_back(std::make_pair(iTurn, iTurnUpdates));
+	kResult.iTurnsPlayed = kIf.pGame->GetGameTurn();
+	kResult.netMessages = kIf.pEngine->GetNetMessageCounts();
+	kResult.timings.push_back(std::make_pair(std::string("autoplay"), Now() - t0));
+
+	const std::string folder = HHGetPaths().run + HHFormat("dump-t%03d", kResult.iTurnsPlayed);
+	const std::string line = DumpState(kScripts, folder);
+	kResult.steps.push_back("Game.DumpHeadlessState(" + folder + ")");
+	kResult.bAutoplayOk = kResult.error.empty() && !line.empty();
+	return kResult.bAutoplayOk;
 }

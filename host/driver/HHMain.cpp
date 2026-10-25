@@ -163,6 +163,7 @@ namespace
 			if(a == "--strict") o.strict = true;
 			else if(a == "--verbose") o.verbose = true;
 			else if(a == "--game-logging") o.gameLogging = true;
+			else if(a == "--no-game-logging") o.noGameLogging = true;
 			else if(a == "--keep-dll-loaded") o.freeLibrary = false;
 			else if(a == "--no-mods") o.noMods = true;
 			else if(a == "--no-lua-debug") o.luaDebugLibrary = false;
@@ -181,6 +182,15 @@ namespace
 			else if(a == "--mods-db") { o.modsDbPath = v; ++i; }
 			else if(a == "--player-option") { o.playerOptions.push_back(v); ++i; }
 			else if(a == "--exe-seed") { o.exeSeed = _strtoi64(v.c_str(), NULL, 10); ++i; }
+			else if(a == "--dump-turns")
+			{
+				const size_t colon = v.find(':');
+				o.dumpFrom = atoi(v.c_str());
+				o.dumpTo = colon == std::string::npos ? o.dumpFrom : atoi(v.c_str() + colon + 1);
+				++i;
+			}
+			else if(a == "--turns") { o.turns = atoi(v.c_str()); ++i; }
+			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-srand") { o.crtSrand = _strtoi64(v.c_str(), NULL, 10); ++i; }
@@ -211,6 +221,11 @@ namespace
 				return false;
 			}
 			o.specPath = HHFullPath(o.specPath);
+			// The reference profile's config.ini has LoggingEnabled, AILog, AIPerfLog, BuilderAILog and
+			// PlayerAndCityAILogSplit on, and the DLL's AI logging changes results (CvPlayer::GetBestSettlePlot
+			// computes fresh found values when logging), so newgame logs like the reference by default.
+			if(!o.noGameLogging)
+				o.gameLogging = true;
 			if(o.gameDir.empty()) o.gameDir = "E:\\SteamLibrary\\steamapps\\common\\Sid Meier's Civilization V";
 			if(o.dllPath.empty()) o.dllPath = o.modsDir + "\\(1) Community Patch\\CvGameCore_Expansion2.dll";
 		}
@@ -354,7 +369,26 @@ namespace
 		add += "},\n    \"activated_mods\": [";
 		for(size_t i = 0; i < HHGetVfs().GetMods().size(); ++i)
 			add += HHFormat("%s\"%s\"", i ? ", " : "", HHJsonEscape(HHGetVfs().GetMods()[i].name).c_str());
-		add += "],\n    \"steps\": [\n";
+		add += "],\n";
+		if(o.turns > 0)
+		{
+			add += HHFormat("    \"autoplay\": {\"ok\": %s, \"turns\": %d, \"updates\": %d, \"turn_seconds\": {", ng.bAutoplayOk ? "true" : "false",
+			                ng.iTurnsPlayed, ng.iUpdates);
+			for(size_t i = 0; i < ng.turnSeconds.size(); ++i)
+				add += HHFormat("%s\"%d\": %.3f", i ? ", " : "", ng.turnSeconds[i].first, ng.turnSeconds[i].second);
+			add += "}, \"turn_updates\": {";
+			for(size_t i = 0; i < ng.turnUpdates.size(); ++i)
+				add += HHFormat("%s\"%d\": %d", i ? ", " : "", ng.turnUpdates[i].first, ng.turnUpdates[i].second);
+			add += "}, \"net_messages\": {";
+			size_t k = 0;
+			for(std::map<std::string, int>::const_iterator it = ng.netMessages.begin(); it != ng.netMessages.end(); ++it, ++k)
+				add += HHFormat("%s\"%s\": %d", k ? ", " : "", it->first.c_str(), it->second);
+			add += "}, \"addins\": [";
+			for(size_t i = 0; i < ng.addins.size(); ++i)
+				add += HHFormat("%s\"%s\"", i ? ", " : "", HHJsonEscape(ng.addins[i]).c_str());
+			add += "]},\n";
+		}
+		add += "    \"steps\": [\n";
 		for(size_t i = 0; i < ng.steps.size(); ++i)
 			add += "      \"" + HHJsonEscape(ng.steps[i]) + "\"" + (i + 1 < ng.steps.size() ? ",\n" : "\n");
 		add += "    ]\n  }\n}\n";
@@ -548,7 +582,17 @@ namespace
 			pContext2->SetEngineUserInterface(pUI);
 		else
 			HHLog("warning: no ICvGameContext2, user interface not set");
+		// Boot order of the exe (trace): SetLogging, SetAILogging, SetAIPerfLogging, SetBuilderAILogging,
+		// SetPlayerAndCityAILogSplit, from config.ini (LoggingEnabled, AILog, AIPerfLog, BuilderAILog,
+		// PlayerAndCityAILogSplit; RandLog = 0 is not sent).
 		pContext->SetLogging(o.gameLogging);
+		if(o.gameLogging)
+		{
+			pContext->SetAILogging(true);
+			pContext->SetAIPerfLogging(true);
+			pContext->SetBuilderAILogging(true);
+			pContext->SetPlayerAndCityAILogSplit(true);
+		}
 
 		HHSetPhase("database");
 		HHDatabases dbs;
@@ -751,6 +795,12 @@ namespace
 					HHSetPhase("t000");
 					HHLoadScreen(nif, ng);
 					HHWriteT000(kSpec, nif, ng);
+					if(o.turns > 0)
+					{
+						HHSetPhase("autoplay");
+						HHLoadGameplayAddins(nif, ng);
+						HHRunAutoplay(nif, ng, o.turns, o.idleUpdates);
+					}
 				}
 			}
 			if(!ng.error.empty())
