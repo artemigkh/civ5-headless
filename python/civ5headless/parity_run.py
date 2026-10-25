@@ -38,6 +38,10 @@ import hhdigest  # noqa: E402
 
 DEFAULT_DB = MAIN / 'work/headless/db/mods-reference-08D19878.db'
 DEFAULT_STATUS = RUNS / 'hh-m5-matrix.json'
+# game_probe.py's VICTORY probe (victory.json of a game to victory), run in the host before its final dump
+VICTORY_LUA = ("local ok,v=pcall(function() return Game.GetVictory() end);"
+               "return {turn=Game.GetGameTurn(),winner=Game.GetWinner(),victory=ok and v or -2,state=Game.GetGameState()}")
+VICTORY_KEYS = ('turn', 'winner', 'victory', 'state')
 
 
 def latest_exe():
@@ -110,6 +114,11 @@ def run_case(ref, a, quiet=False):
     if a.mods_db: cmd += ['--mods-db', str(Path(a.mods_db).resolve())]
     if a.loc_db: cmd += ['--loc-db', str(Path(a.loc_db).resolve())]
     if turns: cmd += ['--turns', str(turns)]
+    ref_victory = ref / 'victory.json'
+    if ref_victory.exists():
+        lua = OUT / f'{name}.victory.lua'
+        lua.write_text(VICTORY_LUA + '\n', encoding='utf-8')
+        cmd += ['--lua-before-dump', str(lua)]
     cmd += list(a.host_arg or [])
     started = time.monotonic()
     log_path = OUT / f'{name}.host.txt'
@@ -123,12 +132,22 @@ def run_case(ref, a, quiet=False):
     else:
         result['digest'] = compare_digests(ref / 'HeadlessDigest.log', host_log)
         result['dumpT000'] = compare_dump(ref / f'dump-t{first_turn:03d}', run / 'dump-t000')
-        final = f'dump-t{first_turn + turns:03d}'
+        # the reference's last dump: the target turn, or the turn a game to victory ended (the host stops there
+        # too and names its final dump by that turn)
+        final = f'dump-t{last_turn:03d}'
         result['dumpFinal'] = compare_dump(ref / final, run / final) if turns else result['dumpT000']
         d = result['digest']
         # a reference without digest points (0 turns: load-screen dump only) is judged on its dumps
         complete = d['lastRefTurn'] is None or (d['lastHostTurn'] is not None and d['lastHostTurn'] >= d['lastRefTurn'])
         identical = d['first'] is None and complete and result['dumpT000']['ok'] and result['dumpFinal']['ok']
+        if ref_victory.exists():
+            rv = json.loads(ref_victory.read_text(encoding='utf-8'))
+            hp = run / 'lua-before-dump.json'
+            hv = json.loads(hp.read_text(encoding='utf-8')) if hp.exists() else None
+            hv = hv if isinstance(hv, dict) else {}
+            result['victory'] = dict(ref={k: rv.get(k) for k in VICTORY_KEYS}, host={k: hv.get(k) for k in VICTORY_KEYS})
+            result['victory']['ok'] = result['victory']['ref'] == result['victory']['host']
+            identical = identical and result['victory']['ok']
         result['status'] = 'identical' if identical else 'different'
     (run / 'parity-result.json').write_text(json.dumps(result, indent=1), encoding='utf-8') if run.exists() else None
     if not quiet:
@@ -146,6 +165,9 @@ def summary_line(r):
             s += f" - first divergence turn {f['turn']} ({f['point']}): {secs[:120]}"
         else:
             s += f" - {d['common']} digest points match (ref to T{d['lastRefTurn']}, host to T{d['lastHostTurn']})"
+        if r.get('victory'):
+            v = r['victory']
+            s += f" | victory {'same' if v['ok'] else 'DIFFERENT'} {v['ref']}" + ('' if v['ok'] else f" host {v['host']}")
         if not r['dumpFinal']['ok']:
             s += f" | final dump: {r['dumpFinal'].get('summary') or r['dumpFinal'].get('missing')}"
     return s + f" [host {r['hostSeconds']} s, {r['turns']} turns]"
@@ -162,7 +184,7 @@ def main():
     ap.add_argument('--mods-db')
     ap.add_argument('--loc-db')
     ap.add_argument('--exe', help='civ5headless.exe (default: work/latest-headless-build-path.txt)')
-    ap.add_argument('--turns', type=int, help='default: the reference\'s last dump turn')
+    ap.add_argument('--turns', type=int, help='autoplay turns to arm (default: last dump turn minus first; for a game to victory pass the count the reference armed)')
     ap.add_argument('--name', help='run folder name (default parity-<ref>[-TAG])')
     ap.add_argument('--tag', help='suffix for the run folder names and the summary file (variants of a matrix run)')
     ap.add_argument('--host-arg', action='append', help='extra host argument (repeatable; use --host-arg=--x)')
