@@ -5,9 +5,23 @@
 #include "HHCommon.h"
 #include "gen/HHStubs.gen.h"
 
+struct HHPlayerOption
+{
+	std::string type;
+	int index;
+	bool value;
+};
+
 class HHEngineUtility : public HHStubEngineUtility
 {
 public:
+	// Player options (the engine's user settings): filled from the PlayerOptions table.
+	void AddPlayerOption(const char* szType, int iIndex, bool bValue);
+	bool SetPlayerOptionValue(const std::string& strType, bool bValue);
+	// The engine's loopback of sendPlayerOption: ResponsePlayerOption for each sent value.
+	void DeliverPlayerOptions(ICvNetMessageHandler1* pHandler, PlayerTypes ePlayer);
+	size_t GetPendingPlayerOptionCount() const { return m_pendingOptions.size(); }
+
 	explicit HHEngineUtility(ICvEngineScriptSystem1* pScriptSystem);
 
 	// ICvUnknown
@@ -30,6 +44,7 @@ public:
 	bool shiftKey();
 	bool ctrlKey();
 	bool getPlayerOption(PlayerOptionTypes ePlayerOption);
+	void sendPlayerOption(PlayerOptionTypes eOption, bool bValue);
 	const char* GetCacheFolderPath();
 	int GetTutorialLevel();
 	int GetAudioTagIndex(const char* szTag, int iScriptType);
@@ -45,10 +60,31 @@ public:
 	bool IsGameCoreExecuting();
 	bool ShouldValidateGameDatabase() const;
 
+	bool DLLCALL GetEvaluatedMapScriptPath(_In_z_ const char* szPath, _Inout_z_cap_(szEvaluatedPathSize) char* szEvaluatedPath, unsigned int szEvaluatedPathSize) const;
+
+	// Graphics, sound and lobby notifications: nothing to show headless (counted no-ops).
+	void DoMapSetup(int iWorldNumPlots);
+	void openSlot(PlayerTypes eID);
+	void closeSlot(PlayerTypes eID);
+	void netMessageDebugLog(const std::string & logMessage) const;
+	void GameplayYieldMightHaveChanged(_In_ ICvPlot1* pThisPlot);
+	void GameplayFeatureChanged(_In_ ICvPlot1* pThisPlot, FeatureTypes newFeature);
+	void GameplayMetTeam(TeamTypes eMyTeam, TeamTypes eTheirTeam);
+	void GameplayWarStateChanged(TeamTypes eTeam1, TeamTypes eTeam2, bool bWar);
+	void GameplayTechAcquired(TeamTypes eTeam, TechTypes eTech);
+	void GameplayUnitShouldDimFlag(_In_ ICvUnit1* pThisUnit, bool bDim);
+
+	// Network (single player: no-ops)
+	void sendPlayerInfo(PlayerTypes eActivePlayer);
+	void BeginSendBundle();
+	void EndSendBundle();
+
 private:
 	ICvEngineScriptSystem1* m_pScriptSystem;
 	std::string m_strCacheFolder;
 	bool m_bDone;
+	std::map<unsigned int, HHPlayerOption> m_playerOptions;   // FStringHash(type) -> option
+	std::vector<std::pair<int, bool> > m_pendingOptions;     // sent, not yet delivered
 };
 
 class HHUserInterface : public HHStubUserInterface
@@ -84,4 +120,14 @@ public:
 	bool isDirty(InterfaceDirtyBits eDirtyItem);
 	void setDirty(InterfaceDirtyBits eDirtyItem, bool bNewValue);
 	void makeInterfaceDirty();
+
+	// Turn and end-turn notifications for the screen: counted no-ops.
+	void PublishEndTurnDirty() const;
+	void PublishPlayerTurnStatus(CvDLLInterfaceIFaceBase::TURN_STATUS_TYPE eStatus, PlayerTypes ePlayer, const char* pszTag);
+	void setCycleSelectionCounter(int iNewValue);
+	void PublishActivePlayerTurnStart();
+	void PublishActivePlayerTurnEnd();
+	void SetDontShowPopups(bool bValue);
+	void SetEndTurnBlockingChanged(EndTurnBlockingTypes ePrevBlockingType, EndTurnBlockingTypes eNewBlockingType);
+	void UpdateEndTurn();
 };

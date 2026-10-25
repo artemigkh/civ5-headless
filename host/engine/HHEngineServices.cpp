@@ -134,10 +134,75 @@ bool HHEngineUtility::altKey() { HH_IMPL_CALL("ICvEngineUtility1::altKey"); retu
 bool HHEngineUtility::shiftKey() { HH_IMPL_CALL("ICvEngineUtility1::shiftKey"); return false; }
 bool HHEngineUtility::ctrlKey() { HH_IMPL_CALL("ICvEngineUtility1::ctrlKey"); return false; }
 
-bool HHEngineUtility::getPlayerOption(PlayerOptionTypes)
+// Player options: the DLL asks by FStringHash(type) (= ~CRC32 of the type name, checked
+// against the S1 trace) and sends each value back to the engine, which delivers it to the
+// game as NetMessageHandler::ResponsePlayerOption(player, option index, value).
+namespace
+{
+	unsigned int Crc32(const char* sz)
+	{
+		static unsigned int table[256];
+		static bool bInit = false;
+		if(!bInit)
+		{
+			for(unsigned int i = 0; i < 256; ++i)
+			{
+				unsigned int c = i;
+				for(int k = 0; k < 8; ++k)
+					c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
+				table[i] = c;
+			}
+			bInit = true;
+		}
+		unsigned int crc = 0xFFFFFFFFu;
+		for(const unsigned char* p = (const unsigned char*)sz; *p; ++p)
+			crc = table[(crc ^ *p) & 0xFF] ^ (crc >> 8);
+		return crc; // no final inversion: FStringHash
+	}
+}
+
+void HHEngineUtility::AddPlayerOption(const char* szType, int iIndex, bool bValue)
+{
+	HHPlayerOption o;
+	o.type = szType;
+	o.index = iIndex;
+	o.value = bValue;
+	m_playerOptions[Crc32(szType)] = o;
+}
+
+bool HHEngineUtility::SetPlayerOptionValue(const std::string& strType, bool bValue)
+{
+	std::map<unsigned int, HHPlayerOption>::iterator it = m_playerOptions.find(Crc32(strType.c_str()));
+	if(it == m_playerOptions.end())
+		return false;
+	it->second.value = bValue;
+	return true;
+}
+
+bool HHEngineUtility::getPlayerOption(PlayerOptionTypes eOption)
 {
 	HH_IMPL_CALL("ICvEngineUtility1::getPlayerOption");
-	return false;
+	std::map<unsigned int, HHPlayerOption>::const_iterator it = m_playerOptions.find((unsigned int)eOption);
+	return it != m_playerOptions.end() && it->second.value;
+}
+
+void HHEngineUtility::sendPlayerOption(PlayerOptionTypes eOption, bool bValue)
+{
+	HH_IMPL_CALL("ICvEngineUtility1::sendPlayerOption");
+	std::map<unsigned int, HHPlayerOption>::const_iterator it = m_playerOptions.find((unsigned int)eOption);
+	if(it == m_playerOptions.end())
+	{
+		HHLogError("sendPlayerOption: unknown option hash %d", (int)eOption);
+		return;
+	}
+	m_pendingOptions.push_back(std::make_pair(it->second.index, bValue));
+}
+
+void HHEngineUtility::DeliverPlayerOptions(ICvNetMessageHandler1* pHandler, PlayerTypes ePlayer)
+{
+	for(size_t i = 0; i < m_pendingOptions.size(); ++i)
+		pHandler->ResponsePlayerOption(ePlayer, (PlayerOptionTypes)m_pendingOptions[i].first, m_pendingOptions[i].second);
+	m_pendingOptions.clear();
 }
 
 const char* HHEngineUtility::GetCacheFolderPath()
@@ -176,6 +241,29 @@ bool HHEngineUtility::ShouldValidateGameDatabase() const
 	HH_IMPL_CALL("ICvEngineUtility3::ShouldValidateGameDatabase");
 	return false;
 }
+
+// NetInitInfo::Commit asks the engine for the best local candidate for the map script.
+// ASSUMPTION (trace): the name comes back unchanged (S1/S3 pregame keeps the name the setup
+// screen set, for a base script, a mod script and a premade map).
+bool HHEngineUtility::GetEvaluatedMapScriptPath(const char* szPath, char* szEvaluatedPath, unsigned int szEvaluatedPathSize) const
+{
+	HH_IMPL_CALL("ICvEngineUtility4::GetEvaluatedMapScriptPath");
+	if(!szPath || !szEvaluatedPath || szEvaluatedPathSize == 0)
+		return false;
+	const size_t n = strlen(szPath);
+	if(n + 1 > szEvaluatedPathSize)
+	{
+		szEvaluatedPath[0] = 0;
+		return false;
+	}
+	memcpy(szEvaluatedPath, szPath, n + 1);
+	return true;
+}
+
+// Network bundle around closeInactiveSlots: single player, nothing to send.
+void HHEngineUtility::sendPlayerInfo(PlayerTypes) { HH_IMPL_CALL("ICvEngineUtility1::sendPlayerInfo"); }
+void HHEngineUtility::BeginSendBundle() { HH_IMPL_CALL("ICvEngineUtility3::BeginSendBundle"); }
+void HHEngineUtility::EndSendBundle() { HH_IMPL_CALL("ICvEngineUtility3::EndSendBundle"); }
 
 //------------------------------------------------------------------------------
 // HHUserInterface
@@ -221,3 +309,25 @@ bool HHUserInterface::IsDealInTransit() { HH_IMPL_CALL("ICvUserInterface1::IsDea
 bool HHUserInterface::isDirty(InterfaceDirtyBits) { HH_IMPL_CALL("ICvUserInterface1::isDirty"); return false; }
 void HHUserInterface::setDirty(InterfaceDirtyBits, bool) { HH_IMPL_CALL("ICvUserInterface1::setDirty"); }
 void HHUserInterface::makeInterfaceDirty() { HH_IMPL_CALL("ICvUserInterface1::makeInterfaceDirty"); }
+
+//------------------------------------------------------------------------------
+// Notifications with no headless effect (graphics, sound, lobby, turn display)
+//------------------------------------------------------------------------------
+void HHEngineUtility::DoMapSetup(int iWorldNumPlots) { HH_IMPL_CALL("ICvEngineUtility1::DoMapSetup"); }
+void HHEngineUtility::openSlot(PlayerTypes eID) { HH_IMPL_CALL("ICvEngineUtility1::openSlot"); }
+void HHEngineUtility::closeSlot(PlayerTypes eID) { HH_IMPL_CALL("ICvEngineUtility1::closeSlot"); }
+void HHEngineUtility::netMessageDebugLog(const std::string & logMessage) const { HH_IMPL_CALL("ICvEngineUtility1::netMessageDebugLog"); }
+void HHEngineUtility::GameplayYieldMightHaveChanged(_In_ ICvPlot1* pThisPlot) { HH_IMPL_CALL("ICvEngineUtility1::GameplayYieldMightHaveChanged"); }
+void HHEngineUtility::GameplayFeatureChanged(_In_ ICvPlot1* pThisPlot, FeatureTypes newFeature) { HH_IMPL_CALL("ICvEngineUtility1::GameplayFeatureChanged"); }
+void HHEngineUtility::GameplayMetTeam(TeamTypes eMyTeam, TeamTypes eTheirTeam) { HH_IMPL_CALL("ICvEngineUtility1::GameplayMetTeam"); }
+void HHEngineUtility::GameplayWarStateChanged(TeamTypes eTeam1, TeamTypes eTeam2, bool bWar) { HH_IMPL_CALL("ICvEngineUtility1::GameplayWarStateChanged"); }
+void HHEngineUtility::GameplayTechAcquired(TeamTypes eTeam, TechTypes eTech) { HH_IMPL_CALL("ICvEngineUtility1::GameplayTechAcquired"); }
+void HHEngineUtility::GameplayUnitShouldDimFlag(_In_ ICvUnit1* pThisUnit, bool bDim) { HH_IMPL_CALL("ICvEngineUtility1::GameplayUnitShouldDimFlag"); }
+void HHUserInterface::PublishEndTurnDirty() const { HH_IMPL_CALL("ICvUserInterface1::PublishEndTurnDirty"); }
+void HHUserInterface::PublishPlayerTurnStatus(CvDLLInterfaceIFaceBase::TURN_STATUS_TYPE eStatus, PlayerTypes ePlayer, const char* pszTag) { HH_IMPL_CALL("ICvUserInterface1::PublishPlayerTurnStatus"); }
+void HHUserInterface::setCycleSelectionCounter(int iNewValue) { HH_IMPL_CALL("ICvUserInterface1::setCycleSelectionCounter"); }
+void HHUserInterface::PublishActivePlayerTurnStart() { HH_IMPL_CALL("ICvUserInterface1::PublishActivePlayerTurnStart"); }
+void HHUserInterface::PublishActivePlayerTurnEnd() { HH_IMPL_CALL("ICvUserInterface1::PublishActivePlayerTurnEnd"); }
+void HHUserInterface::SetDontShowPopups(bool bValue) { HH_IMPL_CALL("ICvUserInterface1::SetDontShowPopups"); }
+void HHUserInterface::SetEndTurnBlockingChanged(EndTurnBlockingTypes ePrevBlockingType, EndTurnBlockingTypes eNewBlockingType) { HH_IMPL_CALL("ICvUserInterface1::SetEndTurnBlockingChanged"); }
+void HHUserInterface::UpdateEndTurn() { HH_IMPL_CALL("ICvUserInterface1::UpdateEndTurn"); }

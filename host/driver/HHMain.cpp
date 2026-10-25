@@ -2,6 +2,12 @@
 //
 //   civ5headless.exe boot --game-dir <path> --dll <path> [--db <path>] [--loc-db <path>]
 //                         --out <run dir> [--strict] [options]
+//   civ5headless.exe newgame --spec <resolved.json> --out <run dir> [--dll <path>]
+//                         [--game-dir <path>] [--mods-dir <path>] [options]
+//
+// M2 "newgame": boots as "boot" does, applies a resolved game spec to pregame, starts the
+// game as the real game would (map generation by the DLL and the map script) and writes the
+// T000 outputs (t000-map.json, checkpoints/turn-0000.json, t000-digest.json).
 //
 // M1 "boot": loads the Firaxis support DLLs from the game folder and the game DLL under
 // test, hands it the host's engine services, opens per-run copies of the game-built
@@ -15,6 +21,10 @@
 #include "lua/HHScriptSystem.h"
 #include "lua/HHLuaEnv.h"
 #include "setup/HHDatabase.h"
+#include "setup/HHJson.h"
+#include "setup/HHVfs.h"
+#include "setup/HHNewGame.h"
+#include "lua/HHLuaGlobals.h"
 #include "setup/HHDbBuilder.h"
 #include <float.h>
 
@@ -29,6 +39,18 @@ namespace
 {
 	const char* kUsage =
 		"usage: civ5headless.exe boot --game-dir <path> --dll <path> --out <run dir> [options]\n"
+		"       civ5headless.exe newgame --spec <resolved.json> --out <run dir> [--dll <path>] [--game-dir <path>]\n"
+		"                        [--mods-dir <path>] [options]\n"
+		"  --spec <path>        resolved game spec (python work/headless/gamespec.py resolve SPEC --out FILE)\n"
+		"  --game-dir <path>    game folder (newgame default: E:\\SteamLibrary\\steamapps\\common\\Sid Meier's Civilization V)\n"
+		"  --dll <path>         game DLL (newgame default: CvGameCore_Expansion2.dll in MODS\\(1) Community Patch)\n"
+		"  --mods-dir <path>    deployed MODS folder, read only (default: <Documents>\\My Games\\...\\MODS)\n"
+		"  --mods-db <path>     mods database to copy (default: <Documents>\\My Games\\...\\cache\\Civ5ModsDatabase.db)\n"
+		"  --no-mods            no activated mods (no mod files in the VFS, IsModActivated false)\n"
+		"  --no-lua-debug       remove the debug library from Lua's globals\n"
+		"  --exe-seed <n>       the engine's own pregame seeds before Game.Init (random civs and city-states);\n"
+		"                       a real run's HHSEEDS exeMap reproduces its choice (default: the spec's map seed)\n"
+		"  --player-option <TYPE=0|1>  engine user setting for a player option (repeatable; default: database defaults)\n"
 		"  --db <path>          game database to copy (default: <Documents>\\My Games\\Sid Meier's\n"
 		"                       Civilization 5\\cache\\Civ5DebugDatabase.db)\n"
 		"  --loc-db <path>      localization database to copy (default: Localization-Merged.db\n"
@@ -138,6 +160,8 @@ namespace
 			else if(a == "--verbose") o.verbose = true;
 			else if(a == "--game-logging") o.gameLogging = true;
 			else if(a == "--keep-dll-loaded") o.freeLibrary = false;
+			else if(a == "--no-mods") o.noMods = true;
+			else if(a == "--no-lua-debug") o.luaDebugLibrary = false;
 			else if(!bHasValue) { fprintf(stderr, "missing value for %s\n", a.c_str()); return false; }
 			else if(a == "--game-dir") { o.gameDir = StripSlash(v); ++i; }
 			else if(a == "--dll") { o.dllPath = v; ++i; }
@@ -148,6 +172,11 @@ namespace
 			else if(a == "--language") { o.language = v; ++i; }
 			else if(a == "--lua-path") { o.luaSearch.push_back(StripSlash(HHFullPath(v))); ++i; }
 			else if(a == "--dlc") { o.dlcs.push_back(v); ++i; }
+			else if(a == "--spec") { o.specPath = v; ++i; }
+			else if(a == "--mods-dir") { o.modsDir = StripSlash(v); ++i; }
+			else if(a == "--mods-db") { o.modsDbPath = v; ++i; }
+			else if(a == "--player-option") { o.playerOptions.push_back(v); ++i; }
+			else if(a == "--exe-seed") { o.exeSeed = _strtoi64(v.c_str(), NULL, 10); ++i; }
 			else if(a == "--mod")
 			{
 				HHModRef m;
@@ -159,16 +188,32 @@ namespace
 			}
 			else { fprintf(stderr, "unknown option %s\n", a.c_str()); return false; }
 		}
-		if(o.command != "boot")
+		if(o.command != "boot" && o.command != "newgame")
 		{
 			fprintf(stderr, "unknown command %s\n", o.command.c_str());
 			return false;
+		}
+		const std::string myGames = DocumentsFolder() + "\\My Games\\Sid Meier's Civilization 5\\";
+		if(o.modsDir.empty()) o.modsDir = myGames + "MODS";
+		if(o.modsDbPath.empty()) o.modsDbPath = myGames + "cache\\Civ5ModsDatabase.db";
+		if(o.command == "newgame")
+		{
+			if(o.specPath.empty())
+			{
+				fprintf(stderr, "newgame needs --spec\n");
+				return false;
+			}
+			o.specPath = HHFullPath(o.specPath);
+			if(o.gameDir.empty()) o.gameDir = "E:\\SteamLibrary\\steamapps\\common\\Sid Meier's Civilization V";
+			if(o.dllPath.empty()) o.dllPath = o.modsDir + "\\(1) Community Patch\\CvGameCore_Expansion2.dll";
 		}
 		if(o.gameDir.empty() || o.dllPath.empty() || o.outDir.empty())
 		{
 			fprintf(stderr, "--game-dir, --dll and --out are required\n");
 			return false;
 		}
+		o.modsDir = HHFullPath(o.modsDir);
+		o.modsDbPath = HHFullPath(o.modsDbPath);
 		o.gameDir = HHFullPath(o.gameDir);
 		o.dllPath = HHFullPath(o.dllPath);
 		o.outDir = HHFullPath(o.outDir);
@@ -270,6 +315,48 @@ namespace
 		fclose(f);
 	}
 
+	// Adds a "newgame" member to the report WriteReport wrote (its last line is "}").
+	void WriteNewGameSection(const HHNewGameResult& ng, int iLuaErrors, const std::string& strPath)
+	{
+		std::string text;
+		{
+			FILE* f = _wfopen(HHWiden(strPath).c_str(), L"rb");
+			if(!f)
+				return;
+			char buf[65536];
+			size_t n;
+			while((n = fread(buf, 1, sizeof(buf), f)) > 0)
+				text.append(buf, n);
+			fclose(f);
+		}
+		const size_t close = text.find_last_of('}');
+		if(close == std::string::npos)
+			return;
+		const HHOptions& o = HHGetOptions();
+		std::string add = ",\n  \"newgame\": {\n";
+		add += HHFormat("    \"spec\": \"%s\",\n", HHJsonEscape(o.specPath).c_str());
+		add += HHFormat("    \"mods_dir\": \"%s\",\n", HHJsonEscape(o.modsDir).c_str());
+		add += HHFormat("    \"pregame_ok\": %s,\n    \"started\": %s,\n    \"outputs_ok\": %s,\n", ng.bPregameOk ? "true" : "false",
+		                ng.bStarted ? "true" : "false", ng.bOutputsOk ? "true" : "false");
+		add += HHFormat("    \"lua_errors\": %d,\n    \"map_width\": %d,\n    \"map_height\": %d,\n", iLuaErrors, ng.iWidth, ng.iHeight);
+		add += HHFormat("    \"seed_mode\": \"%s\",\n    \"exe_seed\": %u,\n", ng.seedMode.c_str(), ng.uiExeSeed);
+		add += HHFormat("    \"digest_total\": \"%s\",\n    \"error\": \"%s\",\n", ng.digestTotal.c_str(), HHJsonEscape(ng.error).c_str());
+		add += "    \"timings_seconds\": {";
+		for(size_t i = 0; i < ng.timings.size(); ++i)
+			add += HHFormat("%s\"%s\": %.3f", i ? ", " : "", ng.timings[i].first.c_str(), ng.timings[i].second);
+		add += "},\n    \"activated_mods\": [";
+		for(size_t i = 0; i < HHGetVfs().GetMods().size(); ++i)
+			add += HHFormat("%s\"%s\"", i ? ", " : "", HHJsonEscape(HHGetVfs().GetMods()[i].name).c_str());
+		add += "],\n    \"steps\": [\n";
+		for(size_t i = 0; i < ng.steps.size(); ++i)
+			add += "      \"" + HHJsonEscape(ng.steps[i]) + "\"" + (i + 1 < ng.steps.size() ? ",\n" : "\n");
+		add += "    ]\n  }\n}\n";
+		std::string body = text.substr(0, close);
+		while(!body.empty() && (body[body.size() - 1] == '\n' || body[body.size() - 1] == '\r' || body[body.size() - 1] == ' '))
+			body.erase(body.size() - 1);
+		HHWriteTextFile(strPath, body + add);
+	}
+
 	void LogCallSummary()
 	{
 		std::vector<HHCallRecord> calls = HHGetCallRecords();
@@ -315,7 +402,7 @@ namespace
 		HHLogOpen(p.logs);
 		HHLogFileMgr::Get().SetFolder(p.logs);
 		SetCurrentDirectoryW(HHWiden(p.run).c_str());
-		const std::string reportPath = p.run + "boot-report.json";
+		const std::string reportPath = p.run + (o.command == "newgame" ? "newgame-report.json" : "boot-report.json");
 
 		HHLog("civ5headless boot");
 		HHLog("  game dir  %s", o.gameDir.c_str());
@@ -332,6 +419,23 @@ namespace
 			HHLog("  x87/SSE control word at start: %08x (game-core values come from the M0 trace)", cw);
 		}
 
+		// newgame: the spec first, so a bad spec fails before anything is loaded.
+		const bool bNewGame = o.command == "newgame";
+		HHJson kSpec;
+		if(bNewGame)
+		{
+			std::string err;
+			if(!HHJson::ParseFile(o.specPath, kSpec, err))
+			{
+				s.error = "cannot read the spec " + o.specPath + ": " + err;
+				HHLogError("%s", s.error.c_str());
+				WriteReport(s, reportPath);
+				return 2;
+			}
+			CopyFileW(HHWiden(o.specPath).c_str(), HHWiden(p.run + "spec.resolved.json").c_str(), FALSE);
+			HHLog("  spec      %s", o.specPath.c_str());
+		}
+
 		HHSetPhase("load");
 		HHExportsInit();
 		SetDllDirectoryW(HHWiden(o.gameDir).c_str());
@@ -344,6 +448,54 @@ namespace
 			WriteReport(s, reportPath);
 			return 2;
 		}
+
+		// Mods and the Lua VFS (H10), after the Firaxis database DLL is loaded: a per-run copy of the mods database (never opened in
+		// place), the activated mods in activation order, and the file index for include.
+		HHSetPhase("vfs");
+		{
+			std::string modsDbCopy;
+			if(!o.noMods)
+			{
+				modsDbCopy = p.db + "Civ5ModsDatabase.db";
+				if(!CopyFileW(HHWiden(o.modsDbPath).c_str(), HHWiden(modsDbCopy).c_str(), FALSE))
+				{
+					s.error = HHFormat("cannot copy the mods database %s (error %lu)", o.modsDbPath.c_str(), GetLastError());
+					HHLogError("%s", s.error.c_str());
+					WriteReport(s, reportPath);
+					return 2;
+				}
+				HHLog("copied %s -> %s", o.modsDbPath.c_str(), modsDbCopy.c_str());
+			}
+			HHVfs& kVfs = HHGetVfs();
+			if(!kVfs.Build(o.gameDir, modsDbCopy, o.modsDir))
+			{
+				s.error = "cannot build the VFS (mods database unreadable)";
+				WriteReport(s, reportPath);
+				return 2;
+			}
+			kVfs.WriteIndexLog(p.logs + "vfs-index.log");
+			// The live cache database has been seen with no activated mods while the game was
+			// running (the mods browser rewrites it); a modded run must not silently go vanilla.
+			if(!o.noMods && kVfs.GetMods().empty())
+			{
+				s.error = "the mods database copy has no activated mods (is the game running?); use --mods-db <snapshot> or --no-mods";
+				HHLogError("%s", s.error.c_str());
+				WriteReport(s, reportPath);
+				return 2;
+			}
+			// IsModActivated answers from the activated mods unless --mod lists them explicitly.
+			if(o.mods.empty())
+				for(size_t i = 0; i < kVfs.GetMods().size(); ++i)
+				{
+					HHModRef m;
+					m.id = kVfs.GetMods()[i].id;
+					m.version = kVfs.GetMods()[i].version;
+					o.mods.push_back(m);
+					HHLog("activated mod %u: %s v%d %s", (unsigned)i, m.id.c_str(), m.version, kVfs.GetMods()[i].name.c_str());
+				}
+		}
+		HH_TIMING("vfs");
+
 
 		HHScriptSystem* pScripts = new HHScriptSystem();
 		HHEngineUtility* pEngine = new HHEngineUtility(pScripts);
@@ -377,6 +529,7 @@ namespace
 		HH_TIMING("load");
 
 		HHSetPhase("interfaces");
+		pScripts->SetScriptUtility(pContext->GetScriptSystemUtility());
 		if(!pContext->SetDLLIFace(pEngine))
 		{
 			s.error = "SetDLLIFace rejected the engine utility";
@@ -399,6 +552,25 @@ namespace
 			return 2;
 		}
 		pContext->SetGameDatabase(dbs.GetGame());
+		// The engine's player options (user settings): PlayerOptions defaults, then
+		// --player-option TYPE=0|1 overrides.
+		{
+			Database::Results kOptions;
+			if(dbs.GetGame()->Execute(kOptions, "SELECT ID, Type, \"Default\" FROM PlayerOptions ORDER BY ID"))
+				while(kOptions.Step())
+					pEngine->AddPlayerOption(kOptions.GetText(1), kOptions.GetInt(0), kOptions.GetInt(2) != 0);
+			for(size_t i = 0; i < o.playerOptions.size(); ++i)
+			{
+				const std::string& v = o.playerOptions[i];
+				const size_t eq = v.find('=');
+				const std::string type = v.substr(0, eq);
+				const bool bValue = eq != std::string::npos && atoi(v.c_str() + eq + 1) != 0;
+				if(!pEngine->SetPlayerOptionValue(type, bValue))
+					HHLogError("--player-option %s: unknown option", v.c_str());
+				else
+					HHLog("player option %s = %d", type.c_str(), bValue ? 1 : 0);
+			}
+		}
 
 		HHSetPhase("localization");
 		if(!dbs.InitLocalization(o.locDbPath, o.icuPath, o.language))
@@ -411,6 +583,9 @@ namespace
 
 		HHSetPhase("init");
 		pContext->Init();
+		// Trace S1: the exe sets its version string right after ICvGameContext1::Init.
+		if(ICvPreGame1* pPreGame = pContext->GetPreGame())
+			pPreGame->setVersionString(std::string("403694 FINAL_RELEASE"));
 		HH_TIMING("init");
 
 		ICvDLLDatabaseUtility1* pDbUtil = pContext->GetDatabaseLoadUtility();
@@ -425,6 +600,9 @@ namespace
 		// loaded database first (ICvDLLDatabaseUtility1 documents it as running after mods are
 		// applied and after the database is built or read from cache), then caching.
 		HHSetPhase("post-processing");
+		// Trace S1 (hh-m0-s1-continents): the exe calls FlushGameDatabaseData,
+		// PerformDatabasePostProcessing, CacheGameDatabaseData after activating mods.
+		pDbUtil->FlushGameDatabaseData();
 		s.bPostOk = pDbUtil->PerformDatabasePostProcessing();
 		HHLog("PerformDatabasePostProcessing: %s", s.bPostOk ? "ok" : "FAILED");
 		HH_TIMING("post_processing");
@@ -460,11 +638,19 @@ namespace
 
 		HHSetPhase("lua");
 		int iDllUnits = pContext->GetNumUnitInfos();
-		if(HHLuaRegisterGameData(*pScripts, pContext->GetScriptSystemUtility(), *dbs.GetGame()))
+		const bool bGameData = HHLuaRegisterGameData(*pScripts, pContext->GetScriptSystemUtility(), *dbs.GetGame());
+		// Engine globals for map and gameplay scripts (H7): Locale, Modding, Events, LuaEvents,
+		// MapModData, PreGame (read-only), IncludeFileList.
+		const bool bEngineGlobals = HHLuaRegisterEngineGlobals(*pScripts, HHGetVfs(), pContext->GetPreGame());
+		if(!bEngineGlobals)
+			HHLogError("engine Lua globals: registration failed");
+		if(bGameData && !bNewGame)
 		{
 			s.bSelfTestRun = true;
 			s.selfTest = HHLuaSelfTest(*pScripts, *dbs.GetGame(), iDllUnits);
 		}
+		else
+			s.selfTest.bPassed = bGameData && bEngineGlobals;
 		// Localization: the dictionary must answer like the text database.
 		{
 			const char* szKey = "TXT_KEY_UNIT_WARRIOR";
@@ -488,11 +674,48 @@ namespace
 		HHLog("Lua self-test: %s", s.selfTest.bPassed ? "passed" : "FAILED");
 		HH_TIMING("lua");
 
+		// newgame (M2): pregame, start, T000 outputs.
+		HHNewGameResult ng;
+		HHNewGameInterfaces nif;
+		nif.pContext = pContext;
+		nif.pPreGame = pContext->GetPreGame();
+		nif.pPreGame2 = nif.pPreGame ? nif.pPreGame->QueryInterface<ICvPreGame2>() : NULL;
+		nif.pGame = pContext->GetGame();
+		nif.pMap = pContext->GetMap();
+		nif.pWBLoader = pContext->GetWorldBuilderMapLoader();
+		nif.pScripts = pScripts;
+		nif.pDbUtil = pDbUtil;
+		nif.pEngine = pEngine;
+		const int iLuaErrorsBefore = pScripts->GetErrorCount();
+		if(bNewGame && s.bPostOk && s.bCacheOk)
+		{
+			HHSetPhase("pregame");
+			if(HHApplyPregame(kSpec, nif, ng))
+			{
+				HHSetPhase("start");
+				if(HHStartNewGame(kSpec, nif, ng))
+				{
+					HHSetPhase("t000");
+					HHWriteT000(kSpec, nif, ng);
+				}
+			}
+			if(!ng.error.empty())
+				HHLogError("newgame: %s", ng.error.c_str());
+			for(size_t i = 0; i < ng.timings.size(); ++i)
+				s.timings.push_back(ng.timings[i]);
+			tPhase = HHSeconds();
+		}
+		const int iLuaErrors = pScripts->GetErrorCount() - iLuaErrorsBefore;
+
 		// Shutdown order: Lua first (its __gc metamethods include DLL and database code), then
-		// the DLL's game data, the database handles it holds, localization, the DLL itself,
-		// and the database connections last.
+		// the game (newgame: pregame's started flag cleared first), the DLL's game data, the
+		// database handles it holds, localization, the DLL itself, and the database
+		// connections last.
 		HHSetPhase("shutdown");
+		pScripts->LogIncludeSummary();
 		pScripts->Shutdown();
+		if(bNewGame && ng.bPregameOk)
+			HHEndNewGame(nif, ng);
 		pDbUtil->Destroy();
 		pContext->Uninit();
 		pContext->SetGameDatabase(NULL);
@@ -510,11 +733,21 @@ namespace
 		HH_TIMING("shutdown");
 		s.timings.push_back(std::make_pair(std::string("total"), HHSeconds() - t0));
 
-		const bool bOk = s.bPostOk && s.bCacheOk && s.bCountsOk && s.selfTest.bPassed;
-		s.status = bOk ? "passed" : "failed";
+		bool bOk = s.bPostOk && s.bCacheOk && s.bCountsOk && s.selfTest.bPassed;
+		if(bNewGame)
+		{
+			bOk = bOk && ng.bPregameOk && ng.bStarted && ng.bOutputsOk && iLuaErrors == 0;
+			s.status = bOk ? "passed" : "failed";
+			if(s.error.empty())
+				s.error = !ng.error.empty() ? ng.error : (iLuaErrors ? HHFormat("%d Lua error(s); see Logs\\Lua.log", iLuaErrors) : std::string());
+		}
+		else
+			s.status = bOk ? "passed" : "failed";
 		LogCallSummary();
 		WriteReport(s, reportPath);
-		HHLog("boot %s in %.2f s; report %s", s.status.c_str(), HHSeconds() - t0, reportPath.c_str());
+		if(bNewGame)
+			WriteNewGameSection(ng, iLuaErrors, reportPath);
+		HHLog("%s %s in %.2f s; report %s", o.command.c_str(), s.status.c_str(), HHSeconds() - t0, reportPath.c_str());
 		HHLogFileMgr::Get().CloseAll();
 		HHLogClose();
 		// pEngine and pUI stay alive: the DLL may still reference them from static destructors.

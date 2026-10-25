@@ -1,6 +1,7 @@
 #include "lua/HHScriptSystem.h"
 #include "engine/HHRuntime.h"
 #include "engine/HHLogFiles.h"
+#include "setup/HHVfs.h"
 
 namespace
 {
@@ -30,20 +31,16 @@ namespace
 		return 0;
 	}
 
+	// Error handler: debug.traceback, kept in the registry so it works whether or not
+	// scripts can see the debug library.
 	int HHLuaTraceback(lua_State* L)
 	{
 		if(!lua_isstring(L, 1))
 			return 1;
-		lua_getglobal(L, "debug");
-		if(!lua_istable(L, -1))
-		{
-			lua_pop(L, 1);
-			return 1;
-		}
-		lua_getfield(L, -1, "traceback");
+		lua_getfield(L, LUA_REGISTRYINDEX, "HHTraceback");
 		if(!lua_isfunction(L, -1))
 		{
-			lua_pop(L, 2);
+			lua_pop(L, 1);
 			return 1;
 		}
 		lua_pushvalue(L, 1);
@@ -52,17 +49,13 @@ namespace
 		return 1;
 	}
 
-	// include(name): loads a script from the search folders into the caller's environment.
+	// include(name[, bPattern]): see HHScriptSystem::Include.
 	int HHLuaInclude(lua_State* L)
 	{
 		HHScriptSystem* pSystem = (HHScriptSystem*)lua_touserdata(L, lua_upvalueindex(1));
 		const char* szName = luaL_checkstring(L, 1);
-		std::string name(szName);
-		if(name.find('.') == std::string::npos)
-			name += ".lua";
-		const bool bLoaded = pSystem->LoadFile(L, name.c_str());
-		lua_pushboolean(L, bLoaded ? 1 : 0);
-		return 1;
+		const bool bPattern = lua_toboolean(L, 2) != 0;
+		return pSystem->Include(L, szName, bPattern);
 	}
 
 	struct ThreadsSetArgs
@@ -87,9 +80,24 @@ namespace
 		}
 		else
 		{
+			// rawset, not settable: the DLL's VP_LUAAPI chunk puts a __newindex listener on
+			// Threads that re-metatables each new environment for the real engine's UI
+			// contexts (and drops later global assignments until 'UI' is set). Headless
+			// threads keep their _G fallback. ASSUMPTION (trace): the real engine's map-script
+			// and gameplay threads are not affected by that listener either.
 			lua_pushvalue(L, 2);
-			lua_settable(L, -3);
+			lua_rawset(L, -3);
 		}
+		return 0;
+	}
+
+	// The engine registers the DLL's script libraries in every new Lua thread (trace S1:
+	// RegisterScriptLibraries nested in CreateLuaThread("VP_LUAAPI")).
+	int HHLuaRegisterLibrariesInThread(lua_State* L)
+	{
+		ICvScriptSystemUtility1* pUtility = (ICvScriptSystemUtility1*)lua_touserdata(L, 1);
+		lua_settop(L, 0);
+		pUtility->RegisterScriptLibraries(L);
 		return 0;
 	}
 
@@ -278,10 +286,29 @@ FILogFile* HHScriptSystem::GetLuaLog()
 	return HHLogFileMgr::Get().GetLog("Lua.log", 0);
 }
 
-HHScriptSystem::HHScriptSystem() : m_L(NULL), m_iErrors(0)
+HHScriptSystem::HHScriptSystem() : m_L(NULL), m_iErrors(0), m_pUtility(NULL)
 {
 	m_L = luaL_newstate();
 	luaL_openlibs(m_L);
+
+	// Keep debug.traceback for the host's error handler before scripts can touch debug.
+	lua_getglobal(m_L, "debug");
+	if(lua_istable(m_L, -1))
+	{
+		lua_getfield(m_L, -1, "traceback");
+		lua_setfield(m_L, LUA_REGISTRYINDEX, "HHTraceback");
+	}
+	lua_pop(m_L, 1);
+	// The game runs with EnableLuaDebugLibrary = 0: UI contexts have no debug table (probe
+	// hh-probe-include-20261025a). The DLL's own CreateLuaThread threads do reach it in the
+	// real game: the DLL's embedded VP_LUAAPI chunk reads debug.getinfo and logs "ran without
+	// errors". So debug stays in _G (what CreateLuaThread environments see) unless
+	// --no-lua-debug hides it everywhere. UI contexts (M3+) must shadow it.
+	if(!HHGetOptions().luaDebugLibrary)
+	{
+		lua_pushnil(m_L);
+		lua_setglobal(m_L, "debug");
+	}
 
 	lua_pushcfunction(m_L, HHLuaPrint);
 	lua_setglobal(m_L, "print");
@@ -349,6 +376,12 @@ lua_State* HHScriptSystem::CreateLuaThread(const char* szName)
 		lua_pop(m_L, 1);
 	}
 	lua_pop(m_L, 1); // env
+
+	if(m_pUtility && lua_cpcall(T, HHLuaRegisterLibrariesInThread, m_pUtility) != 0)
+	{
+		HHLogError("CreateLuaThread(%s): RegisterScriptLibraries failed: %s", szName, lua_tostring(T, -1));
+		lua_pop(T, 1);
+	}
 	return T;
 }
 
@@ -382,10 +415,24 @@ std::string HHScriptSystem::ResolveFile(const char* szFilename) const
 	for(size_t i = 0; i < name.size(); ++i)
 		if(name[i] == '/')
 			name[i] = '\\';
+	HHVfs& kVfs = HHGetVfs();
+	// 1. Absolute path (map scripts from mods: MapScripts.FileName), re-rooted to --mods-dir.
 	if(IsAbsolute(name))
+	{
+		const std::string rerooted = kVfs.Reroot(name);
+		if(HHFileExists(rerooted))
+			return rerooted;
 		return HHFileExists(name) ? name : std::string();
+	}
+	// 2. Relative to the game folder (MapScripts.FileName "Assets\Maps\Continents.lua").
+	const std::string& gameDir = HHGetOptions().gameDir;
+	if(!gameDir.empty() && HHFileExists(gameDir + "\\" + name))
+		return gameDir + "\\" + name;
+	// 3. VFS name (mods > DLC > base).
+	if(const std::vector<HHVfsEntry>* pFound = kVfs.Find(name))
+		return pFound->front().path;
+	// 4. Search folders (boot without a VFS): folder + relative name, then a tree search.
 	const std::vector<std::string>& folders = HHGetOptions().luaSearch;
-	// 1. folder + relative name, 2. folder tree search by file name (first match in sorted order).
 	for(size_t i = 0; i < folders.size(); ++i)
 	{
 		std::string candidate = folders[i] + "\\" + name;
@@ -400,6 +447,107 @@ std::string HHScriptSystem::ResolveFile(const char* szFilename) const
 			return HHNarrow(found);
 	}
 	return std::string();
+}
+
+std::string HHScriptSystem::StateName(lua_State* L)
+{
+	lua_getglobal(L, "StateName");
+	const char* sz = lua_tostring(L, -1);
+	std::string name = sz ? sz : "Main";
+	lua_pop(L, 1);
+	return name;
+}
+
+bool HHScriptSystem::RunFile(lua_State* L, const std::string& strPath)
+{
+	std::string text;
+	if(!ReadWholeFile(strPath, text))
+	{
+		HHLogError("cannot read %s", strPath.c_str());
+		return false;
+	}
+	const std::string chunk = "@" + strPath;
+	if(luaL_loadbuffer(L, text.c_str(), text.size(), chunk.c_str()) != 0)
+	{
+		HHLogError("Lua syntax error: %s", lua_tostring(L, -1));
+		GetLuaLog()->Msg("Syntax Error: %s", lua_tostring(L, -1));
+		lua_pop(L, 1);
+		++m_iErrors;
+		return false;
+	}
+	return ProtectedCall(L, 0, 0, strPath.c_str());
+}
+
+// include(name[, bPattern]) as measured in the real game (probe hh-probe-include-20261025a):
+// the name resolves through the VFS (".lua" optional, mods over DLC over base, the
+// later-activated mod wins), exactly one file is loaded into the caller's environment, and
+// the result is a table of the included paths ({} for an unknown name, no error).
+// With bPattern the name is a Lua pattern matched against whole file names, as
+// GameCalendarUtilities' include("GameCalendarUtilities_Overrides_%w+.lua", true) uses it.
+// ASSUMPTION (trace): every include runs the file again (no once-per-context guard), and a
+// runtime error inside the file is logged and does not propagate to the caller.
+int HHScriptSystem::Include(lua_State* L, const char* szName, bool bPattern)
+{
+	HHVfs& kVfs = HHGetVfs();
+	const std::string context = StateName(L);
+	std::vector<std::string> chosen;
+	if(bPattern)
+	{
+		const std::string pattern = std::string("^") + szName + "$";
+		std::vector<std::string> all = kVfs.AllPaths();
+		for(size_t i = 0; i < all.size(); ++i)
+		{
+			const std::string base = BaseName(all[i]);
+			lua_getglobal(L, "string");
+			lua_getfield(L, -1, "match");
+			lua_pushstring(L, base.c_str());
+			lua_pushstring(L, pattern.c_str());
+			const bool bMatch = lua_pcall(L, 2, 1, 0) == 0 && !lua_isnil(L, -1);
+			lua_pop(L, 2);
+			if(bMatch)
+				chosen.push_back(all[i]);
+		}
+		if(chosen.empty())
+			kVfs.LogResolution("include-pattern", szName, context, std::string(), NULL);
+		for(size_t i = 0; i < chosen.size(); ++i)
+			kVfs.LogResolution("include-pattern", szName, context + HHFormat(" (match %u)", (unsigned)i), chosen[i], NULL);
+	}
+	else
+	{
+		const std::vector<HHVfsEntry>* pFound = kVfs.Find(szName);
+		std::string path;
+		if(pFound)
+			path = pFound->front().path;
+		else
+			path = ResolveFile(szName); // boot without a VFS
+		kVfs.LogResolution("include", szName, context, path, pFound);
+		if(!path.empty())
+			chosen.push_back(path);
+	}
+	++m_includeCounts[context + "|" + HHVfs::Key(szName)];
+	lua_newtable(L);
+	const int iResult = lua_gettop(L);
+	int n = 0;
+	for(size_t i = 0; i < chosen.size(); ++i)
+	{
+		RecordInclude(chosen[i]);
+		RunFile(L, chosen[i]);
+		lua_pushstring(L, chosen[i].c_str());
+		lua_rawseti(L, iResult, ++n);
+	}
+	return 1;
+}
+
+void HHScriptSystem::RecordInclude(const std::string& strPath)
+{
+	m_loadedFiles.push_back(strPath);
+}
+
+void HHScriptSystem::LogIncludeSummary() const
+{
+	for(std::map<std::string, int>::const_iterator it = m_includeCounts.begin(); it != m_includeCounts.end(); ++it)
+		if(it->second > 1)
+			HHLog("include: %s requested %d times (each run again; ASSUMPTION)", it->first.c_str(), it->second);
 }
 
 bool HHScriptSystem::ProtectedCall(lua_State* L, int nArgs, int nRet, const char* szWhat)
@@ -427,37 +575,16 @@ bool HHScriptSystem::ProtectedCall(lua_State* L, int nArgs, int nRet, const char
 bool HHScriptSystem::LoadFile(lua_State* L, const char* szFilename)
 {
 	HH_IMPL_CALL("ICvEngineScriptSystem1::LoadFile");
+	const std::string request = szFilename ? szFilename : "";
 	const std::string path = ResolveFile(szFilename);
+	HHGetVfs().LogResolution("LoadFile", request, StateName(L), path, HHGetVfs().Find(request));
 	if(path.empty())
 	{
-		HHLogError("LoadFile: %s not found in the Lua search folders", szFilename ? szFilename : "(null)");
+		HHLogError("LoadFile: %s not found", request.c_str());
 		return false;
 	}
-	std::string text;
-	if(!ReadWholeFile(path, text))
-	{
-		HHLogError("LoadFile: cannot read %s", path.c_str());
-		return false;
-	}
-	// Record the file the way the engine's include list does (full path).
-	lua_getglobal(m_L, "IncludeFileList");
-	if(lua_istable(m_L, -1))
-	{
-		lua_pushstring(m_L, path.c_str());
-		lua_rawseti(m_L, -2, (int)lua_objlen(m_L, -2) + 1);
-	}
-	lua_pop(m_L, 1);
-
-	const std::string chunk = "@" + path;
-	if(luaL_loadbuffer(L, text.c_str(), text.size(), chunk.c_str()) != 0)
-	{
-		HHLogError("LoadFile: syntax error: %s", lua_tostring(L, -1));
-		GetLuaLog()->Msg("Syntax Error: %s", lua_tostring(L, -1));
-		lua_pop(L, 1);
-		++m_iErrors;
-		return false;
-	}
-	return ProtectedCall(L, 0, 0, path.c_str());
+	RecordInclude(path);
+	return RunFile(L, path);
 }
 
 bool HHScriptSystem::RunString(lua_State* L, const char* szChunk, const char* szChunkName)
