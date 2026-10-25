@@ -144,6 +144,9 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// mod scripts, game-relative for base scripts and premade maps): the DLL looks up
 	// MapScriptOptions defaults by this string, and LoadFile resolves it.
 	HH_STEP(HHFormat("setMapScriptName(\"%s\")", mapFile.c_str()), pg->setMapScriptName(CvString(mapFile.c_str())));
+	// gamespec.py pregame_lua sets GAMESPEED_STANDARD (ID 2, the DLL's hard-coded case for TURNTIMER_MEDIUM)
+	// first, so Marathon, which sets no timer, gets a fixed one; mirrored here.
+	HH_STEP("setGameSpeed(2 /* GAMESPEED_STANDARD: turn timer pin */)", pg->setGameSpeed((GameSpeedTypes)2));
 	HH_STEP(HHFormat("setGameSpeed(%d)", kSpec["speed"]["id"].AsInt()), pg->setGameSpeed((GameSpeedTypes)kSpec["speed"]["id"].AsInt()));
 	// PreGame state the spec does not set: the real exe keeps it from the previous game of the session
 	// (setGameSpeed sets no turn timer for Marathon). --pregame-turn-timer reproduces such a reference.
