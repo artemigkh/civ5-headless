@@ -1,0 +1,14 @@
+{
+ "name": "eui-civ-ribbon",
+ "description": "EUI's NotificationPanel.lua UpdateCivListNow (the civ ribbon) calls player:CalculateGoldRate() for every alive major in the ribbon that the active team has met and is not at war with. CalculateGoldRate looks like a getter but recomputes CvTreasury::m_iExpensePerTurnUnitMaintenance (serialized) in VP DLLs.",
+ "hook": "ui-frame",
+ "lua": "civ-ribbon.lua",
+ "order": 30,
+ "select": [
+  {"file": "NotificationPanel.lua", "sha256": [
+   "56f50995e904a66988f229e3647b09c9b39df84f24e57c101ea1b4385ee41c84",
+   "18f838c7b145c1e40706fb86d4e5188d36eab5b011653eef323958e606cdd3ae"]},
+  {"file": "NotificationPanel.lua", "contains": ["UpdateCivListNow", "CalculateGoldRate"]}
+ ],
+ "covers": [{"file": "NotificationPanel.lua", "methods": ["CalculateGoldRate"]}]
+}

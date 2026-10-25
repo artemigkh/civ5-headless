@@ -21,6 +21,8 @@ public:
 
 	// SELECT COUNT(*) on the open game database; -1 on error.
 	int CountRows(const char* szTable);
+	// MAX(ID) + 1 (the size of an info array indexed by ID); -1 on error.
+	int IdRange(const char* szTable);
 
 private:
 	bool CopyIntoRun(const std::string& strSource, std::string& strCopy);

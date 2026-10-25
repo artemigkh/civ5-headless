@@ -1,0 +1,670 @@
+{
+ "about": "UI Lua files that need no UI emulation profile beyond the selected ones (reviewed, or verified against the real game), by name and sha256, and the official DLC folders whose UI is the base game's. The run report (host-report.json uiFiles) lists every other non-base UI file as unknown. Add files with python -m civ5headless.hazards known; docs/profiles.md says how to review a file.",
+ "officialDlc": [
+  "DLC_01",
+  "DLC_02",
+  "DLC_03",
+  "DLC_04",
+  "DLC_05",
+  "DLC_06",
+  "DLC_07",
+  "DLC_Deluxe",
+  "DLC_SP_Maps",
+  "DLC_SP_Maps_2",
+  "DLC_SP_Maps_3",
+  "Expansion",
+  "Expansion2",
+  "Shared",
+  "Tablet"
+ ],
+ "files": [
+  {
+   "name": "ActionInfoPanel.lua",
+   "sha256": "F60C3DE875F598EF1624E5171B70409AE162BCD1E0F84A687FEE1776601657E1",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 4 calls (engine 1, writes 3)"
+  },
+  {
+   "name": "Bombardment.lua",
+   "sha256": "EBE2CB27202145EBCE250360794CE801E10E4429B690507DADC3C95AAF9B558B",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CameraView.lua",
+   "sha256": "41EB8A8EC9FEEB2A0C1F0F26CF4B5C5506E353FA5E0B103B033CAFEE39C06DC3",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CBP_IncaFunctions.lua",
+   "sha256": "77153E804B24361E6D47D665B868A7112E111DCC93FEBB3AE9EF3E126D330C41",
+   "source": "addin:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "ChooseInternationalTradeRoutePopup.lua",
+   "sha256": "3DBD6F05C3B8EDF336C9434A05E650866EA7C7B83B91D847B4DE917AF3D41B06",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "ChooseMayaBonus.lua",
+   "sha256": "5A9CAD69B03783DE842D60024AD19287B9A6A5D6946795CA2BB86682C911ABE1",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (engine 1)"
+  },
+  {
+   "name": "ChoosePantheonPopup.lua",
+   "sha256": "8841E238770A679BBC89C52E0684EA26B4E4A7CF04857D13AB5AA41C407ED6E7",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (engine 1)"
+  },
+  {
+   "name": "ChooseReligionPopup.lua",
+   "sha256": "5923C565E8E8DC42104FE2953652C190BA6F54F28FD8D679F0F6742E9CF7CD34",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 2 calls (engine 2)"
+  },
+  {
+   "name": "ChooseTradeUnitNewHome.lua",
+   "sha256": "E8E0DC3E8FAACD8590C0AD209C9F3091C2B78D999DFFFE5F8CA96646FBF6DF02",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CityBannerManager.lua",
+   "sha256": "27F983386914E27F052006E8F944A8890BF4D9515428D17F068A853BCC4BC763",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "CityEventsInfo.lua",
+   "sha256": "9795A0A0F7B70C5A9A3A73EF75F970D4F0D01CF8D0AD610CF33DC9EF441DFD1A",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CityList.lua",
+   "sha256": "4AD444A58D6B00F8E12D7BD59C39CCF4CAF993234EF2A10C58BCE8636CF1FB9F",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CityRecentEventsInfo.lua",
+   "sha256": "37F59E716E21418BA85632C457F4CC92169519D5A8FB78F003F52AB09B680430",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CityStateDiploPopup.lua",
+   "sha256": "6C98E5FD041A701CCE61404BD6ACA8082FC50F40C45817C14C1A8306FED5F14B",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 12 calls (engine 5, writes 7)"
+  },
+  {
+   "name": "CityStateGreetingPopup.lua",
+   "sha256": "0F287CAB5BF104FE0EB7525D432076793D5060ED761F64EA8876BF0F04981E63",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CityStateStatusHelper.lua",
+   "sha256": "72D8CE60F5EBF28B360DE59026F42375063D29C4F87ED238E451E0567330627A",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CityView.lua",
+   "sha256": "29A8668F72619E0763D1F94B936F6C4B1D9E99F748FF3312D8855EF412E84DB8",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 26 calls (engine 20, writes 6)"
+  },
+  {
+   "name": "CivilopediaScreen.lua",
+   "sha256": "5D2A62A82D7178644FA2C8BC5B4B4BF68FA83DCD0F192D9250529AB42DCFF7AB",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "ConfirmCityTaskPopup.lua",
+   "sha256": "A54EA311545032ACC49962FB8B64EAD37C2633133264058133CE0DF4B290F2B2",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (engine 1)"
+  },
+  {
+   "name": "ConfirmCommandPopup.lua",
+   "sha256": "FEF0E26B54BD29CBC6008EE7B69FE442A2BA84742266D8CB3FAF35F037213838",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "ContentSwitch.lua",
+   "sha256": "554DC9EFCDCE6AA2CB1214D50E8BC4AF5087E448EAD4F660923056819127A769",
+   "source": "dlc:VPUI/VPUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CorporationsOverview.lua",
+   "sha256": "6A0ED4B5F797D43729D2DC8FC5EF61EE98924CE8AD232674051FF4CDA9E3A5FE",
+   "source": "addin:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "CultureOverview.lua",
+   "sha256": "24CF1FC1CE3AAB395413D4261D00247F294C5E7F4315AD2B45287C8686E482F8",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 5 calls (engine 3, writes 2)"
+  },
+  {
+   "name": "DeclareWarPopup.lua",
+   "sha256": "E11DEB54064E31A68BF78C999735C0AF276E85EB8DF8B9C0AB80002D52C9EB22",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 7 calls (engine 4, writes 3)"
+  },
+  {
+   "name": "Destination.lua",
+   "sha256": "D1DB0BA4838B81F39F56071C388C20E143626801C25A813779030C3763BC13A0",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "DiploCorner.lua",
+   "sha256": "4AD27E04101883058E8B27792143ABABB2F7052BDB81082A53FEE6376FAE4159",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 2 calls (engine 1, writes 1)"
+  },
+  {
+   "name": "DiploGlobalRelationships.lua",
+   "sha256": "57E4C621CA1D8978B6C545F3671F7874E1B2941FA485E8288E4118AC21193008",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 2 calls (writes 2)"
+  },
+  {
+   "name": "DiploList.lua",
+   "sha256": "388E1070AF2A6396B6FF6C4E1218214C76CA2A7F1509AF91DD646B5779B13771",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "DiploRelationships.lua",
+   "sha256": "44F7C72B20525A017F1383FD2C1DB68D81551B3D9866607C6A5221FBCA2D8535",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 2 calls (curated 1, writes 1)"
+  },
+  {
+   "name": "DiploTrade.lua",
+   "sha256": "C99D910A8667DDA880E2906800159E65B0C92971585991331D390E63184F8617",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "DiscussionDialog.lua",
+   "sha256": "56179766D60D0BAD08EDBFA79E41CC1ACF98DB32EDD04CED03608B963368BC54",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 60 calls (writes 60)"
+  },
+  {
+   "name": "EconomicGeneralInfo.lua",
+   "sha256": "A8BDA280791E8720E8B369FCC67B38A6885B56D0BA8CC86EEF839AE8831BC3BC",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (curated 1)"
+  },
+  {
+   "name": "EconomicOverview.lua",
+   "sha256": "46A61D89B8A5799F35DA5D35542637EFA2E0BCC86C3DDDC9E0DD6475B7253F68",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EnemyUnitPanel.lua",
+   "sha256": "03FCB6E5DDD0C184CCB5078D0530ED5D4E59890E646317505C92EE88B04AE4D9",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EspionageChoicePopup.lua",
+   "sha256": "4EB3B51B52AC7138A96CE86DCF2A28A7BA1AEE99694EEF48521E5E7127D32E20",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "EspionageOverview.lua",
+   "sha256": "C0096A65CC6AFB52DA69457BE1D6C174C58A4E949E65E2A9E5DAAA485FB8594F",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 7 calls (engine 5, writes 2)"
+  },
+  {
+   "name": "EUI_context.lua",
+   "sha256": "D9EBA071A73353F57230F1C05AEAD6E567735A4A23EE4D071D5BA42AAB418B12",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EUI_tooltips.lua",
+   "sha256": "1F01EF58F7DB8BE9D7C8C29D71CD2C880DCBC8746E225C3B0283B32F200140C9",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EUI_unit_include.lua",
+   "sha256": "561D3ABB81BBBF83C669C5B4F94DF0FC42753EF4BA8A112E0137EEC4CE4D5F23",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EUI_utilities.lua",
+   "sha256": "BF33AA10B28297588E19250071A6F48913EA308FAC8959AD1F2B2E37C8CECCA9",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EULA.lua",
+   "sha256": "6F1FE08EFD250DCD86581FE167114FBEA1ADD348A016B8F5952FCE1D52110D9A",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EventChoicePopup.lua",
+   "sha256": "4C72154729DFF7AFE086FE8BC9E66C0B46A37B399C36F47990FD189C08D0E4BB",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "EventChoicePopupCity.lua",
+   "sha256": "32E7B63B6143F70EDADD7D6E330CE34C69CBBA14A2948D1996F476B5DFC42C01",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "EventOverview.lua",
+   "sha256": "DB6C98C8A472D3444BAC23E6C58FFBCC86D59938EF0BF5569DEB17BD4BAA6673",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "EventPopup.lua",
+   "sha256": "9EE0CD45DFFF8E82D0DB684791E6EB88DE0C0DA0CD7227C6AC48642DD34B255F",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "FrontEnd.lua",
+   "sha256": "55C1D8A4AF968383B3BF6323E6C42805E0CCBA91911764F4818B826ECA99432F",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "GameSetupScreen.lua",
+   "sha256": "467543129FD7584D0D983011B42FE68DF4B09DF0DAEA7322991867486E23EA72",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "GenericWorldAnchor.lua",
+   "sha256": "48D499284CD64A94B8F705281483E48EBFB13471FC3E9690B6BA2C8A8035F448",
+   "source": "mod:UI - Small Resource Icons",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "GlobalArchaeologistDigSites.lua",
+   "sha256": "E907AC0E47137CFE77EA89882F2FB702CF20130EE385B84ADF51447BD49E914A",
+   "source": "addin:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "GlobalCityBombardRange.lua",
+   "sha256": "652C8D54918EF8E4916D832EB7CF7A4D0433DC93E6F769F22080A1BE58B710B8",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "GoodyHutPopup.lua",
+   "sha256": "77C27E52095F573E1B809E13C7FF44BC12944C49FBBC17391012C42F906355EA",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "GPList.lua",
+   "sha256": "352BE1EAD0B81EC05B490B6300B915F13741991E9E80FA8505C7F7AF23E6845B",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "HappinessInfo.lua",
+   "sha256": "FFC2085C21FBD9C91B9AA5E2322B82A9CE2882154E25C3C0767D3A659B70E5A5",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "IconSupport.lua",
+   "sha256": "4CED4D553DC3EB8A051A8990ABEFD21F618A5E59B05A65B6E8868B027C05B8E5",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "InfoTooltipInclude.lua",
+   "sha256": "F06B1D81E1F0BB5E475FAFEF019B3A4A94D9A91D8507A25120CD858F584F4C88",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "InGame.lua",
+   "sha256": "FE57B005816A10431F7C2569CE2076BCCEA5686FC129995ABA374B0291517B0C",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 5 calls (writes 5)"
+  },
+  {
+   "name": "LeaderHeadRoot.lua",
+   "sha256": "902088900558CE0A2251006C7EB93AA056173A5D32B7B9ED58BA446C6C0B6ECF",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 4 calls (writes 4)"
+  },
+  {
+   "name": "LeagueOverview.lua",
+   "sha256": "D280FE83CF5D3E9FF027A1EE390432779FD2A9A84AA2DB0E3842F8CC8450DC89",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 7 calls (engine 6, writes 1)"
+  },
+  {
+   "name": "LoadScreen.lua",
+   "sha256": "B2B6C5FF21CD96A8C7117FEF0C01624E46A5E0D397E71A18C3C28B48E19FB209",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 2 calls (writes 2)"
+  },
+  {
+   "name": "MilitaryOverview.lua",
+   "sha256": "603CF99402D8519AF1439E370CEE8959416A03CAE1A2E6295504A9E6677C2C5C",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "MiniMapPanel.lua",
+   "sha256": "09707D3CB34E041EB0B74BB149ACC879AD0F15C13A9FBF4BB6CEDF7723A07529",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "MPList.lua",
+   "sha256": "E6CEBDC850F0007B543B290D70078722C30E59E86F7F3FFEC1FA7192B1446455",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "MPTurnPanel.lua",
+   "sha256": "E483D4032212297D3DAE329A0D4270C787FDFE6793C2E26AA078E5D51E08F62E",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "NaturalWonderPopup.lua",
+   "sha256": "6307A4752E48B3E03FA602B06DB7D2D67A167363D60D28ED467A9D1F05B53707",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "NewEraPopup.lua",
+   "sha256": "61225073FCBAC3492558E0C94F172FFF901F8F3C0211540789FA680B27E0572A",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "NotificationLogPopup.lua",
+   "sha256": "5F79B9A27285A2F5C868104BF85F714C37A6E2CCC954E883AFC7BC40F2623498",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "OptionsMenu.lua",
+   "sha256": "E4A78F72C172370F4C058006845F6D983EB0959E549AE52992E7D8FE8529F7D3",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (engine 1)"
+  },
+  {
+   "name": "OverlayAntiquities.lua",
+   "sha256": "AFC589CDF66075C87D03477F00CE5F8D99284CFC733998CB90B203E54A0DA55F",
+   "source": "addin:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "OverlayAntiquities_MiniMapOverlayHook.lua",
+   "sha256": "FCFA6EADB8922F1B367CA1D6AFF6A946B114A54FD7EC7A9E46F3BF29BEC3BD17",
+   "source": "addin:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "PathHelpManager.lua",
+   "sha256": "54311F9B12FAFBDDFFCFC8DDC59ACC8530556D3F0DCEC4DA2F0D1E12763A1A92",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "PlayerEventsInfo.lua",
+   "sha256": "DECB7F04F8A166302A039D7F346C6F563DFC8D7E9335F6AD08F59B5DBA3E71E7",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "PlotHelpManager.lua",
+   "sha256": "E2448609BD53B6642D7E02F3CC223132CBAF68535ED7EFDBCCB8204D92384354",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (writes 1)"
+  },
+  {
+   "name": "PlotHelpText.lua",
+   "sha256": "0F287CAB5BF104FE0EB7525D432076793D5060ED761F64EA8876BF0F04981E63",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "PlotMouseoverInclude.lua",
+   "sha256": "861D0E15DD3B82182235832611DE973ABE389A6DADF83B3B1239B13BD83A8939",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "ProductionPopup.lua",
+   "sha256": "0F287CAB5BF104FE0EB7525D432076793D5060ED761F64EA8876BF0F04981E63",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "PuppetCityPopup.lua",
+   "sha256": "144CC033A8CBBA7E48DF1E927F5D47BE0453DA774F08B5F516B10FAD24E53401",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 7 calls (engine 6, writes 1)"
+  },
+  {
+   "name": "RandomVCPopup.lua",
+   "sha256": "053DB2F9D22C5826FA73CFE999B918C419AB16E450DC67E243FF0F69F2B7818C",
+   "source": "addin:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "RecentEventsInfo.lua",
+   "sha256": "528C75AFD95B4FA4E63223D93C4B85CFC3DF725BB4B5D361AC6091FB8F28D57C",
+   "source": "addin:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "ReligionOverview.lua",
+   "sha256": "31CA5FBADB459BD4111049C243C51A5DE203A84474CCD43FEC117B65F9B534A2",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 2 calls (engine 1, writes 1)"
+  },
+  {
+   "name": "ReplayViewer.lua",
+   "sha256": "97A579834E395C8E966CD4B610792C4571CBBA87A0D0ED7F50B8E722CAFE8D09",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "ResourceIconManager.lua",
+   "sha256": "0A81ED4F699EA9759ED32BF0B67103C761C8486795927D25F4F302680C2F3048",
+   "source": "mod:UI - Small Resource Icons",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "ResourceTooltipGenerator.lua",
+   "sha256": "B102D555FCCE0A319687F2C9361E7934C8A9C26FF169F9FBE676F708140F7B08",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "SaveMenu.lua",
+   "sha256": "221D4830C2952DE9894C6E7D9F0E994FC623AB6691FC8EFF38342872ABBD3C2A",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "SelectCivilization.lua",
+   "sha256": "0B2775E366CDF02DF4E39A4C50FCAF013DEEAA70C9CAE4FA355E6279305A6B07",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "SimpleDiploTrade.lua",
+   "sha256": "10FC7A8C4FCDC07A6DD0358B1425BD7144F618F97006CB021A5395B4FCDDC99D",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "SmallResourceIcons.lua",
+   "sha256": "90BFB659258BB8429FA5E6E63D83A59C6C66988CB302BE70FE3D6E50FA86A9F1",
+   "source": "addin:UI - Small Resource Icons",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "SocialPolicyPopup.lua",
+   "sha256": "23D2197949BD6FC5EE3BF3038E73DCB22D8136DC334EF8135A0D5FA6BC8FF4F7",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 3 calls (engine 3)"
+  },
+  {
+   "name": "Squads.lua",
+   "sha256": "8F7727E55B3DA57E3DBDCAAE20173FE29F03FB4472B41319341ED384EE4D5315",
+   "source": "addin:(4a) Squads for VP",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 4 calls (writes 4)"
+  },
+  {
+   "name": "StackPanel.lua",
+   "sha256": "06BB01E148016A7FFA75A7FF42E874B440E63562E64783FD3F6FA1D18F9AD4ED",
+   "source": "addin:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "StagingRoom.lua",
+   "sha256": "D4DCCB653D8FCDDC54B98E7EB9A87CB88779E580A5C54A11147DD4F9ADDC3C5C",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 1 calls (engine 1)"
+  },
+  {
+   "name": "TechAwardPopup.lua",
+   "sha256": "A94FC73165DABEC5DFFBC268C57FDD0CBDFA50DED2173674D003A36B29E5083B",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "TechButtonInclude.lua",
+   "sha256": "33B4725B6588FB46F8AF3E39F05CBD0B731200C7AFFA22FB351D54CE4536287A",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "TechHelpInclude.lua",
+   "sha256": "F1CB8C9ACA849CDF4ADFBADA1543FEEB7F8CE2268A0B1A084F3BDC487F695565",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "TechPanel.lua",
+   "sha256": "5EFA549540384208614B172EF0C994DDE35F025D25471947EFD991F53C162769",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "TechPopup.lua",
+   "sha256": "0F287CAB5BF104FE0EB7525D432076793D5060ED761F64EA8876BF0F04981E63",
+   "source": "dlc:UI_bc1/EUI_2.Civ5Pkg",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "TechTree.lua",
+   "sha256": "7B51133DF42561BEC513A374132AEB1273ABA7354E204BED42712AE3FAC0EC3F",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "TopPanel.lua",
+   "sha256": "BFFFDD0A4E990E2B84173B2BA974B14D7603B0584655E6A1538DB1D97D547C67",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 6 calls (curated 4, writes 2)"
+  },
+  {
+   "name": "TradeLogic.lua",
+   "sha256": "14389393C00472DBEF3E6D9173FEE195772CECBCAD6C9BD9A56D17D45BDA3A28",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 69 calls (curated 1, writes 68)"
+  },
+  {
+   "name": "TradeRouteHelpers.lua",
+   "sha256": "EB249D5B6E818258CC6156A926D384AF4F75AB21035329AAA70F207067C0E228",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "TradeRouteOverview.lua",
+   "sha256": "833C27431BD979C7C448CA2C433EA582855618A3AC58D01919857A4012E2413C",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "UniqueBonuses.lua",
+   "sha256": "6948CBB7BB6BB53B9939916BAD859CC96D00B05B912A993DF5CCB6CB60615640",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "UnitFlagManager.lua",
+   "sha256": "A9DC5ED77D25A9671824B115FE2914E6B1DB2A38C275B14C3BB0E4BD867C458C",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "UnitPanel.lua",
+   "sha256": "FBF8CAB08E0A30C3C786FC731BB50D7C6084180504FF760A4CAB3902F9997E51",
+   "source": "mod:(3a) VP - EUI Compatibility Files",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "VassalageOverview.lua",
+   "sha256": "57705180D12928B141E04D3E5B08D8A06D997BBD319CAA2C9DC02534F72AE936",
+   "source": "addin:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 4 calls (curated 1, writes 3)"
+  },
+  {
+   "name": "VictoryProgress.lua",
+   "sha256": "97289CD7D1A2098B89C543456B4574FE93E51AEBA01D79287DE2DA7BB82F9071",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "WonderPopup.lua",
+   "sha256": "847AD862B59CC44A0A2E6225A43EF240D205690C72A095B66DC36B85B7E793BD",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  },
+  {
+   "name": "WorldView.lua",
+   "sha256": "81A0A9F3FDA638875BC51BE4A4718B757164BEE34E462ADA593161603CBD02C8",
+   "source": "mod:(2) Vox Populi",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: 17 calls (writes 17)"
+  },
+  {
+   "name": "YieldIconManager.lua",
+   "sha256": "68C9B086E7C5EC63F1C6CBB77307BB3110499F7590AEFCD224C90C871CBB6A1C",
+   "source": "mod:(1) Community Patch",
+   "note": "reference mod set of the M5 parity runs (Community Patch, Vox Populi, VP EUI compatibility, Squads for VP, Small Resource Icons, EUI): host and real game identical; hazard scan: none"
+  }
+ ]
+}

@@ -51,8 +51,15 @@ struct HHOptions
 	int crtSse2;             // _set_SSE2_enable(v) in every loaded MSVCR90 instance (-1: untouched)
 	int fpuPrecision;        // x87 precision bits for the new game (24, 53, 64; 0: untouched)
 	__int64 crtSrand;        // srand() on the main thread before the new game (-1: untouched, CRT default 1)
+	std::string profilesDir;              // UI emulation profiles (default: HHDefaultProfilesDir)
+	bool noProfiles;                      // no UI emulation profiles at all
+	std::vector<std::string> skipAddins;  // InGameUIAddin files not to run (name with or without extension)
+	bool noAddins;                        // no InGameUIAddin at all
+	std::vector<std::string> luaProbes;   // Lua files run in an InGame context before autoplay (fingerprint probe)
+	std::string gameDirSource;            // where gameDir came from (option, registry, ...)
 	HHOptions() : language("en_US"), strict(false), verbose(false), gameLogging(false), noGameLogging(false), freeLibrary(true),
-		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1), turns(0), noUiFrame(false), randLog(0), gameLogFlags(15), heapPerturb(0), pregameTurnTimer(-1), idleUpdates(10), frameSkew(0), checkpointEvery(1), dumpFrom(-1), dumpTo(-1) {}
+		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1), turns(0), noUiFrame(false), randLog(0), gameLogFlags(15), heapPerturb(0), pregameTurnTimer(-1), idleUpdates(10), frameSkew(0), checkpointEvery(1), dumpFrom(-1), dumpTo(-1),
+		noProfiles(false), noAddins(false) {}
 };
 
 struct HHPaths
@@ -103,3 +110,9 @@ struct HHExportRecord
 	std::string phase;
 };
 std::vector<HHExportRecord> HHGetExportRecords();
+
+// Engine methods the host only stubs that are known to be harmless (engine/HHStubPolicy.cpp); pWhy gets the reason.
+bool HHIsHarmlessStub(const std::string& strMethod, std::string* pWhy);
+
+// Logs fatal exceptions (HHCRASH lines: code, module+offset, registers, stack) (engine/HHCrash.cpp).
+void HHInstallCrashHandler();

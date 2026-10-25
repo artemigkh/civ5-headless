@@ -1,0 +1,15 @@
+{
+ "name": "base-demographics",
+ "description": "Demographics.lua (base game; CP and VP override it with the same BuildTables) runs BuildTables when its context loads, behind the load screen. It calls the might getters, which some DLLs cache (VP: CvPlayer::m_iMilitaryMight with the turn slice it was computed in).",
+ "hook": "load-screen",
+ "lua": "demographics.lua",
+ "order": 10,
+ "select": [
+  {"file": "Demographics.lua", "sha256": [
+   "72f0b7d937a443670bcb5b4ea1849f8b88f0dc88700a0c177be5e5a6ac357cb0",
+   "d8e0287257c738f4a6d4cc80a89c4603af77cf2dd2b476f943294ef5787d9cc0",
+   "3300ce42ca6ccd96cadae60dcc8ff8c9cd23b75fe53a696db64acf1e72e679e9"]},
+  {"file": "Demographics.lua", "contains": ["function BuildTables", "GetMilitaryMight", "\nBuildTables()"]}
+ ],
+ "covers": [{"file": "Demographics.lua", "methods": ["GetMilitaryMight", "CalculateGrossGold", "CalculateTotalYield"]}]
+}
