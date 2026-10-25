@@ -24,32 +24,36 @@ Status: being split out of a Vox Populi fork where it was developed; see [docs/p
 ## Building
 
 The host must be built with MSVC 2008 SP1 (VC9), the game DLL's compiler, because C++ objects cross the engine
-interfaces:
+interfaces. `tools/get_toolchain.py` makes a portable copy in `toolchain/` from Microsoft's Windows SDK 7.0 ISO
+(downloaded, or `--iso`), without installing anything:
 
 ```
+python tools/get_toolchain.py [--iso GRMSDK_EN_DVD.iso]
 python tools/build_host.py [--toolchain DIR]
 ```
 
-`tools/toolchain.py` describes where the toolchain is looked for (a `--toolchain` folder, `C5H_TOOLCHAIN`, a portable
-copy in `toolchain/`, or an installed Visual Studio 2008).
+`tools/toolchain.py` describes where the toolchain is looked for (a `--toolchain` folder, `C5H_TOOLCHAIN`, the
+portable copy in `toolchain/`, or an installed Visual Studio 2008).
 
 ## Python tools
 
-Python 3.11 or newer, standard library only. Install the package from the checkout, or run it in place with
-`PYTHONPATH=python` and `python -m civ5headless`:
+Python 3.11 or newer, standard library only. `c5h.cmd` runs them from the checkout (`python -m civ5headless` with
+`python` on `PYTHONPATH`); `pip install -e .` installs a `c5h` command (pip fetches setuptools for it):
 
 ```
-pip install -e .
 c5h doctor                                               # what was found and what is missing
 c5h run examples/specs/continents-tiny.json --turns 30   # one game; the run folder goes to runs/
 c5h compare runs/A runs/B                                # per-turn state digests of two runs
 ```
 
 The game folder, the `My Games` folder, the mods and the host are discovered (Steam registry and libraries, the
-Documents known folder, `out/latest.txt`). Anything else, or anything to override, goes in `civ5headless.toml`; see
-[civ5headless.example.toml](civ5headless.example.toml). `c5h -h` lists the commands.
+Documents known folder, `out/latest.txt`), and the game database is built from the game's files and the mods.
+Anything else, or anything to override, goes in `civ5headless.toml`; see
+[civ5headless.example.toml](civ5headless.example.toml). `c5h -h` lists the commands; the
+[user guide](docs/user-guide.md) covers them, and `civ5headless.realgame` drives the real game for references.
 
-Tests: `python -m unittest discover -s tests`; with `C5H_INTEGRATION=1` they also run the host on a short game.
+Tests: `python -m unittest discover -s tests`; with `C5H_INTEGRATION=1` they also run the host
+on a short game and build the DLC snapshot.
 
 ## Licence
 

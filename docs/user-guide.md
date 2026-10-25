@@ -1,66 +1,96 @@
-# Headless host: user guide
+# User guide
 
-> This guide predates the standalone repository and is being rewritten around `c5h`. Until then, read its commands
-> through this table; inputs that were machine paths (game folder, MODS, databases, host build) now come from
-> `civ5headless.toml` or discovery (`c5h doctor`), and run folders go to `runs/`.
->
-> | In this guide | Now |
-> |---|---|
-> | `work/headless/hhbench.py newgame --run N --spec S --target-turn T ...` | `c5h run S --turns T --run N ...` |
-> | `work/headless/runner.py run\|status\|compare Q` | `c5h queue run\|status\|compare Q` (relative paths in Q are relative to Q) |
-> | `work/headless/gamespec.py resolve\|lua S` | `c5h spec resolve\|lua S` |
-> | `work/headless/build_db.py`, `dbcache.py`, `dbdiff.py` | `c5h dbbuild`, `c5h dbcache`, `c5h dbdiff` |
-> | `tools/headless/hhdigest.py compare A B` | `c5h compare A B` (run folders or logs) |
-> | `tools/headless/hhdigest.py verify\|hash` | `c5h digest verify\|hash` |
-> | `tools/headless/parity_t000.py` | `c5h dumps` |
-> | `work/headless/parity_run.py`, `host_first.py`, `skew_sweep.py` | `c5h parity`, `c5h host-first`, `c5h skew` |
-> | `work/headless/phase_speed.py` | `python tools/phase_speed.py` |
-> | `work/build-headless.py` | `python tools/build_host.py` |
-> | `work/vpbench/vpbench.py`, `game_probe.py`, `record_matrix.py` (real game) | not yet: `realgame/` (milestone 2) |
+`civ5headless.exe` plays Civilization V (Brave New World) AI autoplay games with an unchanged game DLL and without the
+game. `c5h` is the command line around it: configuration, databases, single games, batches, comparisons, and the
+real-game automation the references are recorded with. A game from a spec is the game the real game plays from that
+spec: with the Vox Populi DLL the per-turn state digests are identical (a 100-turn Continents reference, and a
+Standard game to victory with 300 of 302 turns identical and the same result). The host is several times faster than
+the game, needs a fifth of its memory, and many games run side by side.
 
-`civ5headless.exe` plays Vox Populi AI autoplay games with the unchanged game DLL and without Civilization V. A
-game from a spec is the same game the real game plays from that spec: per-turn state digests are identical
-(100-turn Continents reference, `hh-m2-aa100-a`). It is several times faster than the real game, needs about
-300 MB instead of 1.9 GB, and many games run side by side.
+Design and status: [plan](plan.md), [ledger](ledger.md), [engine contract](engine-contract.md), [database
+builder](database-builder.md), [DLL additions](dll-additions.md), [history](history).
 
-Design and status: [plan](headless-host-plan.md), [ledger](headless-host-ledger.md), [engine
-contract](headless-engine-contract.md), [database builder](headless-dbbuild.md), [DLL
-additions](headless-dll-additions.md).
+## 1. Setup
 
-## 1. Build
+Needs: Windows, Civilization V with Brave New World (Steam), started once to its main menu (it writes the caches the
+host reads: `Localization-Merged.db`, `Civ5CoreDatabase.db`), and Python 3.11 or newer. The Python tools use the
+standard library only.
+
+From a checkout, `c5h.cmd` runs the tools in place (`python -m civ5headless` with `python\` on `PYTHONPATH`; set
+`C5H_PYTHON` for another Python). `pip install -e .` installs a `c5h` command instead; it needs setuptools, which pip
+fetches from the network.
 
 ```
-python work/build-headless.py --config release      # -> work/headless-output/Release/<ts>/civ5headless.exe
-python work/build-vp-msvc.py ...                     # the game DLL as usual (work/msvc-output/Release/<ts>/)
+c5h doctor                                               # what was found, what is missing
+c5h run examples/specs/continents-tiny.json --turns 30   # one game; the run folder goes to runs/
+c5h compare runs/A runs/B                                # per-turn state digests of two runs
 ```
 
-The host uses the VC9 toolchain in `work/toolchain`, like the DLL. The tools below pick the latest host build
-(`work/latest-headless-build-path.txt`) unless `--exe` is given. The host loads the Firaxis DLLs (database,
-localization, Lua) and the ICU data from the game folder (`--game-dir`, default the Steam install); nothing of the
+Configuration: the game folder (Steam registry and library folders), `Documents\My Games\Sid Meier's Civilization 5`
+(the Documents known folder), its MODS and cache folders, the activated mods (`Civ5ModsDatabase.db`), the game DLL
+(the first active mod's, the Community Patch folder's, or the game's own) and the host (`out/latest.txt`) are
+discovered. Anything else, or anything to override, goes in `civ5headless.toml` (current folder, the workspace, or
+`C5H_CONFIG`; see [civ5headless.example.toml](../civ5headless.example.toml)); `c5h --config FILE` picks another.
+`c5h doctor` prints every value with where it came from, then checks three groups: host games (exit code 1 when one
+fails), the real game, and building the host.
+
+| Command | Does |
+|---|---|
+| `c5h doctor` | configuration and checks |
+| `c5h run` | one host game from a spec |
+| `c5h queue run\|status\|compare` | many games in parallel |
+| `c5h compare A B` | per-turn digests of two runs (folders or logs) |
+| `c5h spec resolve\|lua` | resolve a spec, or print the front-end Lua that sets it up in the game |
+| `c5h snapshot` | the DLC snapshot, built from the game's files |
+| `c5h dbcache`, `c5h dbbuild`, `c5h dbdiff` | the game database for a mod set: cached, built, compared |
+| `c5h parity`, `c5h host-first`, `c5h dumps`, `c5h skew`, `c5h digest` | parity with real-game references |
+| `c5h verify` | the verification suite |
+| `python -m civ5headless.realgame.probe\|record\|dbcapture\|tuner` | the real game ([section 8](#8-the-real-game)) |
+
+`c5h COMMAND -h` gives each command's options.
+
+## 2. Building the host
+
+The host must be built with the game DLL's compiler, MSVC 2008 SP1 (VC9), because C++ objects cross the engine
+interfaces. `tools/get_toolchain.py` makes a portable copy from Microsoft's Windows SDK 7.0 ISO (the one Vox
+Populi's CI uses) without installing anything:
+
+```
+python tools/get_toolchain.py                       # downloads GRMSDK_EN_DVD.iso (1.5 GB), makes toolchain\
+python tools/get_toolchain.py --iso GRMSDK_EN_DVD.iso
+python tools/build_host.py                          # -> out\Release\<timestamp>\civ5headless.exe, out\latest.txt
+```
+
+The ISO's size and SHA-256 are checked; its packages come out with 7-Zip when it is installed, else with a built-in
+UDF reader; `msiexec /a` unpacks them (an administrative image: nothing is installed or registered). It takes about
+20 s from a local ISO, and `toolchain\provenance.json` records the hashes. `tools/toolchain.py` also finds a
+toolchain in `--toolchain DIR`, `C5H_TOOLCHAIN` or an installed Visual Studio 2008.
+
+The host loads the Firaxis DLLs (database, localization, Lua) and the ICU data from the game folder; nothing of the
 game is copied or committed.
 
-## 2. Game database
+## 3. Game database
 
-The host needs the modded game database. `build_db.py` builds it from the mod files in about 3 s
-([details](headless-dbbuild.md)):
+The host needs the game database for the DLL and mods it runs. You rarely build it yourself: `c5h run` and the queue
+use the cache (`c5h dbcache`), which builds once per input set in about 3 s and reuses the result
+(`<workspace>\cache\db\<key>\built.db`). The key hashes the contents of the mods' `.modinfo/.xml/.sql/.lua` files,
+the mods database, the DLL, the DLC snapshot and the host, so a mod edit gives a new database automatically.
 
-```
-python work/headless/build_db.py --mods-dir <MODS> --mods-db <Civ5ModsDatabase.db> --dll <DLL> --out <built.db>
-```
+- **DLC snapshot:** the database with the base game, the expansions and every installed DLC, before any mod. `c5h
+  snapshot` builds it from the game's files (the game's cached `Civ5CoreDatabase.db` plus each DLC package, in about
+  a second) and caches it; the database cache does that by itself when `snapshot` is not set. A snapshot captured
+  from the game (`python -m civ5headless.realgame.dbcapture --run NAME --snapshot-only`, then `snapshot = ...` in
+  `civ5headless.toml`) can be used instead; `c5h snapshot --oracle CAPTURED.db` compares the two.
+- **Mods input:** a MODS folder and its `Civ5ModsDatabase.db` (the activated mods). The live ones work, but the live
+  database lists no activated mods while the game sits in its mod browser; a pinned copy (a MODS folder copy and a
+  copy of the database taken in a modded session) keeps an input stable. Both are only read.
+- `c5h dbbuild --mods-dir MODS --mods-db DB --out built.db [--oracle GAME.db]` builds one database directly;
+  `c5h dbdiff A B` compares two. Details: [database builder](database-builder.md).
 
-You rarely call it yourself: `hhbench.py` and the runner use `work/headless/dbcache.py`, which builds once per
-(mods input, DLL, DLC snapshot, host exe) and reuses the result (`work/headless/cache/db/<key>/built.db`). The
-key hashes the contents of the `.modinfo/.xml/.sql/.lua` files, so a mod edit gives a new database automatically.
-
-Mods input: a MODS folder and its `Civ5ModsDatabase.db` (the activated mods). Use a pinned copy, for example
-`work/headless/db/mods-headless-host-0ed40de35-input/` (in the main checkout), or the live
-`Documents\My Games\Sid Meier's Civilization 5\MODS` with a copy of `cache\Civ5ModsDatabase.db` (the live one
-has no activated mods while the game sits in the mod browser). Both are only read.
-
-## 3. Game specs
+## 4. Game specs
 
 A spec is JSON mirroring the single-player setup screens; omitted fields behave like an untouched screen
-(`work/headless/gamespec.py` docstring, plan section 4.4). Examples are in `work/headless/specs/`:
+(`c5h spec -h`, plan section 4.4). Examples are in `examples/specs/`:
 
 ```json
 {"map": {"script": "Assets/Maps/Continents.lua", "size": "WORLDSIZE_STANDARD"},
@@ -70,146 +100,201 @@ A spec is JSON mirroring the single-player setup screens; omitted fields behave 
 
 - Other fields: `map.options`, `map.civ5map` (premade maps), `majors`, `cityStates`, `slots` (civ, team per
   slot), `gameOptions`, `victories`, `maxTurns`.
-- The two seeds fix the whole game (map, civs, city-states, every AI decision). Same spec + same DLL + same
-  database = the same game, on every run and in the real game.
-- `python work/headless/gamespec.py resolve SPEC.json --db <built.db> --out RESOLVED.json` validates names and
-  writes the explicit form the host reads. hhbench resolves for you; it also accepts a resolved spec, and the
-  runner substitutes seeds per job.
+- The two seeds fix the whole game (map, civs, city-states, every AI decision): the same spec, DLL and database give
+  the same game, on every run and in the real game.
+- `c5h spec resolve SPEC.json --out RESOLVED.json` checks the names against the game database and writes the
+  explicit form the host reads; `c5h run` resolves for you and also takes a resolved spec. `c5h spec lua SPEC.json`
+  prints the front-end Lua that sets the same pregame state in the real game.
 
-## 4. One game
+## 5. One game
 
 ```
-python work/headless/hhbench.py newgame --run NAME --spec work/headless/specs/continents-standard.json \
-       --target-turn 250 --dll <DLL> --mods-dir <MODS> --mods-db <Civ5ModsDatabase.db> [--diagnostics 1]
-# the same through vpbench:
-python work/vpbench/vpbench.py newgame --backend headless --run NAME --spec ... --target-turn 250 --dll ... \
-       --mods-dir ... --mods-db ...
+c5h run examples/specs/continents-standard.json --turns 250 [--run NAME] [--seeds MAP SYNC] [--dll DLL]
 ```
 
-The run folder is `work/test-runs/NAME` (or `--run-dir DIR`). Useful options:
+The run folder is `<runs>\NAME` (default `<spec>-<date>-<time>`), or `--run-dir DIR`. Inputs left out come from the
+configuration. Useful options:
 
 | Option | Meaning |
 |---|---|
 | `--db DB` | use this database instead of the cached build |
-| `--diagnostics N` | `Game.SetStackingDiagnosticsLevel(N)` before autoplay (behaviour runs) |
-| `--improved-mask N` | `Game.SetStackingAIImprovedMask(N)` (DLLs with the A/B switch, ai-improvements) |
-| `--ab-role baseline\|test` | A/B of two DLL builds: records `improvedMask` 0 / -1 in `setup.json` for abcompare |
+| `--mods-dir MODS --mods-db DB` | another mods input |
+| `--lua-probe FILE` | run a Lua file in the game once it has started, before turn 0 (repeatable) |
+| `--diagnostics N` | `Game.SetStackingDiagnosticsLevel(N)` before autoplay (Vox Populi fork DLLs) |
+| `--improved-mask N`, `--ab-role baseline\|test` | A/B switches of the AI improvement program's DLLs |
 | `--checkpoint-every N` | checkpoint every N turns (default 1) |
-| `--maximum-seconds S`, `--stall-seconds S` | kill the game after S seconds, or after S seconds without a new turn |
+| `--maximum-seconds S`, `--stall-seconds S` | end the game after S seconds, or after S seconds without a new turn |
 | `--max-memory-mb MB` | commit limit of the host process (job object; default 3500) |
 | `--affinity MASK`, `--low-priority` | CPU pinning, below-normal priority |
-| `--prune` | afterwards delete the database copy (60 MB), state dumps (35 MB) and the DLL's AI logs (60 MB at T100) |
-| `--host-arg=ARG` | pass an option to `civ5headless.exe` (run it without arguments for the list); write it with `=` when ARG starts with `--` |
+| `--heap-perturb N`, `--frame-skew K` | the verification suite's address and frame-count checks |
+| `--prune` | afterwards delete the database copy (60 MB), state dumps (35 MB) and the DLL's AI logs |
+| `--host-arg=ARG` | pass an option to `civ5headless.exe` (run it without arguments for the list) |
 
-The host itself can also be run directly (`civ5headless.exe newgame --spec RESOLVED --out DIR --dll ... --db ...
---turns N`); hhbench adds the vpbench files, limits and the database cache.
+From Python, `civ5headless.run.play(spec, turns, ...)` plays one game and returns its run folder, whether it
+completed, and its status.
 
 ### Run folders
 
-hhbench writes the files vpbench writes, so `compare.py`, `abcompare.py`, `samerun.py` and
-`summarize-ai-features.py` read headless runs unchanged:
+The files follow the real-game benchmark of the Vox Populi fork this came from, so its readers (`compare.py`,
+`abcompare.py`, `samerun.py`) read host runs unchanged:
 
-| File | Headless content |
+| File | Content |
 |---|---|
-| `events.jsonl` | launched, diagnostics_enabled, improved_mask, checkpoint (every 10 turns), victory / target_reached, completed or failed |
-| `setup.json` | vpbench's setup query (before arming), plus `improvedMask`, `backend`, `abRole`, `diagnosticsLevel`, `dllSHA256`, `specKey` |
+| `events.jsonl` | launched, checkpoint (every 10 turns), victory / target_reached, completed or failed |
+| `setup.json` | the setup query (before arming), plus `backend`, `dllSHA256`, `specKey` and the A/B fields |
 | `spec-resolved.json` | the resolved spec |
-| `checkpoints/turn-NNNN.json` | vpbench's CHECKPOINT query (the ai-improvements version with the abcompare strength metrics) at every turn change, `turn-NNNN-final.json` after autoplay; `turn-0000.json` is the host's own T000 checkpoint |
-| `turn-times.jsonl`, `turn-seen.json` | exact seconds since autoplay started, per turn |
-| `replay-messages.json`, `replay-data.json` | as vpbench: replay messages without type 2, and every major's replay series |
-| `status.json` | `state`, `startTurn`/`endTurn`/`turns`, `wallSeconds` (autoplay), `secondsPerTurn`, `process` (host CPU seconds, peak working set, peak private bytes, peak virtual), `endReason` (target_turn, victory, killed), `winner`/`victory`, `save` (seed key), `background` |
-| host outputs | `newgame-report.json`, `Logs/` (HeadlessDigest.log with the per-turn digests, Headless.log, Lua.log, the DLL's logs, `Stacking-*.log` with diagnostics), `t000-map.json`, `t000-digest.json`, `dump-t000/`, `dump-tN/` |
+| `checkpoints/turn-NNNN.json` | players, cities and wars at every turn change; `turn-NNNN-final.json` after autoplay |
+| `turn-times.jsonl`, `turn-seen.json` | seconds since autoplay started, per turn |
+| `replay-messages.json`, `replay-data.json` | replay messages (without type 2) and every major's replay series |
+| `status.json` | `state`, `startTurn`/`endTurn`/`turns`, `wallSeconds`, `secondsPerTurn`, `process` (CPU seconds, peak working set, peak private bytes), `endReason` (target_turn, victory, killed), `winner`/`victory`, `save` (seed key), `background` |
+| host outputs | `newgame-report.json`, `Logs/` (HeadlessDigest.log with the per-turn digests, Lua.log, the DLL's logs), `t000-map.json`, `t000-digest.json`, `dump-t000/`, `dump-tN/` |
 
-Fields that differ from a real run, by design:
+Where they differ from a real run, by design:
 
-- **Checkpoints** are exact: taken at the end of the update in which the game turn advanced, not by a 30-second
-  poll in the middle of a turn. They do not change the game (digests over 100 turns are the same with and
-  without per-turn checkpoints, and equal the real game's).
-- **Times**: `wallSeconds` counts from arming autoplay to the target turn, as vpbench does; `hostSeconds` adds
-  start-up (database copy, map generation, about 3 s) and shutdown. `pollSeconds` is 0.
-- **process**: from the host process; `StartTicks` is the creation FILETIME. `PeakCommit` is the job object's
-  peak.
-- **save**: no save is written. `save` holds a seed key `headless-<spec>-m<map>-s<sync>-<hash>`; abcompare groups
-  runs of the same game by it. `finalSave` is absent.
-- **background**: system busy cores, the real game's CPU (`gameBusyCores`) and everything but the host
-  (`otherBusyCores`) during the run, so timings can be judged.
-- **Return player**: vpbench replaces autoplay's return player when player 0 dies (a real-game workaround for the
-  defeat screen); the host does not need to. The game up to the target turn is the same.
-- **Victory**: a victory ends autoplay; `endReason` is `victory` with `winner`/`victory`.
+- **Checkpoints and times** are exact: taken when the game turn advances, not by a poll during a turn. They do not
+  change the game. `wallSeconds` counts from arming autoplay to the last turn; start-up (database copy, map
+  generation, about 3 s) is outside it.
+- **save:** no save is written; `save` holds a seed key `headless-<spec>-m<map>-s<sync>-<hash>` that groups runs of
+  the same game.
+- **background:** system busy cores, the real game's CPU and everything but the host during the run, so timings can
+  be judged.
+- **Victory** ends autoplay: `endReason` is `victory`, with `winner` and `victory`.
 
-### Diagnostics (behaviour runs)
-
-`--diagnostics 1` sets the stacking diagnostics level before autoplay, as vpbench does. The DLL writes
-`Stacking-<session>-NN.log` into the run's `Logs` folder, and `status.diagnosticsLogPrefix` names the session:
+## 6. Batches
 
 ```
-python work/summarize-ai-features.py <diagnosticsLogPrefix> --logs <run>/Logs
-```
-
-## 5. A batch
-
-`work/headless/runner.py` runs a queue with N parallel games:
-
-```
-python work/headless/runner.py run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
-python work/headless/runner.py status QUEUE.json
-python work/headless/runner.py compare QUEUE.json
+c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
+c5h queue status QUEUE.json
+c5h queue compare QUEUE.json [--vpbench DIR]
 ```
 
 ```json
-{"out": "work/test-runs/ab-stack-v2", "workers": 8,
- "defaults": {"spec": "work/headless/specs/continents-standard.json", "turns": 250,
-              "modsDir": "<MODS>", "modsDb": "<Civ5ModsDatabase.db>", "maxSeconds": 7200},
- "variants": {"A": {"dll": "<baseline DLL>", "abRole": "baseline"},
-              "B": {"dll": "<test DLL>", "abRole": "test"}},
+{"out": "ab-stack", "workers": 8,
+ "defaults": {"spec": "../specs/continents-standard.json", "turns": 250, "maxSeconds": 7200},
+ "variants": {"A": {"dll": "baseline/CvGameCore_Expansion2.dll", "abRole": "baseline"},
+              "B": {"dll": "test/CvGameCore_Expansion2.dll", "abRole": "test"}},
  "seeds": [[1001, 2002], [1003, 2004], [1005, 2006]]}
 ```
 
-- Jobs are seeds × variants (named `<variant>-m<map>-s<sync>`) plus any explicit `jobs`; every job key
-  (`spec`, `turns`, `dll`, `db`, `modsDir`, `modsDb`, `diagnostics`, `improvedMask`, `abRole`, `checkpointEvery`,
-  `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `prune` (default on), `hostArgs`, `lowPriority` (default on)) can be
-  set in `defaults`, a variant or a job.
+- Paths in a queue are relative to the queue file. Jobs are seeds x variants (named `<variant>-m<map>-s<sync>`)
+  plus any explicit `jobs`; every job key (`spec`, `turns`, `dll`, `db`, `modsDir`, `modsDb`, `diagnostics`,
+  `improvedMask`, `abRole`, `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `prune` (default on),
+  `hostArgs`, `luaProbes`, `lowPriority` (default on)) can be set in `defaults`, a variant or a job. Examples are in
+  `examples/queues/`.
 - Databases are built once per (mods input, DLL) before the workers start.
-- Worker k is pinned to the k-th physical core: the 8 P-cores (both hyperthreads) first, then the E-cores.
-- State is in `QUEUE.state.json`. Restarting skips completed runs, re-queues interrupted ones (the partial folder
-  is kept as `<name>-rN`) and leaves failed ones failed unless `--retry-failed`. A killed runner takes its games
-  with it (job objects), so nothing is left running. `QUEUE.stop` pauses: no new games start, running ones finish.
-- `status` prints the job table and totals (game turns per hour, background load) and writes
-  `QUEUE.summary.json`. `compare` runs `samerun.py` for every seed's variant pair and `abcompare.py` over the
-  batch (`QUEUE.abcompare.json`), then `compare.py` for the first runs.
+- Worker k is pinned to the k-th physical core: P-cores (both hyperthreads) first, then E-cores.
+- State is in `QUEUE.state.json`. A restart skips completed runs, re-queues interrupted ones (the partial folder is
+  kept as `<name>-rN`) and leaves failed ones failed unless `--retry-failed`. A stopped runner takes its games with
+  it (job objects). `QUEUE.stop` pauses: no new games start, running ones finish.
+- `status` prints the job table and totals (game turns per hour, background load) and writes `QUEUE.summary.json`.
+  `compare` compares the digests of each seed's variants; with `--vpbench DIR` (the Vox Populi fork's benchmark
+  tools) it also runs samerun per seed pair and abcompare over the batch.
 
-## 6. Comparing runs
+Host games are deterministic: a repeated run is identical, so the A/A noise floor that real runs need two baselines
+for is zero, one run per (seed, variant) is enough, and more seeds buy more signal.
 
-The real-run tools read headless runs unchanged:
+## 7. Comparing runs
 
-- `python work/vpbench/compare.py RUN...`: side-by-side summary (timing by phase, wars, captures, cities).
-- `python work/vpbench/samerun.py RUN_A RUN_B`: did two runs play the same game (final checkpoint)?
-  For an A/A pair or a decision-neutral change this must say "identical".
-- `python work/vpbench/abcompare.py RUN... [--turns 100,150,200,250]`: per-player deltas of test runs against the
-  baselines of the same seed (`save` key). With `--ab-role`, B runs count as "every player improved" (mask -1)
-  against the A runs. With a mask-switch DLL use `--improved-mask` and the mirrored-mask design instead.
-- `python work/headless/phase_speed.py RUN_OR_TRACE...`: seconds per turn by game phase.
+- `c5h compare A B`: the first differing digest point, the differing sections per turn, and transients (differences
+  that heal within `--heal-turns` turns). `savedb` (UI state, see Limits) is reported apart and never counts.
+- `c5h dumps REF HOST [--fields DIR]`: two state dumps section by section; with a field map (written by a field-map
+  build of the DLL) each difference is attributed to the field that wrote it.
+- `c5h digest verify DUMP`: recompute a dump's hashes.
+- `python tools/phase_speed.py RUN...`: seconds per turn by game phase.
 
-Headless games are deterministic: the A/A noise floor that real runs need two baselines for is zero (a repeated
-run is identical), so one run per (seed, variant) is enough and more seeds buy more signal.
+## 8. The real game
 
-## 7. Speed, scaling and memory
+`civ5headless.realgame` drives the installed game through its FireTuner debug port, for references and verification.
+It never edits the game's files; the only file it changes is `config.ini`, two seed values, which it puts back.
 
-Measured 2026-10-25 on the i9-13900K (8 P-cores with hyperthreading, 16 E-cores, 64 GB), host build of
-`hh-tooling`, DLL `20261025-015922`, database from `mods-headless-host-0ed40de35-input`, Continents Standard
-Emperor, 8 majors, 16 city-states, the reference profile's DLL logging on. The machine was shared: the real game
-was recording the M5 parity matrix the whole time, and another agent built DLLs part of the time. Each table gives
-that background load (`otherBusyCores`: busy cores other than the hosts, from `status.background` and the batch
-summary). Raw data: `work/headless/m6/` in the `hh-tooling` worktree (ignored).
+Needs: `EnableTuner = 1` and `LoggingEnabled = 1` in `config.ini` (`c5h doctor` checks, never edits), Steam running
+and signed in, and the game not running. Optional: Core Temp running, for the CPU-temperature guard.
 
-### Single game against the real game
+```python
+from civ5headless import config
+from civ5headless.realgame.session import RealGameSession
 
-Host: one game pinned to one P-core (spec seeds 1001/2002, the `hh-m2-aa100-a` game), background 2.7 to 4.7 busy
-cores. Real game: the vpbench runs `abq1-{A,B,C}-m0` (same settings, other seeds, the ai-improvements DLL with mask
-0: the same AI for every player) and the trace-DLL runs `hh-m0-aa100b-a/-b` (this spec, exact per-turn times from
-the trace). `python work/headless/phase_speed.py` gives the tables.
+cfg = config.load()
+with RealGameSession(cfg, cfg.runs / 'my-reference') as s:
+    s.launch(1001, 2002)                       # the first game's seeds, pinned before the launch
+    s.set_mods([m.id for m in cfg.active_mods])
+    s.start_game('examples/specs/continents-tiny.json', 1001, 2002, lua_probes=['probes/fingerprint.lua'])
+    result = s.autoplay(100)                   # startTurn, endTurn, endReason, turnSeconds, ...
+    s.collect_logs(cfg.runs / 'my-reference/logs')
+    stats = s.process_stats()                  # peak working set, peak private bytes, CPU seconds
+```
 
-| s/turn | host (1001/2002) | real abq1-A | real abq1-B | real abq1-C | real trace aa100b-a | speed-up |
+- **Launch:** `CivilizationV_DX11.exe -DX11` directly, with `steam_appid.txt` in the game folder until the tuner port
+  is open (a Steam SDK development launch; the file is removed again), then the main menu.
+- **Mods:** `set_mods(ids)` makes the enabled mods exactly that set in the mod browser and activates them (`[]`:
+  none). The enabled list stays as set, as when done by hand.
+- **Seeds:** the game reads `MapRandSeed`/`SyncRandSeed` from `config.ini` when its DLL loads, and a game started from
+  the menu then uses them for everything the seeds decide, random civs included, so the host replays it from the
+  same seeds with any DLL. Seeds given to `launch()` are pinned before the launch; `start_game` with other seeds pins
+  them and relaunches the game. `quit()` restores the original values, or the next session does after a crash
+  (`c5h doctor` warns while seeds are pinned). With the DLL's optional digest additions, `start_game` checks the seeds
+  the engine used and fails on a mismatch.
+- **Order:** `start_game` sets up the pregame state (`c5h spec lua`), starts the game, waits for it to load, runs the
+  probes in the game's context and leaves it paused at turn 0; `autoplay` arms autoplay (quick combat and movement,
+  every player an AI) and only then unpauses. That is the host's order.
+- **CPU guard:** with Core Temp running, the game is ended when the hottest core stays at 95 °C or more for three
+  samples 15 s apart (`cpu-temperature.jsonl` in the run folder).
+- The run folder logs everything: `session.jsonl`, `calls/` (each labelled Lua call and its result),
+  `spec-resolved.json`, `config.ini.backup`.
+
+Tools on the session (`-h` for options):
+
+- `python -m civ5headless.realgame.probe --run NAME [--spec SPEC --turns N] --probe CONTEXT[@WHEN]=FILE.lua`: Lua
+  probes at the front end, at turn 0 and after autoplay; with `--host-digest` it compares the live digests with a
+  host run and stops after a divergence.
+- `python -m civ5headless.realgame.record MATRIX.json`: a matrix of references, one probe run per case, resumable.
+- `python -m civ5headless.realgame.dbcapture --run NAME [--snapshot-only]`: the game's databases (DLC snapshot,
+  modded) and a check against what the game holds in memory.
+- `python -m civ5headless.realgame.tuner serve|states|exec`: a persistent tuner connection for manual Lua calls.
+
+**Not yet run against the real game.** The session is tested against a fake game behind a fake tuner (protocol,
+order of calls, seeds, mods, relaunch, logs, quit). The code it is ported from ran live in the source repository, but
+these parts are new and have not:
+
+- the Python launcher (it replaces a PowerShell one: same `steam_appid.txt` handling and port-owner check) and the
+  CPU guard's Core Temp reading (same layout as the PowerShell guard);
+- `set_mods` disabling mods (`Modding.DisableMod`) and changing a non-empty enabled list (the old code only enabled
+  mods into an empty list), and activating with no mods;
+- waiting for ModsSinglePlayer to be shown (`ContextPtr:IsHidden()`), and `to_main_menu` followed by a new
+  activation and game in the same session;
+- `reseed='reload'` (pin the seeds and rely on the next mod activation reloading the DLL, instead of relaunching);
+  the default relaunch uses the verified mechanism;
+- the session as a whole, and probe, record and dbcapture on it.
+
+## 9. References and parity
+
+Parity means the host plays exactly the real game's game. Check it after host changes, merges and DLL changes that
+touch the engine boundary.
+
+1. Optionally run the host on every case first (`c5h host-first MATRIX.json`): the recorder then compares the live
+   digests and stops a couple of turns after a difference, which saves real-game time.
+2. Record references in the real game with a DLL that has the digest additions: `python -m
+   civ5headless.realgame.record MATRIX.json [--host-digest "first-{run}/Logs/HeadlessDigest.log"]` (the spec's seeds
+   pinned, per-turn digest on, dumps at the load screen and after the last turn).
+3. `c5h parity REF_RUN` (or `--matrix STATUS.json`) replays each reference in the host and compares the digests and
+   dumps. A difference names a turn and section; dumps of that turn from a field-map DLL name the fields
+   (`--host-arg=--dump-turns --host-arg=a:b`, `c5h dumps --fields`). Fix the host when it answers differently from
+   the engine; make the DLL result-neutral when it depends on something the host cannot reproduce.
+4. `c5h skew` plays cases with and without an extra engine update every K updates: a result that depends on the
+   frame count is a divergence waiting to happen, since the real game's frame count is not the host's.
+
+## 10. Speed, scaling and memory
+
+Measured 2026-10-25 on an i9-13900K (8 P-cores with hyperthreading, 16 E-cores, 64 GB) with the Vox Populi fork's DLL,
+Continents Standard Emperor, 8 majors, 16 city-states, the reference profile's DLL logging on. The machine was shared
+(the real game recording references, DLL builds); the tables give that background load.
+
+### One game against the real game
+
+Host: one game pinned to one P-core (seeds 1001/2002), background 2.7 to 4.7 busy cores. Real game: three benchmark
+runs with the same settings and other seeds, and a trace run of this spec.
+
+| s/turn | host (1001/2002) | real A | real B | real C | real, this spec | speed-up |
 |---|---:|---:|---:|---:|---:|---:|
 | T0-25 | 0.59 | 3.87 | 3.88 | 3.86 | 3.76 | 6.5x |
 | T25-50 | 0.67 | 3.87 | 3.86 | 3.88 | 4.04 | 5.9x |
@@ -226,36 +311,33 @@ the trace). `python work/headless/phase_speed.py` gives the tables.
 (speed-up: the mean of the real columns over the host; after T100 the real games are other games, so the late
 phases compare like with like only on average.)
 
-- **Whole games:** 250 turns in 490 s of autoplay (493 s with start-up and shutdown) against 1,597 to 1,904 s in
-  the real game. 100 turns of the reference game: 81.5 to 87 s against 443 s for the same game in the real game
-  (`hh-m2-aa100-a`, about 9 minutes with launch and load), 5.2 to 5.4x.
-- **Where the gain comes from:** early turns are bound by the real game's frame pacing (one player per `Update`,
-  about 105 ms apart, so about 3.8 s per turn whatever the AI does); the host runs `Update` back to back. Late turns
-  are AI work in both, and the host still saves the engine's rendering, UI and waiting.
-- **CPU:** 451 CPU-s for 250 turns against 3,985 to 4,900 CPU-s for the real game (it keeps about 2.5 cores busy);
-  9x less CPU per game.
-- **DLL logging:** `--host-arg=--no-game-logging` takes 100 turns from 81.5 s to 55.6 s (-32%), but the logging
-  changes AI results (the game differs from turn 53), so it is not comparable with logged runs or the real game.
+- **Whole games:** 250 turns in 490 s of autoplay against 1,597 to 1,904 s in the real game; 100 turns of the
+  reference game in 81.5 to 87 s against 443 s for the same game in the real game, 5.2 to 5.4x.
+- **Where the gain comes from:** early turns are bound by the real game's frame pacing (one player per update, about
+  105 ms apart, so about 3.8 s per turn whatever the AI does); the host runs updates back to back. Late turns are AI
+  work in both, and the host still saves the rendering, UI and waiting.
+- **CPU:** 451 CPU-s for 250 turns against 3,985 to 4,900 CPU-s for the real game (it keeps about 2.5 cores busy).
+- **DLL logging:** `--host-arg=--no-game-logging` takes 100 turns from 81.5 s to 55.6 s, but the logging changes AI
+  results in this DLL (the game differs from turn 53), so such runs are not comparable with logged runs or the game.
 
 ### Memory
 
 | | peak working set | peak private bytes |
 |---|---:|---:|
 | host, T100 | 270 to 283 MB | about 280 MB |
-| host, T150 | 293 to 299 MB | |
 | host, T250 | 327 MB | 326 MB (peak virtual 506 MB) |
-| real game, T250 (abq m0 runs) | 1,763 to 1,825 MB | 2,046 to 2,080 MB (peak virtual 2.9 GB) |
+| real game, T250 | 1,763 to 1,825 MB | 2,046 to 2,080 MB (peak virtual 2.9 GB) |
 
-So memory never limits parallelism: 24 games need under 8 GB. The runner's default commit limit of 3,500 MB per
-game only catches runaway runs.
+Memory never limits parallelism: 24 games need under 8 GB. The default commit limit of 3,500 MB per game only
+catches runaway runs.
 
 ### Parallel scaling
 
-W identical 100-turn games (spec seeds 1001/2002) on W workers, pinned P-cores first (`scale-w<W>` queues).
-"Batch" is W x 100 turns over the batch time (the slowest game); "steady" is W x 100 turns over the mean game time,
-the rate of a long queue that keeps every worker busy.
+W identical 100-turn games on W workers, pinned P-cores first. "Batch" is W x 100 turns over the batch time (the
+slowest game); "steady" is W x 100 turns over the mean game time, the rate of a long queue that keeps every worker
+busy.
 
-| workers | batch s | turns/h (batch) | turns/h (steady) | game s on P-cores | game s on E-cores | otherBusyCores |
+| workers | batch s | turns/h (batch) | turns/h (steady) | game s on P-cores | game s on E-cores | other busy cores |
 |---:|---:|---:|---:|---:|---:|---:|
 | 1 | 90 | 3,980 | 4,000 | 87.0 | | 4.7 |
 | 2 | 97 | 7,430 | 7,730 | 89.8 | | 5.2 |
@@ -266,63 +348,20 @@ the rate of a long queue that keeps every worker busy.
 | 24 | 267 | 32,360 | 55,010 | 113.0 | 170.3 | 9.9 |
 
 - Up to 8 workers (one P-core each) scaling is almost linear: 8 games take 10% longer than one.
-- An E-core game takes about 1.35x a P-core game. 16 workers give the best batch rate here; 24 give the best
-  steady rate but stretch every game (the slowest took 254 s) and compete with the real game and builds.
-- Recommendation: 8 workers (the default) while the machine is shared with the real game or builds; 16 to 24 for a
-  long queue on an otherwise idle machine. Measured with background load; an idle machine will do somewhat better
-  at 12 to 24 workers.
-- In real-game terms: a 250-turn game takes the real game about 27 minutes and one host worker about 8; with 8
-  workers each game slows by about 10%, so the machine plays roughly 25 times as many games per hour as the real
-  game (which runs one game at a time).
+- An E-core game takes about 1.35x a P-core game. 16 workers gave the best batch rate here and 24 the best steady
+  rate, at the cost of stretching every game.
+- 8 workers (the default) while the machine is shared; 16 to 24 for a long queue on an idle machine. In real-game
+  terms the machine plays roughly 25 times as many games per hour as the real game.
 
-### A/B batches (acceptance)
-
-- **Two builds:** `ab-builds` queue: DLL `20261025-015922` (A, baseline) against `20261025-015258` (B, test; the two
-  differ only in the digest code) on 4 seeds, 150 turns, 8 workers: 8 games in 244 s with heavy background load.
-  `runner.py compare`: samerun says "identical final state" for all 4 pairs, abcompare shows zero change on every
-  metric at turns 50, 100 and 150, as it must for a gameplay-neutral change.
-- **Mask A/B on the AI program's DLL:** `ab-mask` queue: the ai-improvements DLL (`20261024-085658`) with its
-  package (`mods-reference-08D19878-input`), masks 0, 85 and 170 on 4 seeds, 100 turns, 12 workers. The host runs
-  this DLL unchanged (it has no digest additions, so no per-turn digests), `--improved-mask` sets the mask before
-  arming, and abcompare prints the baseline comparison and the mirrored-pair table, as for real runs; samerun
-  finds the masked runs diverging from the baseline in turns 1 to 10.
-- Both queues are in `work/headless/queues/` (`example-ab.json`, `example-mask.json`).
-
-## 8. Reference and parity workflow
-
-Parity means the host plays exactly the real game's game. Check it after host changes, VP merges and DLL changes
-that touch the engine boundary.
-
-1. Record a reference in the real game: `vpbench newgame --spec SPEC --target-turn N` (game backend) pins the
-   spec's seeds and turns on the per-turn digest (`HeadlessDigest.log`); `work/headless/game_probe.py --spec` with
-   the probe `work/headless/probes/dump-state.lua` also dumps the state (`dump-t000`, `dump-tN`). The references of M0–M3 are in `work/test-runs/hh-m*`.
-2. Play the same spec headless with the same DLL and database (the database built from the same mods input).
-3. Compare:
-   - `python tools/headless/hhdigest.py compare <ref>/HeadlessDigest.log <run>/Logs/HeadlessDigest.log`: first turn
-     and section that differ. `savedb` (the save-only UI tables, see Limits) always differs at turn 0; a
-     difference only there is a match.
-   - `python tools/headless/parity_t000.py <ref>/dump-tN <run>/dump-tN [--fields DIR]`: byte-level section
-     comparison of two state dumps, with field names from a field-map DLL (`tools/headless/fieldmap_transform.py`).
-   - `python tools/headless/hhdigest.py verify DUMP`: recompute a dump's hashes.
-4. A difference names a turn and section; the dump of that turn (`--host-arg=--dump-turns --host-arg=a:b` and a field-map
-   DLL) names the fields. Fix the host when it answers differently from the engine; make the DLL result-neutral
-   when it depends on something the host cannot reproduce (plan M5).
-
-## 9. Limits
+## 11. Limits
 
 - **savedb:** the `savedb` digest section (the embedded `Civ5SavedGameDatabase.db` the real game's UI writes into
-  saves) is not reproduced. It holds UI state, not game state; it is excluded from comparisons.
-- **UI-driven state:** the host emulates the UI Lua that changes game state in the reference profile (EUI civ
-  ribbon gold rate, VP observer notification aging, the WhosWinning popup's RNG rolls, the human turn after
-  autoplay; `HHNewGame.cpp`). Another UI mod with stateful Lua would need the same.
-- **Gameplay add-ins:** only `GlobalCityBombardRange.lua` and `CBP_IncaFunctions.lua` are loaded; other
-  `InGameUIAddin` scripts are taken as UI-only (plan appendix C).
-- **DLL logging changes AI results:** the host turns on the reference profile's logging like the real game's
-  config. `--host-arg=--no-game-logging` is faster but plays a different game; never mix the two in a comparison.
-- **No saves:** the host neither writes nor loads `.Civ5Save` files (plan M7), so headless runs start from a spec,
-  not from a save.
-- **Breadth:** exact parity is established for the Continents reference over 100 turns; the parity matrix (plan
-  section 6, M5) extends it to other maps, sizes and options.
+  saves) is not reproduced. It holds UI state, not game state, and comparisons leave it out.
+- **UI-driven state:** the host emulates the UI Lua that changes game state (see the engine contract). A UI mod with
+  stateful Lua that it does not emulate would need the same.
+- **DLL logging changes AI results** in some DLLs: the host turns on the profile's logging like the real game's
+  config. `--host-arg=--no-game-logging` is faster but may play a different game; never mix the two in a comparison.
+- **No saves:** the host neither writes nor loads `.Civ5Save` files, so host runs start from a spec, not a save.
 - **Text:** the localization database is the game's `Localization-Merged.db`; mod text edits need a game launch to
   appear in city names and replay messages (rules are unaffected).
 - **32-bit:** the host is a large-address-aware 32-bit process (4 GB address space), far above its needs.

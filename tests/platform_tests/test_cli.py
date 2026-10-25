@@ -179,8 +179,8 @@ class QueueTest(unittest.TestCase):
 
 class NoMachinePathsTest(unittest.TestCase):
     """Committed code, docs, examples and tests of this workstream name no drive paths, user folders or user name."""
-    FILES = ['README.md', 'docs/user-guide.md', 'pyproject.toml', 'civ5headless.example.toml', 'tools/phase_speed.py',
-             'tools/dbbuild_test_edits.py', 'tools/get_toolchain.py']
+    FILES = ['README.md', 'docs/user-guide.md', 'docs/database-builder.md', 'pyproject.toml', 'civ5headless.example.toml',
+             'c5h.cmd', 'tools/phase_speed.py', 'tools/dbbuild_test_edits.py', 'tools/get_toolchain.py']
     TREES = ['python/civ5headless', 'examples', 'tests/platform_tests']
 
     def files(self):
