@@ -25,13 +25,13 @@ open it in a browser) and `verify.json` (the same content for scripts). `c5h ver
 
 | Mode | Real game | Host, at the same time | Time |
 |---|---|---|---|
-| quick | one launch; 4 seeded setups to turn 0; one seeded Tiny game of 150 turns | the same games; A/A, frame-skew, heap-perturbation and probe-off references; an ensemble of 32 Tiny games | about 20-25 min |
+| quick | one launch; 4 setups to turn 0; one seeded Tiny game of 150 turns | the same games; A/A, frame-skew, heap-perturbation and probe-off references; an ensemble of 32 Tiny games | about 20-25 min |
 | full | adds a real A/A of the Tiny game and a Standard game of 60 turns | adds the Standard game, a 64-game ensemble and 4 Tiny games to victory | about 45-55 min |
 | host-only | none | 4 setups twice; the references; an ensemble of 8 | about 5 min |
 
 The real game needs the real-game session (`civ5headless.realgame.session`, FireTuner enabled; `c5h doctor`). The
-suite never changes your game files: it reads the game's database from its cache and its logs, and seeds games
-through the session.
+suite never changes your game files: it reads the game's database (an export through the session, else the game's
+cache) and its logs, and seeds games through the session.
 
 ### Exit codes
 
@@ -53,6 +53,16 @@ session:
 3. **references**: A/A, frame skew, heap perturbation and probe off, four at a time;
 4. **ensemble**: the ensemble, eight at a time;
 5. **long** (full mode): the Standard game and the games to victory.
+
+The real game reads its seeds when it loads the DLL, so each distinct pair of seeds costs a relaunch. The setups
+therefore take the trajectory game's seeds (other map scripts, sizes and speeds, same seeds), and the real games are
+played grouped by seed pair, the trajectory game's pair first: quick mode needs a single launch.
+
+**Civilizations.** Every spec names the civilization of each major slot. Some DLLs (Vox Populi) make random choices
+themselves, which the host reproduces, but the stock DLL leaves the choice to the game's exe, so a host could only
+pick others. The suite fills the slots a spec leaves random from `civs` (base-game civilizations, in order, skipping any
+the spec already uses or the database lacks); `pin_civs = false` turns this off. City-states cannot be named yet
+(the spec format has no field for them); `setup.civ-choice` tells when the host had to choose.
 
 **Budget.** Before the run, a cost model estimates every game: this machine's history file (the trajectory game's
 seconds per turn from the last run of the same setup), else a built-in Tiny curve scaled by map size. If the plan
@@ -77,7 +87,8 @@ or host-only mode; the reason is given) or **skipped** (no data: the budget or a
 |---|---|---|
 | `setup.turn0` | the game state at turn 0 for each seeded setup, real against host (state digests, or the Lua fingerprint), and the host against itself | every setup identical |
 | `setup.pregame` | every `PreGame` value the stock Lua API can read, printed by a probe on both sides once the game has started | every value equal (the nickname is ignored) |
-| `setup.database` | the host's game database against the game's own after the mods loaded, table by table, rows as multisets | identical |
+| `setup.database` | the host's game database against the game's own after the mods loaded, table by table, rows as multisets; when the session exports the database (`CREATE TABLE AS` copies, which carry no schema, indexes or triggers), the data only | identical |
+| `setup.civ-choice` | from `host-report.json`: whether the host chose any civilization or city-state itself (a DLL that leaves the choice to the exe) | fail when it did (warn in host-only mode): the real game would choose others |
 
 These need the real game; in host-only mode `setup.turn0` checks only that the host reproduces its own turn-0
 state, which catches map scripts or setup code that are not seeded.
@@ -88,8 +99,14 @@ state, which catches map scripts or setup code that are not seeded.
 |---|---|---|
 | `health.lua-errors` | Lua errors in the host's runs that the real game's logs do not have | fail on any host-only error; host-only mode: warn on any error |
 | `health.stubs` | engine methods the host only stubs that were called, from `host-report.json` | fail on any method not on the known-harmless list |
-| `health.ui-hazards` | the UI hazard scan (state-changing DLL calls in UI Lua) and UI files no profile knows | warn on any uncovered finding |
+| `health.ui-hazards` | the UI hazard scan (state-changing DLL calls in UI Lua that the host's UI emulation does not cover) and UI files no profile knows | warn on any uncovered finding a game can reach; findings reached only through player input are listed apart |
 | `health.victory-games` | full mode: host Tiny games played to a victory | pass when all end in a victory |
+
+The hazard scan (`civ5headless.hazards`) gives each finding its triggers: the events and callbacks that run it. A
+finding whose every trigger is player input (mouse callbacks, buttons, input handlers, tooltips) cannot run in an
+autoplayed game, which has no human player; it is counted apart and does not warn. Anything else (load, `GameEvents`,
+`Events`, `LuaEvents`, per-frame updates, show/hide handlers, or no trigger found) counts as reachable. The split is
+conservative: a reachable finding may still never run in practice.
 
 ### Trajectory
 
@@ -150,8 +167,14 @@ For each series the report gives the **detectable shift**: the relative shift of
 with this ensemble. One real game can only reveal shifts that are large against the spread between games; a metric
 whose games differ by 20% cannot show a 3% bias.
 
+**The host twin.** The real game is also compared with its twin, the host's trajectory game (same seeds). A seed
+can give an atypical game, such as an early conquest, and then both sides sit outside the band in the same way. So
+the envelope test passes when the real game's coverage is within the margin of the twin's, and a bias flag that the
+twin shares (same series, same side) is reported but not counted. Only differences between host and real game fail.
+
 In host-only mode the statistics score the host's own trajectory game against the ensemble: a self-test of the
-machinery and of the ensemble, not a statement about the real game.
+machinery and of the ensemble, not a statement about the real game. The checks then report **info** with the
+status they would have had.
 
 ### Performance (info)
 
@@ -188,7 +211,9 @@ The history is `<runs>/verify-history/<machine>.jsonl`, one line per run; the re
   the verdict.
 - The statistics compare one real game with a host ensemble. They catch large or systematic differences, not small
   ones (see the detectable shift), and about one run in twenty may warn by chance. When the ensemble varies the map,
-  the envelope also covers map differences and is wider.
+  the envelope also covers map differences and is wider: with Vox Populi on Tiny Continents (32 games, other map
+  seeds) the bias check detects shifts of about 25% in the steadiest series and much more in most others (see the
+  self-test below). The statistics are a net for gross errors; the exact checks carry the fine-grained evidence.
 - `setup.pregame` and the Lua fingerprint read only what the stock Lua API exposes; state the API does not show is
   covered by the digests (DLL additions) or not at all.
 - `health.stubs` and `health.ui-hazards` list what the host does not emulate; a clean result does not prove that
@@ -241,6 +266,19 @@ metric of a held-out game is shifted by plus and minus the shift (does the bias 
 `--foreign` run folder (a game from another setup: another map script, size or DLL) is scored against the whole
 ensemble (both checks should object). The result goes into the report.
 
+What it showed for Vox Populi, Tiny Continents, 150 turns, an ensemble of 32 games on other map seeds:
+
+| Test | Result |
+|---|---|
+| hold-outs (12) | envelope passed 12 of 12 (mean coverage 93%); bias quiet in 11 of 12 |
+| one metric shifted by 5% | flagged in none of 29 metrics (detectable shifts run from about 23% to several hundred %) |
+| shifted by 30% / 50% | flagged in about 10 / 21 of 29 metrics |
+| foreign: Tiny Pangaea (3 games) | 2 of 3 caught |
+| foreign: Small Continents (3 games) | 0 of 3 caught with means and maxima only; 3 of 3 once the world sums were added (now the default) |
+
+So the statistical tier tells a game of another kind, or a large shift in one metric, from the ensemble; it does not
+see a few percent. A same-map ensemble (a DLL that draws on the sync seed) is tighter.
+
 ## Output folder
 
 | File | Content |
@@ -257,11 +295,14 @@ ensemble (both checks should object). The result goes into the report.
 The suite detects each piece when it starts and turns a missing one into "n/a" checks with the reason:
 
 - `civ5headless.exe` options, from its usage text: `--lua-probe` (fingerprint and pregame probes), `--frame-skew`,
-  `--heap-perturb`; and `host-report.json` in each run folder (stubbed calls, Lua errors, UI files).
+  `--heap-perturb`; and `host-report.json` in each run folder: `dll.hostChoseCivs`, `stubCalls.calls`
+  (`method`, `count`, `knownHarmless`), `luaErrors.list`, `uiFiles.unknown`.
 - `civ5headless.fingerprint.read(path)`: `.sections` (turn, section, hash) and `.metrics` (turn, player, metric,
   value) from the `C5HFP`/`C5HM` lines of `probes/fingerprint.lua`.
-- `civ5headless.realgame.session.RealGameSession`: `launch()`, `set_mods(ids)`, `start_game(spec, map_seed,
-  sync_seed, lua_probes)`, `autoplay(turns, max_seconds)` returning the cumulative seconds per turn,
-  `to_main_menu()`, `collect_logs(dest)`, `process_stats()`, `quit()`; optionally `replay_data()` and
+- `civ5headless.realgame.session.RealGameSession`: `launch(map_seed, sync_seed)`, `set_mods(ids)`,
+  `start_game(spec, map_seed, sync_seed, lua_probes)` (a dict; `relaunched` when new seeds needed a new process),
+  `autoplay(turns, max_seconds)` (a dict: `turnSeconds`, cumulative per turn, `endReason`, `victory`),
+  `to_main_menu()`, `collect_logs(dest)`, `process_stats()` (`peakWorkingSet`, `peakPrivateBytes`, `cpuSeconds`),
+  `quit()`, `call(context, lua, label)` (the replay data, unless the session has `replay_data()`), and optionally
   `game_database(dest)`.
-- `civ5headless.hazards`: the UI hazard scan.
+- `civ5headless.hazards`: `files_from_report`, `load_methods`, `default_profiles_dir`, `load_covers` and `scan`.
