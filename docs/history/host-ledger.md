@@ -57,6 +57,12 @@ commit it with the change it describes.
   - 255e26ba2: the seeds file is applied at `setGameStarted(true)` too, so the random civs and city-states
     follow the spec seed (before, the engine's clock seed chose them: S1, S3 and the first AA100 pair
     are not reproducible for civs).
+  - M5 part 1 (f551e3815), gameplay, AI logging no longer changes results: ff259285d (`GetBestSettlePlot` decided
+    with fresh found values and changed the shared flavor multipliers when AI logging was on; now always the
+    cached values) and eecc6ddc7 (`PlotPillageMoves` set the citadel/improved-resource threshold only inside the
+    logging block; now always, as its comment intends). Logging on/off give identical 100-turn digests on two
+    maps. The address-perturbation self-test (`--heap-perturb SEED`: random heap spacers, rebased DLL) passes:
+    no pointer-ordered container affects results. References recorded before these fixes need the pre-fix DLL.
   - 3fbccb312 (gameplay, uninitialised reads): public opinion fields, pantheon holy-city coordinates and the
     trade difference tables are initialised. Gameplay could read heap garbage there; references recorded
     before it have different values in those fields.
@@ -142,3 +148,4 @@ commit it with the change it describes.
   experiment in HHScriptSystem.cpp, hh-tooling at b6769a7d2 plus RESUME.md); resumed with SendMessage after the
   reset at 03:30.
 - 2026-10-25: M6 merged (d0711220f): headless A/B batches run end to end with the existing comparison tools.
+- 2026-10-25: M5 part 1 merged (f551e3815): two logging-dependent AI decisions fixed; heap perturbation changes nothing.
