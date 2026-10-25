@@ -89,3 +89,14 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 - Runs only against fakes: the whole real side. Calibration (phase E) must set the envelope and bias thresholds,
   ensemble sizes and budgets per mode, the real/host time ratio of the planner, `heal_turns`, the default setups and
   civilization list, and pregame/UI ignore lists from real dumps.
+
+### 2026-10-25: platform milestone 3 merged
+
+- 26e4a4e: `c5h modsdb` builds the mods registry from `.modinfo` files (game schema; activation order respects
+  dependencies). For this fork's 5 mods it equals the game's live registry in every row; the database built from it
+  and two Tiny 30-turn games (digests, fingerprints, host report) are identical to those from the game's registry.
+  `c5h run --mod/--no-mods`, `dbcache`, queue keys use it. Profiles and fingerprint wired into `run`, `queue` and
+  `RealGameSession.start_game` (same files, same injection point as the host); `c5h fingerprint`, `c5h hazards`;
+  config keys `profiles`, `probes`; spec `minorCivs`; `RealGameSession.replay_data()` (one player per tuner call:
+  the tuner caps a result at 10,000 items and 256 KiB). 174 tests.
+- Host-only `c5h verify` on main (before this merge): 3.6 min, verdict warn (UI hazards only), as in the agent's run.
