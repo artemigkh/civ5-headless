@@ -28,6 +28,11 @@ from db_capture import INSTALLED_DLL, sha256
 ARM = ("assert(not PreGame.IsMultiplayerGame());local p=Players[0];assert(p and p:IsAlive() and not p:IsMinorCiv());"
        "Game.SetOption('GAMEOPTION_QUICK_COMBAT',true);Game.SetOption('GAMEOPTION_QUICK_MOVEMENT',true);"
        "Game.SetAIAutoPlay({turns},0);return Game.GetAIAutoPlay()")
+# vpbench's TURN plus the game state (GAMESTATE_ON is 0): a game to victory ends before the autoplay count runs out.
+TURN = ("return {turn=Game.GetGameTurn(),autoplay=Game.GetAIAutoPlay(),pause=Game.GetPausePlayer(),"
+        "winner=Game.GetWinner(),state=Game.GetGameState()}")
+VICTORY = ("local ok,v=pcall(function() return Game.GetVictory() end);"
+           "return {turn=Game.GetGameTurn(),winner=Game.GetWinner(),victory=ok and v or -2,state=Game.GetGameState()}")
 
 
 def main():
@@ -37,7 +42,10 @@ def main():
     ap.add_argument('--no-mods', action='store_true')
     ap.add_argument('--dll-sha')
     ap.add_argument('--spec', help='Start a game from this spec (work/headless/gamespec.py)')
-    ap.add_argument('--turns', type=int, default=0, help='With --spec: autoplay this many turns before the @end probes')
+    ap.add_argument('--turns', type=int, default=0, help='With --spec: autoplay this many turns before the @end probes '
+                    '(a game that ends earlier, with a winner or a game state other than ON, stops there)')
+    ap.add_argument('--max-seconds', type=int, default=10800, help='Overall cap on the autoplay (default 3 h)')
+    ap.add_argument('--stall-seconds', type=int, default=900, help='Fail when no turn passes for this long (default 15 min)')
     ap.add_argument('--no-digest', dest='digest', action='store_false')
     args = ap.parse_args()
     probes = []
@@ -66,7 +74,8 @@ def main():
             if time.monotonic() >= deadline: raise TimeoutError('Main menu did not appear')
             time.sleep(2)
     else:
-        b.launch(args.dll_sha or sha256(INSTALLED_DLL), 3600)
+        # The launch guard ends the game after this many seconds: room for the autoplay cap plus setup.
+        b.launch(args.dll_sha or sha256(INSTALLED_DLL), min(43200, max(3600, args.max_seconds + 900)))
     counter = [0]
 
     def run_probes(when):
@@ -100,14 +109,20 @@ def main():
                 b.call('InGame', ARM.format(turns=args.turns), 'arm-autoplay')
             b.call('LoadScreen', vpbench.CONTINUE, 'continue')
             if args.turns > 0:
-                deadline = time.monotonic() + 1800
+                started = time.monotonic()
+                last_turn, last_change = None, started
                 while True:
                     time.sleep(3)
-                    state = b.call('InGame', vpbench.TURN, 'turn', keep=False)
+                    state = b.call('InGame', TURN, 'turn', keep=False)
+                    now = time.monotonic()
+                    if state['turn'] != last_turn: last_turn, last_change = state['turn'], now
+                    if state['winner'] >= 0 or state['state'] != 0: break
                     if state['turn'] >= args.turns and state['autoplay'] == 0: break
-                    if time.monotonic() >= deadline: raise TimeoutError(f'autoplay stuck: {state}')
+                    if now - last_change >= args.stall_seconds: raise TimeoutError(f'autoplay stalled: {state}')
+                    if now - started >= args.max_seconds: raise TimeoutError(f'autoplay over the time cap: {state}')
                 b.log('autoplay_done', **state)
                 time.sleep(3)
+                write(b.run / 'victory.json', dict(utc=utc(), **b.call('InGame', VICTORY, 'victory')))
             run_probes('end')
     finally:
         b.quit()
