@@ -178,6 +178,32 @@ substitution needs `HHDigest::g_bWriting` on the current thread.
 | `CvGame::m_bTunerEverConnected` | FireTuner connection | none |
 | `CvGame::m_bSavedOnce` | set by each save (`CvDllGame::Write`) | `GameSave` event gate |
 | pregame game/map option lists | defaults are stored on first by-name query (map script, UI calls of `Game.IsOption`/`GetCustomOption` after T0, autosaves) | none: same value as unset |
+| `CvTeam` arrays sized `REALLY_MAX_TEAMS`/`REALLY_MAX_PLAYERS` (80): entries 64..79 of `m_aiTechShareCount`, `m_aiNumTurnsLockedIntoWar`, `m_paiTurnMadePeaceTreatyWithTeam`, `m_aiIgnoreWarningCount`, `m_abHasFoundPlayersTerritory`, `m_abHasMet`, `m_abAtWar`, `m_abAggressorPacifier`, `m_abPermanentWarPeace`, `m_abEmbassy`, `m_abOpenBorders`, `m_abDefensivePact`, `m_abResearchAgreement`, `m_abForcePeace`, `m_abWonLatestWar`, `m_aiTurnTeamMet`, `m_aiTurnWarStarted`, `m_aiNumTurnsSinceVassalEnded` (`HH_DIGEST_NORM_TAIL`) | `Reset` initialises only `[0, MAX_TEAMS)`; the tail is heap garbage | none: every access is a team/player index below 64 |
+| `CvNotifications::m_aNotifications` slots outside the active ring `[begin, end)` (written as cleared slots) | `Notification::Clear` leaves `m_iExtraGameData` and `m_ePlayerID` uninitialised | none: every reader walks the ring; `Add` assigns a fully set notification |
+| `CvPlayerTraits::m_bHasYieldFromTileCultureBomb`, `m_bHasYieldFromTileEarn`, `m_bHasYieldFromTilePurchase` | never initialised (only ever set to true in `InitPlayerTraits`) | none: the getters have no callers |
+| `CvGameTrade::m_aaiTechDifference`, `m_aaiPolicyDifference`, while `getElapsedGameTurns() == 0` | uninitialised until the first `CvGameTrade::DoTurn` (in `CvGame::doTurn`, end of the first turn) | read only through trade-route values, which need a trade route or a trade unit: unreachable before the first `doTurn` in an ancient start. **Risk** in later-era starts (a trade unit is buildable on turn 0; see below) |
+| `CvPlayerCulture::m_eOpinion`, `m_ePreferredIdeology`, `m_eOpinionBiggestInfluence`, while the player has no ideology (`GetLateGamePolicyTree() == NO_POLICY_BRANCH_TYPE`) | never initialised; first written by `DoPublicOpinion`, which returns early without an ideology | **real nondeterminism risk**, see below |
+
+Real nondeterminism risks found with the digest (gameplay can read the uninitialised value; not changed, since a fix
+changes gameplay; normalised so that the digest stays usable):
+
+- `CvPlayerCulture::m_eOpinion`, `m_ePreferredIdeology`, `m_eOpinionBiggestInfluence` are never initialised
+  (`CvPlayerCulture::Init` skips them) and stay heap garbage until the player's first `DoPublicOpinion` with an
+  ideology. Readers that do not check for an ideology first: `CvMinorCivAI::SpawnRebels` (the ally's
+  `GetPublicOpinionType() >= PUBLIC_OPINION_CIVIL_RESISTANCE`), `CvMinorCivAI` rebellion quest text,
+  `CvDiplomacyAI` ideology statements (28670 ff.), `CvPolicyAI` (preferred ideology, biggest influence), Lua
+  `Player.GetPublicOpinionType`/`GetPublicOpinionPreferredIdeology`. Measured: the real game had −1 in all three for
+  the majors and the observer, 0 for most city-states, 15 in one city-state's `m_ePreferredIdeology` (S3b dump-t000);
+  the host has 0 or garbage. Proposed fix (gameplay-visible, for the maintainers to decide): set them to
+  `NO_PUBLIC_OPINION`, `NO_POLICY_BRANCH_TYPE`, `NO_PLAYER` in `CvPlayerCulture::Init`.
+- `CvGameTrade::m_aaiTechDifference`/`m_aaiPolicyDifference` before the first `doTurn`: `CvGameTrade::Init`
+  (`Reset`) does not call `ResetTechDifference`/`ResetPolicyDifference`. In a later-era start a city founded on
+  turn 0 can evaluate trade units (`GetTradeConnectionValueTimes100` → `GetTechDifference`) before the tables are
+  built. Proposed fix: call both resets in `CvGameTrade::Reset`.
+
+How these were found: `tools/headless/fieldmap_transform.py` builds a DLL whose dumps also write
+`<section>.fields.txt` (the offset of every `visitor(...)` call while the digest writes, with its file, line and
+argument), so a differing byte offset maps to the member that wrote it (`tools/headless/parity_t000.py --fields`).
 
 The option lists are normalised in `CvPreGame::writeArchive` (digest only): entries equal to the database default
 are dropped and the rest sorted by name. Everything else is written exactly as a save writes it.
