@@ -13,8 +13,10 @@
 
 int HHQueryMaxMajorCivs(Database::Connection& kDb)
 {
-	// The setup screen loops over GameDefines.MAX_MAJOR_CIVS (Defines), which a DLL built for more majors (34, 43,
-	// 62) ships with its value; the DLL's own MAX_MAJOR_CIVS is compiled in and not readable through the interfaces.
+	// The setup screen loops over GameDefines.MAX_MAJOR_CIVS (Defines). The DLL's MAX_MAJOR_CIVS is compiled in (22,
+	// or 34, 43, 62 in DLLs built for more majors) and not readable through the interfaces, but its
+	// PerformDatabasePostProcessing writes it into Defines (CvDllDatabaseUtility, InsertGameDefine): read after
+	// post-processing, Defines has the loaded DLL's value.
 	int iValue = -1;
 	Database::Results kResults;
 	if(kDb.Execute(kResults, "SELECT Value FROM Defines WHERE Name = 'MAX_MAJOR_CIVS'") && kResults.Step())

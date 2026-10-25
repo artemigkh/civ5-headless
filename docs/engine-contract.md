@@ -697,6 +697,13 @@ differs from VP:
   `base-great-person-reward`, whose popups did not come up), and `eui-civ-ribbon` because EUI is installed as DLC
   (`UI_bc1`) in this game folder; EUI's other files are reported as unknown UI files.
 
+**Plain Vox Populi** (upstream 5.4.8 with four determinism fixes, no digest additions; Community Patch, Vox Populi
+and the EUI compatibility files from its repository; the mods registry generated from the `.modinfo` files, since
+the host reads activation, entry points and imported files from the registry): three Tiny games of 100 turns
+passed, 20 add-in contexts without errors, no unknown stub, dense and sparse fingerprints identical. The VP profiles
+select by hash or content (`vp-whos-winning`, `cp-city-event-popup`); nine UI files differ from the reference set,
+and the hazard scan finds only user-input calls in them.
+
 ## Appendix A: every outbound method seen (generated)
 
 Counts are exact totals per trace (SUM lines). Threads: core = game-core thread, ui = main thread, other = render workers. `host today`: `impl` = overridden in `Civ5Headless`, `stub` = generated stub (value-initialised result: false/0/null). Proposal kinds: C constant, E emulate (state-dependent), N no-op, L script system. S4 includes the hook probe (its `CallTestAny`/`CallAccumulator` true values come from the probe listeners).

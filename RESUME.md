@@ -38,9 +38,10 @@ then `... compare runs/baseline runs/NAME` (config and baselines are under the i
   20261025-200154; 200434 changes only builddb). Stock: runs/stock (config runs/stock/stock.json), probe_check
   3 games x 150 turns passed (runs/stock/check1). dbbuild with no mods + stock DLL = snapshot (dbdiff identical);
   VP reference build still identical to its oracle (runs/dbcheck).
-- Next: optional plain VP (vp-det): runs/vpdet (MODS copy, DLL copy, mods.db, vpdet.db built); run probe_check
-  with a config like runs/stock/stock.json (modsDir runs/vpdet/MODS, modsDb runs/vpdet/mods.db). Then the final
-  report.
+- Milestone 5 (committed): plain VP coverage (runs/vpdet: MODS copy, DLL copy, registry from the .modinfo files by
+  the scratch script make_modsdb.py, vpdet.db by c5h dbbuild --mod ...; probe_check 3 games x 100 turns passed,
+  runs/vpdet/check1); `hazards scan --unknown-only`; engine-contract 15 plain VP note.
+- Next: final invariant on the final exe, then the final report (SubagentHandback).
 
 ## Build and run
 

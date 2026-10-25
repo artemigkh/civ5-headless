@@ -442,17 +442,19 @@ def _worst(entries):
 # ---------------------------------------------------------------------------------------------------------------
 # Files and profiles
 # ---------------------------------------------------------------------------------------------------------------
-def files_from_report(report):
-    """[(name, path, kind, source)] of the UI Lua a host run loaded (host-report.json)."""
+def files_from_report(report, unknown_only=False):
+    """[(name, path, kind, source)] of the UI Lua a host run loaded (host-report.json): every add-in context and UI
+    file, or with unknown_only the UI files the run reported as unknown (not in the known list nor covered)."""
     doc = json.loads(Path(report).read_text(encoding='utf-8'))
     seen, out = set(), []
+    ui = doc.get('uiFiles', {})
+    unknown = {f.get('path') for f in ui.get('unknown', [])}
     for c in doc.get('addins', {}).get('contexts', []):
         p = c.get('path')
-        if p and p.lower().endswith('.lua') and p not in seen:
+        if p and p.lower().endswith('.lua') and p not in seen and (not unknown_only or p in unknown):
             seen.add(p)
             out.append((Path(p).name, p, 'addin', c.get('mod', '')))
-    ui = doc.get('uiFiles', {})
-    for f in ui.get('unknown', []) + ui.get('knownFiles', []):
+    for f in ui.get('unknown', []) + ([] if unknown_only else ui.get('knownFiles', [])):
         p = f.get('path')
         if p and p.lower().endswith('.lua') and p not in seen:
             seen.add(p)
@@ -531,7 +533,7 @@ def summarize(hits):
 def cmd_scan(a):
     files, selected = [], None
     if a.report:
-        files, selected = files_from_report(a.report)
+        files, selected = files_from_report(a.report, a.unknown_only)
     files += files_from_paths(a.paths)
     if not files:
         print('nothing to scan: give --report or paths')
@@ -634,6 +636,7 @@ def main(argv=None):
     s = sub.add_parser('scan', help='scan UI Lua for state-changing DLL calls')
     s.add_argument('paths', nargs='*', help='Lua files or folders')
     s.add_argument('--report', help='host-report.json of a run: scan the add-ins and UI files it loaded')
+    s.add_argument('--unknown-only', action='store_true', help='with --report: only the UI files the run reported as unknown')
     s.add_argument('--dll-source', help='CvGameCoreDLL_Expansion2 folder: derive the methods from its Lua bindings')
     s.add_argument('--profiles', help='profiles folder (default: the repository\'s profiles/)')
     s.add_argument('--all', action='store_true', help='also report calls that only reach a lazy cache (kind cache)')
