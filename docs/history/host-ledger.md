@@ -164,6 +164,13 @@ commit it with the change it describes.
   (`work/stage_vp.py --dll/--pdb`, `--verify`, `work/deploy-vp.ps1`), host_first for m5-long and the 7 remaining
   m5-batch2 cases, then record host-first with rolling dumps (remove `work/test-runs/hh-m5b-matrix.stop` and
   `hh-m5l-matrix.stop`; m5-long with `--retry-failed`).
+- **User rule (2026-10-25): UI-only state is not a difference.** Anything that cannot affect the game (notification
+  `m_bDismissed`, the era-start initial unit selection, and any other purely UI field) is normalised out of the digest
+  (`HH_DIGEST_NORM`, digest-only, result-neutral). On resume, before the next DLL build: the host agent audits the
+  serialised state for UI-only fields (selection, camera, popup queues, notification display state), normalises those
+  with no gameplay reader (keep anything gameplay reads, e.g. end-turn blocking notifications), and lists them in
+  `docs/headless-dll-additions.md`. The real game and the host use the same DLL, so new references and the host agree;
+  references recorded with older DLLs keep comparing against their own DLL.
 - **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: the s1 T124–127 dumps against the
   host's (and the A/A check); the late-game logging fix (the AI settle log called `GetDanger`, which rebuilds dirty
   danger plots; host logging on/off differed at T154, T209, T252–254, T292–294; the uncommitted fix clears T154 and
