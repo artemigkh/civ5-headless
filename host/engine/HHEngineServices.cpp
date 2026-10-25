@@ -459,8 +459,33 @@ void HHUserInterface::makeInterfaceDirty() { HH_IMPL_CALL("ICvUserInterface1::ma
 // Notifications with no headless effect (graphics, sound, lobby, turn display)
 //------------------------------------------------------------------------------
 void HHEngineUtility::DoMapSetup(int iWorldNumPlots) { HH_IMPL_CALL("ICvEngineUtility1::DoMapSetup"); }
-void HHEngineUtility::openSlot(PlayerTypes eID) { HH_IMPL_CALL("ICvEngineUtility1::openSlot"); }
-void HHEngineUtility::closeSlot(PlayerTypes eID) { HH_IMPL_CALL("ICvEngineUtility1::closeSlot"); }
+// Slots follow the players' lives: CvPlayer::setAlive calls closeSlot when a player dies and openSlot when it
+// lives (again). The exe closes the slot (SS_CLOSED; CvPlayer::CheckForMurder's comment, M5 references: city-states
+// and a major, e.g. hh-m5g-continents-s1 slot 5 at T277) and reopens a closed one as an AI slot (SS_COMPUTER;
+// hh-m5z-continents-s1: city-state 36 died at T125 and was liberated at T140, the real pregame has SS_COMPUTER
+// again from T141). openSlot at game start is for live slots, which are not closed, so it changes nothing there.
+void HHEngineUtility::openSlot(PlayerTypes eID)
+{
+	HH_IMPL_CALL("ICvEngineUtility1::openSlot");
+	if(m_pPreGame && eID >= 0 && eID < MAX_CIV_PLAYERS && m_pPreGame->slotStatus(eID) == SS_CLOSED)
+	{
+		HHLog("openSlot(%d): SS_CLOSED -> SS_COMPUTER", (int)eID);
+		m_pPreGame->setSlotStatus(eID, SS_COMPUTER);
+	}
+}
+void HHEngineUtility::closeSlot(PlayerTypes eID)
+{
+	HH_IMPL_CALL("ICvEngineUtility1::closeSlot");
+	if(m_pPreGame && eID >= 0 && eID < MAX_CIV_PLAYERS)
+	{
+		const SlotStatus eStatus = m_pPreGame->slotStatus(eID);
+		if(eStatus == SS_COMPUTER || eStatus == SS_TAKEN)
+		{
+			HHLog("closeSlot(%d): %d -> SS_CLOSED", (int)eID, (int)eStatus);
+			m_pPreGame->setSlotStatus(eID, SS_CLOSED);
+		}
+	}
+}
 void HHEngineUtility::netMessageDebugLog(const std::string & logMessage) const { HH_IMPL_CALL("ICvEngineUtility1::netMessageDebugLog"); }
 void HHEngineUtility::GameplayYieldMightHaveChanged(_In_ ICvPlot1* pThisPlot) { HH_IMPL_CALL("ICvEngineUtility1::GameplayYieldMightHaveChanged"); }
 void HHEngineUtility::GameplayFeatureChanged(_In_ ICvPlot1* pThisPlot, FeatureTypes newFeature) { HH_IMPL_CALL("ICvEngineUtility1::GameplayFeatureChanged"); }

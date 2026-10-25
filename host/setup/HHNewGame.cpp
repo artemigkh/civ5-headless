@@ -897,28 +897,6 @@ namespace
 	// on the active player's turn start EndTurnTimerReset, UpdateSelectionList (auto unit cycle: selects
 	// a unit, CvUnit::m_iEverSelectedCount), RebroadcastNotifications and SetBusyUnitUpdatesRemaining(600);
 	// then every frame UpdateTestEndTurn (CvPlayer::m_eEndTurnBlockingType).
-	// The exe closes the slot of a city-state that is no longer alive (M5 era-medieval: the pregame slot
-	// status is SS_CLOSED from the first doTurnBegin after the city-state died, T150). Checked after every
-	// Update (one Update processes one player), so it lands before the next doTurnBegin.
-	void CloseDeadCityStateSlots(HHNewGameInterfaces& kIf)
-	{
-		for(int i = kMaxMajorCivs; i < MAX_CIV_PLAYERS; ++i)
-		{
-			const PlayerTypes p = (PlayerTypes)i;
-			if(kIf.pPreGame->slotStatus(p) != SS_COMPUTER)
-				continue;
-			ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(p);
-			const bool bAlive = pPlayer && pPlayer->IsAlive();
-			if(pPlayer)
-				pPlayer->Destroy();
-			if(!bAlive)
-			{
-				HHLog("setSlotStatus(%d, SS_CLOSED): city-state no longer alive (turn %d)", i, kIf.pGame->GetGameTurn());
-				kIf.pPreGame->setSlotStatus(p, SS_CLOSED);
-			}
-		}
-	}
-
 	void HumanTurnFrame(HHNewGameInterfaces& kIf)
 	{
 		// A popup that is up (WhosWinning) keeps the engine from cycling units and testing the end of
@@ -1264,14 +1242,13 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 			kIf.pEngine->SetInGameCoreUpdate(false);
 			kIf.pEngine->EndOfUpdate();
 			HHDeliverNetMessages(kIf);
-			CloseDeadCityStateSlots(kIf);
 		}
 		kIf.pEngine->SetInGameCoreUpdate(true);
 		kIf.pGame->Update();
 		kIf.pEngine->SetInGameCoreUpdate(false);
 		kIf.pEngine->EndOfUpdate();
 		HHDeliverNetMessages(kIf);
-		CloseDeadCityStateSlots(kIf);
+		// Slots of players that die or live again: HHEngineUtility::closeSlot/openSlot (CvPlayer::setAlive).
 		if(!HHGetOptions().noUiFrame)
 		{
 			ObserverNotificationAging(kIf);
