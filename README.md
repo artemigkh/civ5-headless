@@ -17,6 +17,7 @@ Status: being split out of a Vox Populi fork where it was developed; see [docs/p
 | `python/civ5headless/` | The `c5h` tools: configuration, game specs, database builder and cache, runners, comparison |
 | `tests/` | Unit tests (`python -m unittest discover -s tests`) |
 | `tools/` | Host build (`build_host.py`, `toolchain.py`), interface stub generator, PE import lister, development tools |
+| `profiles/` | UI emulation profiles the host runs in place of the game's UI ([docs/profiles.md](docs/profiles.md)) |
 | `probes/` | Lua probes for the real game and the host |
 | `examples/` | Game specs and queues |
 | `docs/` | User guide, engine contract, database builder, DLL additions, plan, history |
@@ -48,6 +49,8 @@ c5h compare runs/A runs/B                                # per-turn state digest
 
 The game folder, the `My Games` folder, the mods and the host are discovered (Steam registry and libraries, the
 Documents known folder, `out/latest.txt`), and the game database is built from the game's files and the mods.
+`--mod ID[:VER]` plays any mod set in a MODS folder (the mods registry is generated from the `.modinfo` files),
+`--no-mods` none.
 Anything else, or anything to override, goes in `civ5headless.toml`; see
 [civ5headless.example.toml](civ5headless.example.toml). `c5h -h` lists the commands; the
 [user guide](docs/user-guide.md) covers them, and `civ5headless.realgame` drives the real game for references.

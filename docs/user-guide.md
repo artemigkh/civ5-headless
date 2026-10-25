@@ -29,10 +29,12 @@ c5h compare runs/A runs/B                                # per-turn state digest
 Configuration: the game folder (Steam registry and library folders), `Documents\My Games\Sid Meier's Civilization 5`
 (the Documents known folder), its MODS and cache folders, the activated mods (`Civ5ModsDatabase.db`), the game DLL
 (the first active mod's, the Community Patch folder's, or the game's own) and the host (`out/latest.txt`) are
-discovered. Anything else, or anything to override, goes in `civ5headless.toml` (current folder, the workspace, or
-`C5H_CONFIG`; see [civ5headless.example.toml](../civ5headless.example.toml)); `c5h --config FILE` picks another.
-`c5h doctor` prints every value with where it came from, then checks three groups: host games (exit code 1 when one
-fails), the real game, and building the host.
+discovered. The host's UI emulation profiles (`profiles`) and the Lua probes (`probes`, with `fingerprint.lua`) are
+the workspace's `profiles\` and `probes\` folders, else the repository's; an installed package has neither, so copy
+them into the workspace or set the two keys. Anything else, or anything to override, goes in `civ5headless.toml`
+(current folder, the workspace, or `C5H_CONFIG`; see [civ5headless.example.toml](../civ5headless.example.toml));
+`c5h --config FILE` picks another. `c5h doctor` prints every value with where it came from, then checks three
+groups: host games (exit code 1 when one fails), the real game, and building the host.
 
 | Command | Does |
 |---|---|
@@ -43,6 +45,9 @@ fails), the real game, and building the host.
 | `c5h spec resolve\|lua` | resolve a spec, or print the front-end Lua that sets it up in the game |
 | `c5h snapshot` | the DLC snapshot, built from the game's files |
 | `c5h dbcache`, `c5h dbbuild`, `c5h dbdiff` | the game database for a mod set: cached, built, compared |
+| `c5h modsdb` | the mods registry (`Civ5ModsDatabase.db`) for a mod set, from the `.modinfo` files |
+| `c5h fingerprint compare\|show` | per-turn Lua fingerprints of two runs (any DLL) |
+| `c5h hazards scan\|methods\|known` | UI Lua that changes game state, for deciding on UI emulation profiles |
 | `c5h parity`, `c5h host-first`, `c5h dumps`, `c5h skew`, `c5h digest` | parity with real-game references |
 | `c5h verify` | the verification suite |
 | `python -m civ5headless.realgame.probe\|record\|dbcapture\|tuner` | the real game ([section 8](#8-the-real-game)) |
@@ -84,8 +89,37 @@ the mods database, the DLL, the DLC snapshot and the host, so a mod edit gives a
 - **Mods input:** a MODS folder and its `Civ5ModsDatabase.db` (the activated mods). The live ones work, but the live
   database lists no activated mods while the game sits in its mod browser; a pinned copy (a MODS folder copy and a
   copy of the database taken in a modded session) keeps an input stable. Both are only read.
+- **Mod sets:** `--mod ID[:VER]` (repeatable; `c5h run`, `c5h dbcache`, the queue's `mods`) gives the activated mods
+  instead of a mods database, so any mods in a MODS folder can be played without the game having activated them; see
+  below. `--no-mods` plays without mods: the database is then the DLC snapshot post-processed by the DLL.
 - `c5h dbbuild --mods-dir MODS --mods-db DB --out built.db [--oracle GAME.db]` builds one database directly;
   `c5h dbdiff A B` compares two. Details: [database builder](database-builder.md).
+
+### The mods registry
+
+The game keeps a registry of the installed mods in its cache (`Civ5ModsDatabase.db`): properties, files, actions,
+entry points, relationships, and which mods are activated. The host reads the activated mods, their InGameUIAddin
+entry points and their imported Lua files from it, and the database builder reads the activation order. `c5h modsdb`
+writes that registry for a mod set from the `.modinfo` files:
+
+```
+c5h modsdb --mod d1b6328c-ff44-4b0d-aad7-c657f83610cd --mod 8411a7a8-dad3-4622-a18e-fcc18324c799:17 [--mods-dir MODS]
+           [--out Civ5ModsDatabase.db] [--compare GAME_REGISTRY.db]
+```
+
+- A mod without a version is its highest version in the MODS folder. The activation order is the order given, except
+  that a mod comes after the mods it depends on or references.
+- A dependency outside the set, a dependency version out of range, or a mod blocking another in the set is an error,
+  as in the game's mod browser.
+- The rows are those the game writes (the registry generated for the five mods of the Vox Populi fork is identical to
+  the game's, table by table). Only the given mods are listed, all activated.
+- Without `--out` the registry is cached (`<db_cache>\modsdb\<key>\`); `c5h run --mod ...` and the queue use the same
+  cache and pass the registry to the database build and to the host.
+- `--compare` checks it against another registry (`--path-as` the folder the other one records, `--ignore md5` to
+  leave out file hashes the game has not rescanned).
+
+Games played from the generated registry and from the game's are identical (same database, same per-turn digests
+and fingerprints, the same add-ins and profiles).
 
 ## 4. Game specs
 
@@ -100,6 +134,9 @@ A spec is JSON mirroring the single-player setup screens; omitted fields behave 
 
 - Other fields: `map.options`, `map.civ5map` (premade maps), `majors`, `cityStates`, `slots` (civ, team per
   slot), `gameOptions`, `victories`, `maxTurns`.
+- `minorCivs` lists `MINOR_CIV_*` types (at most `cityStates`) for the host, which uses them where it chooses the
+  city-states itself (DLLs that leave that to the game). The real game cannot be told which city-states to place (its
+  pregame Lua has no call for it), so a comparison with the real game fills the field with the game's own choice.
 - The two seeds fix the whole game (map, civs, city-states, every AI decision): the same spec, DLL and database give
   the same game, on every run and in the real game.
 - `c5h spec resolve SPEC.json --out RESOLVED.json` checks the names against the game database and writes the
@@ -119,6 +156,10 @@ configuration. Useful options:
 |---|---|
 | `--db DB` | use this database instead of the cached build |
 | `--mods-dir MODS --mods-db DB` | another mods input |
+| `--mod ID[:VER]`, `--no-mods` | a mod set from a generated registry ([section 3](#the-mods-registry)), or no mods |
+| `--profiles DIR`, `--no-profiles` | the UI emulation profiles (default: the configured folder), or none |
+| `--skip-addin NAME`, `--no-addins` | leave out one mod InGameUIAddin (its file name without extension, e.g. `SmallResourceIcons`; repeatable), or all |
+| `--fingerprint` | the Lua fingerprint probe, every turn; `--fingerprint-every K`, `--fingerprint-turns 1,50,100` and `--fingerprint-split N` set it (each implies it) |
 | `--lua-probe FILE` | run a Lua file in the game once it has started, before turn 0 (repeatable) |
 | `--diagnostics N` | `Game.SetStackingDiagnosticsLevel(N)` before autoplay (Vox Populi fork DLLs) |
 | `--improved-mask N`, `--ab-role baseline\|test` | A/B switches of the AI improvement program's DLLs |
@@ -131,7 +172,29 @@ configuration. Useful options:
 | `--host-arg=ARG` | pass an option to `civ5headless.exe` (run it without arguments for the list) |
 
 From Python, `civ5headless.run.play(spec, turns, ...)` plays one game and returns its run folder, whether it
-completed, and its status.
+completed, its status and its run report (`Result.report`). Its keywords are the options above (`mods=[...]`,
+`no_mods`, `profiles`, `no_profiles`, `skip_addins=[...]`, `no_addins`, `fingerprint=True` or `{"every": K, "turns":
+[...], "split": N}`, `lua_probes=[...]`, `host_args=[...]`, ...).
+
+### UI add-ins, profiles and probes
+
+The host has no UI screens. It runs every activated mod's InGameUIAddin in a stub UI context after the load screen,
+and the UI emulation profiles do what UI code that changes game state does in the real game (popups, notifications,
+per-frame updates); see [UI emulation profiles](profiles.md) and the [engine contract](engine-contract.md), section
+10.6. `c5h run` passes the configured profiles folder (`--profiles`), so a run never depends on where the exe is.
+
+Lua probes (`--lua-probe`, and the fingerprint) run in order in the game's `InGame` context after the turn-0
+checkpoint and before turn 0 is processed. The real-game session runs them at the same point
+(`start_game(lua_probes=..., fingerprint=...)`), so the same files print the same lines on both sides.
+
+The fingerprint (`probes/fingerprint.lua`) hashes the game state through plain getters every turn (or every K-th
+turn) and prints it to `Logs\Lua.log`; it needs no DLL support, so it compares games of any DLL, including the stock
+one: `c5h fingerprint compare RUN_A RUN_B` (run folders, Logs folders or Lua.log files; `show` prints what a log
+holds). Its settings go into a generated `fingerprint-settings.lua` that runs just before it.
+
+Is a mod set's UI safe in the host? Play a short game, then `c5h hazards scan --report RUN\host-report.json` lists
+the calls in its UI files that change game state and whether a profile covers them; `c5h hazards known` records
+files checked to need no profile ([profiles](profiles.md), "Does a mod's UI code need a profile?").
 
 ### Run folders
 
@@ -147,6 +210,8 @@ The files follow the real-game benchmark of the Vox Populi fork this came from, 
 | `turn-times.jsonl`, `turn-seen.json` | seconds since autoplay started, per turn |
 | `replay-messages.json`, `replay-data.json` | replay messages (without type 2) and every major's replay series |
 | `status.json` | `state`, `startTurn`/`endTurn`/`turns`, `wallSeconds`, `secondsPerTurn`, `process` (CPU seconds, peak working set, peak private bytes), `endReason` (target_turn, victory, killed), `winner`/`victory`, `save` (seed key), `background` |
+| `host-report.json` | the host's run report: status and error, exe, DLL and databases, options, activated mods, profiles selected, add-in contexts and their errors, unknown UI files, engine stubs the DLL called, Lua errors, timings and memory ([engine contract](engine-contract.md), section 14) |
+| `hh-command.json` | the host command line, the inputs' hashes, the mods registry, profiles and fingerprint settings |
 | host outputs | `newgame-report.json`, `Logs/` (HeadlessDigest.log with the per-turn digests, Lua.log, the DLL's logs), `t000-map.json`, `t000-digest.json`, `dump-t000/`, `dump-tN/` |
 
 Where they differ from a real run, by design:
@@ -177,11 +242,12 @@ c5h queue compare QUEUE.json [--vpbench DIR]
 ```
 
 - Paths in a queue are relative to the queue file. Jobs are seeds x variants (named `<variant>-m<map>-s<sync>`)
-  plus any explicit `jobs`; every job key (`spec`, `turns`, `dll`, `db`, `modsDir`, `modsDb`, `diagnostics`,
-  `improvedMask`, `abRole`, `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `prune` (default on),
-  `hostArgs`, `luaProbes`, `lowPriority` (default on)) can be set in `defaults`, a variant or a job. Examples are in
-  `examples/queues/`.
-- Databases are built once per (mods input, DLL) before the workers start.
+  plus any explicit `jobs`; every job key (`spec`, `turns`, `dll`, `db`, `modsDir`, `modsDb`, `mods` (a mod set,
+  `["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`, `noAddins`, `fingerprint` (`true` or
+  `{"every": K, "turns": [...], "split": N}`), `diagnostics`, `improvedMask`, `abRole`, `checkpointEvery`,
+  `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `prune` (default on), `hostArgs`, `luaProbes`, `lowPriority`
+  (default on)) can be set in `defaults`, a variant or a job. Examples are in `examples/queues/`.
+- Mod sets' registries and databases are built once per (mods input, DLL) before the workers start.
 - Worker k is pinned to the k-th physical core: P-cores (both hyperthreads) first, then E-cores.
 - State is in `QUEUE.state.json`. A restart skips completed runs, re-queues interrupted ones (the partial folder is
   kept as `<name>-rN`) and leaves failed ones failed unless `--retry-failed`. A stopped runner takes its games with
@@ -199,6 +265,8 @@ for is zero, one run per (seed, variant) is enough, and more seeds buy more sign
   that heal within `--heal-turns` turns). `savedb` (UI state, see Limits) is reported apart and never counts.
 - `c5h dumps REF HOST [--fields DIR]`: two state dumps section by section; with a field map (written by a field-map
   build of the DLL) each difference is attributed to the field that wrote it.
+- `c5h fingerprint compare A B`: the same for the Lua fingerprints of runs played with `--fingerprint` (any DLL,
+  also without the digest additions), with the per-player metrics of the first differing turn.
 - `c5h digest verify DUMP`: recompute a dump's hashes.
 - `python tools/phase_speed.py RUN...`: seconds per turn by game phase.
 
@@ -218,8 +286,9 @@ cfg = config.load()
 with RealGameSession(cfg, cfg.runs / 'my-reference') as s:
     s.launch(1001, 2002)                       # the first game's seeds, pinned before the launch
     s.set_mods([m.id for m in cfg.active_mods])
-    s.start_game('examples/specs/continents-tiny.json', 1001, 2002, lua_probes=['probes/fingerprint.lua'])
+    s.start_game('examples/specs/continents-tiny.json', 1001, 2002, fingerprint=True)
     result = s.autoplay(100)                   # startTurn, endTurn, endReason, turnSeconds, ...
+    replay = s.replay_data()                   # as the host's replay-data.json
     s.collect_logs(cfg.runs / 'my-reference/logs')
     stats = s.process_stats()                  # peak working set, peak private bytes, CPU seconds
 ```
@@ -264,6 +333,7 @@ these parts are new and have not:
   activation and game in the same session;
 - `reseed='reload'` (pin the seeds and rely on the next mod activation reloading the DLL, instead of relaunching);
   the default relaunch uses the verified mechanism;
+- `replay_data()` (the host's replay-data Lua, fetched one player per call because of the tuner's result limits);
 - the session as a whole, and probe, record and dbcapture on it.
 
 ## 9. References and parity
@@ -357,8 +427,9 @@ busy.
 
 - **savedb:** the `savedb` digest section (the embedded `Civ5SavedGameDatabase.db` the real game's UI writes into
   saves) is not reproduced. It holds UI state, not game state, and comparisons leave it out.
-- **UI-driven state:** the host emulates the UI Lua that changes game state (see the engine contract). A UI mod with
-  stateful Lua that it does not emulate would need the same.
+- **UI-driven state:** the host runs the mods' InGameUIAddins and emulates the other UI Lua that changes game state
+  with profiles. A UI mod whose stateful Lua is neither an add-in the host can run nor covered by a profile needs a
+  new profile; `host-report.json` lists its files as unknown and `c5h hazards scan` finds the calls.
 - **DLL logging changes AI results** in some DLLs: the host turns on the profile's logging like the real game's
   config. `--host-arg=--no-game-logging` is faster but may play a different game; never mix the two in a comparison.
 - **No saves:** the host neither writes nor loads `.Civ5Save` files, so host runs start from a spec, not a save.

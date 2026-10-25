@@ -491,7 +491,8 @@ def add_arguments(n):
     n.add_argument('--exe', help='civ5headless.exe (default: config exe)')
     n.add_argument('--profiles', help='UI emulation profiles folder (default: config profiles)')
     n.add_argument('--no-profiles', action='store_true', help='run no UI emulation profile')
-    n.add_argument('--skip-addin', action='append', help="leave out this InGameUIAddin (entry file name; repeatable)")
+    n.add_argument('--skip-addin', action='append', help="leave out this InGameUIAddin: its file name without extension, "
+                   "e.g. SmallResourceIcons (repeatable)")
     n.add_argument('--no-addins', action='store_true', help="run none of the mods' InGameUIAddins")
     n.add_argument('--fingerprint', action='store_true', help='run the Lua fingerprint probe (probes/fingerprint.lua)')
     n.add_argument('--fingerprint-every', type=int, help='fingerprint every K-th turn (default every turn; implies --fingerprint)')
