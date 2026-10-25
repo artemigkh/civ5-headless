@@ -63,6 +63,13 @@ commit it with the change it describes.
     logging block; now always, as its comment intends). Logging on/off give identical 100-turn digests on two
     maps. The address-perturbation self-test (`--heap-perturb SEED`: random heap spacers, rebased DLL) passes:
     no pointer-ordered container affects results. References recorded before these fixes need the pre-fix DLL.
+  - M5 matrix (bc8b57f5a): `work/headless/parity_run.py REF_RUN` (or `--matrix --workers N`) replays a reference
+    and compares every digest point and both dumps. 49 of the matrix cases are identical (8 base scripts,
+    all VP scripts but Continental Drift, premade maps, all sizes, quick and epic speeds, difficulties, player
+    counts and teams); speed-marathon is identical with `--pregame-turn-timer 1` (the real exe kept the previous
+    launch's timer; the spec will pin it); era starts differ only in one UI field (initial unit selection).
+    Fixes: VFS-first map script paths, slot claims, closed slots of city-states dropped at map generation, and
+    567a18084 `CvPlot::m_iFreeMoveAcross` initialised (upstream field left as heap garbage).
   - 3fbccb312 (gameplay, uninitialised reads): public opinion fields, pantheon holy-city coordinates and the
     trade difference tables are initialised. Gameplay could read heap garbage there; references recorded
     before it have different values in those fields.
@@ -149,3 +156,5 @@ commit it with the change it describes.
   reset at 03:30.
 - 2026-10-25: M6 merged (d0711220f): headless A/B batches run end to end with the existing comparison tools.
 - 2026-10-25: M5 part 1 merged (f551e3815): two logging-dependent AI decisions fixed; heap perturbation changes nothing.
+- 2026-10-25: M5 matrix comparisons merged (bc8b57f5a): 49 cases identical; Continental Drift, era selection and
+  the options cases open.
