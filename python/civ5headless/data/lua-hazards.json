@@ -1,5 +1,5 @@
 {
- "about": "Curated input of the UI hazard scan (python -m civ5headless.hazards). methods: DLL Lua methods known to change game state although the source derivation misses them or names them less clearly. engine: Lua calls that the real game turns into DLL calls and the host does not. notHazards: derived methods that do not change state after all (vetted). harmlessCaches: functions that write a cache whose value does not depend on when it is computed (lookup indexes, scratch buffers); the derivation does not follow them.",
+ "about": "Curated input of the UI hazard scan (python -m civ5headless.hazards). methods: DLL Lua methods known to change game state although the source derivation misses them or names them less clearly. engine: Lua calls that the real game turns into DLL calls and the host does not. notHazards: derived methods that do not change state after all (vetted). harmlessCaches: functions that write a cache whose value does not depend on when it is computed (lookup indexes, scratch buffers); the derivation does not follow them. writesWithArgs: methods that change state only when called with at least minArgs arguments; calls with fewer are not hazards. notWithDll (on a method): with a run report whose dll section has these values, the method does not change state (the hit is covered, reason notWithDllWhy). reviews: hits reviewed by hand, matched by file name and optionally methods, a function regular expression, lines or sha256; verdict input (reached only through player input although the scan cannot tell) or covered (the host does the same, or the call is harmless), with why.",
  "methods": [
   {
    "class": "Game",
@@ -14,12 +14,20 @@
   {
    "class": "Player",
    "name": "CalculateGoldRate",
-   "why": "stock BNW and VP before the 2026 determinism fix: the treasury cost calculation stores the unit maintenance (CvTreasury::m_iExpensePerTurnUnitMaintenance, saved)"
+   "why": "stock BNW and VP before the 2026 determinism fix: the treasury cost calculation stores the unit maintenance (CvTreasury::m_iExpensePerTurnUnitMaintenance, saved)",
+   "notWithDll": {
+    "digestAdditions": true
+   },
+   "notWithDllWhy": "the run's DLL is this fork's (it reports digest additions), which has the determinism fix: CalculateGoldRate no longer stores the unit maintenance (CvTreasury::GetExpensePerTurnUnitMaintenance computes it); M5 parity runs identical"
   },
   {
    "class": "Player",
    "name": "CalculateGoldRateTimes100",
-   "why": "as CalculateGoldRate"
+   "why": "as CalculateGoldRate",
+   "notWithDll": {
+    "digestAdditions": true
+   },
+   "notWithDllWhy": "the run's DLL is this fork's (it reports digest additions), which has the determinism fix: CalculateGoldRate no longer stores the unit maintenance (CvTreasury::GetExpensePerTurnUnitMaintenance computes it); M5 parity runs identical"
   },
   {
    "class": "Player",
@@ -102,6 +110,60 @@
   {
    "function": "CvGame::GetDiploResponse",
    "why": "prepared database query kept for reuse"
+  }
+ ],
+ "writesWithArgs": [
+  {
+   "class": "Player",
+   "name": "CountNumBuildings",
+   "minArgs": 2,
+   "why": "writes (UpdateNumBuildings: recount and store) only with the recount argument; CountNumBuildings(building) reads"
+  }
+ ],
+ "reviews": [
+  {
+   "file": "CityView.lua",
+   "function": "UpdateCityViewNow|UpdateCityProductionQueueNow",
+   "verdict": "input",
+   "why": "city screen: its per-frame update runs only while the city screen is open, which the player opens (SerialEventEnterCityScreen); an autoplayed game never opens it"
+  },
+  {
+   "file": "DiploRelationships.lua",
+   "function": "PopulateTrade",
+   "verdict": "input",
+   "why": "diplomacy overview tab: filled by its show/hide handler when the player opens it"
+  },
+  {
+   "file": "DiploGlobalRelationships.lua",
+   "function": "InitMajorCivList",
+   "verdict": "input",
+   "why": "diplomacy overview tab: filled by its show/hide handler when the player opens it"
+  },
+  {
+   "file": "EconomicGeneralInfo.lua",
+   "function": "UpdateGPT",
+   "verdict": "input",
+   "why": "economic overview tab: filled by its show/hide handler when the player opens it"
+  },
+  {
+   "file": "TradeLogic.lua",
+   "function": "OnOpenPlayerDealScreen",
+   "verdict": "input",
+   "why": "deal screen with another human player: Events.OpenPlayerDealScreenEvent, fired by the player's click in the diplomacy list and registered by the files that include TradeLogic.lua; g_Deal is the UI scratch deal"
+  },
+  {
+   "file": "LoadScreen.lua",
+   "methods": [
+    "SetPausePlayer"
+   ],
+   "verdict": "covered",
+   "why": "the host does the same: Game.SetPausePlayer(active player) once the game is initialised and Game.SetPausePlayer(-1) at continue (setup/HHNewGame.cpp)"
+  },
+  {
+   "file": "Squads.lua",
+   "function": "SquadsOptionChanged",
+   "verdict": "covered",
+   "why": "the Squads add-in runs in the host: SquadsOptions.lua (included) fires SQUADS_OPTIONS_CHANGED at load as in the game, and from its option buttons (input). The options come from the user's mod data, which the host keeps empty: with a saved end-movement option the real game sets it on the active player's units at load. M5 parity runs identical"
   }
  ]
 }
