@@ -146,11 +146,9 @@ bool HHApplyPregame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	HH_STEP(HHFormat("setMapScriptName(\"%s\")", mapFile.c_str()), pg->setMapScriptName(CvString(mapFile.c_str())));
 	HH_STEP(HHFormat("setGameSpeed(%d)", kSpec["speed"]["id"].AsInt()), pg->setGameSpeed((GameSpeedTypes)kSpec["speed"]["id"].AsInt()));
 	// PreGame state the spec does not set: the real exe keeps it from the previous game of the session
-	// (setGameSpeed sets no turn timer for Marathon). --pregame-* reproduces such a reference.
+	// (setGameSpeed sets no turn timer for Marathon). --pregame-turn-timer reproduces such a reference.
 	if(HHGetOptions().pregameTurnTimer >= 0)
 		HH_STEP(HHFormat("setTurnTimer(%d)", HHGetOptions().pregameTurnTimer), pg->setTurnTimer((TurnTimerTypes)HHGetOptions().pregameTurnTimer));
-	if(HHGetOptions().pregameSeaLevel >= 0)
-		HH_STEP(HHFormat("setSeaLevel(%d)", HHGetOptions().pregameSeaLevel), pg->setSeaLevel((SeaLevelTypes)HHGetOptions().pregameSeaLevel));
 	HH_STEP(HHFormat("setEra(%d)", kSpec["era"]["id"].AsInt()), pg->setEra((EraTypes)kSpec["era"]["id"].AsInt()));
 	HH_STEP(HHFormat("setHandicap(0, %d)", kSpec["difficulty"]["id"].AsInt()),
 	        pg->setHandicap((PlayerTypes)0, (HandicapTypes)kSpec["difficulty"]["id"].AsInt()));
@@ -477,6 +475,22 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 		}
 	}
 	kResult.steps.push_back(HHFormat("for i = 0..%d: Game.GetPlayer(i).LaterInit()", MAX_PLAYERS - 1));
+	// ASSUMPTION (M5 references vp-ring, vp-north-vs-south, players-cs41): the exe closes the slots of
+	// city-states that did not survive map generation (AssignStartingPlots discards them when no site is
+	// left); the real pregame has SS_CLOSED there. CvGame looks for SS_CLOSED minor slots when it creates
+	// a city-state later in the game.
+	for(int i = kMaxMajorCivs; i < MAX_CIV_PLAYERS; ++i)
+	{
+		const PlayerTypes p = (PlayerTypes)i;
+		if(pg->slotStatus(p) != SS_COMPUTER)
+			continue;
+		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer(p);
+		const bool bAlive = pPlayer && pPlayer->IsAlive();
+		if(pPlayer)
+			pPlayer->Destroy();
+		if(!bAlive)
+			HH_STEP(HHFormat("setSlotStatus(%d, SS_CLOSED) /* city-state not alive after map generation */", i), pg->setSlotStatus(p, SS_CLOSED));
+	}
 	const int iPlots = kIf.pMap->NumPlots();
 	HH_STEP(HHFormat("Game.InitTacticalAnalysisMap(%d)", iPlots), kIf.pGame->InitTacticalAnalysisMap(iPlots));
 	// ASSUMPTION (trace): the in-game UI's start-up sets these three options to 0 (S1 shows
