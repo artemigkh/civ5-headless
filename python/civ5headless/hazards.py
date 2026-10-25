@@ -21,12 +21,16 @@ Without it, python/civ5headless/data/lua-state-methods.json (the same derivation
 Both are merged with the curated python/civ5headless/data/lua-hazards.json: getters known to write state, and engine
 calls (Network.Send*) that the real game turns into DLL calls.
 
-Output (JSON, --json): {format, methods: {source, writes, cache, curated}, files: [...], hits: [{file, path, line,
-method, classes, kind, why, call, function, triggers, covered, profile}], summary}. covered names the profile that
-emulates the call (its manifest's covers: file and methods); with --report, only profiles selected in that run.
+Output (JSON, --json): {format, methods: {source, cacheIncluded}, profiles, files: [...], hits: [{file, path, sha256,
+line, method, classes, kind, why, call, function, triggers, reach, covered, coveredBy, reason, profile, review?}],
+summary}. reach: load, game or input (reach()). covered: a profile emulates the call (its manifest's covers: file
+and methods; with --report, only profiles selected in that run), a curated review covers it, or with --report the
+run's DLL does not change state there or the host runs the add-in (scan()). The text output lists the uncovered
+calls a game can reach; -v adds the others. Other tools: scan_report(report_path) returns the hits.
 Standard library only.
 """
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -247,6 +251,12 @@ def load_methods(dll_source=None):
     for entry in curated['methods']:
         by_name[entry['name']] = [e for e in by_name[entry['name']] if e['class'] != entry['class']]
         by_name[entry['name']].append({'class': entry['class'], 'kind': 'curated', 'why': entry['why']})
+        if entry.get('notWithDll'):
+            by_name[entry['name']][-1].update(notWithDll=entry['notWithDll'], notWithDllWhy=entry.get('notWithDllWhy', ''))
+    for entry in curated.get('writesWithArgs', []):
+        for e in by_name.get(entry['name'], []):
+            if e['class'] == entry['class']:
+                e.update(minArgs=entry['minArgs'], argsWhy=entry['why'])
     return {k: v for k, v in by_name.items() if v}, source, curated
 
 
@@ -303,6 +313,45 @@ def _functions_at(code):
     return spans
 
 
+_LUA_KEYWORDS = {'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'if', 'in', 'local', 'nil',
+                 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while'}
+_STOP_WORDS = _LUA_KEYWORDS - {'and', 'or', 'not', 'nil', 'true', 'false', 'function'}
+# Callees that call a function passed to them before they return: that function runs when its enclosing one runs.
+_IMMEDIATE = {'pcall', 'xpcall', 'sort', 'gsub'}
+# Functions that only look at a value: passing a function to them does not run it.
+_INSPECT = {'type', 'tostring', 'print', 'assert', 'rawequal'}
+
+
+def _enclosing_call(code, pos, limit=2000):
+    """The callee of the call whose argument list holds pos ('Foo' for 'Foo(a, <pos>'), or None: a table
+    constructor, an index, an assignment or a statement keyword comes first."""
+    depth, j, stop = 0, pos, max(0, pos - limit)
+    while j > stop:
+        j -= 1
+        c = code[j]
+        if c in ')]}':
+            depth += 1
+        elif c in '([{':
+            if depth:
+                depth -= 1
+            elif c != '(':
+                return None
+            else:
+                m = re.search(r'([\w.:\[\]]+)\s*$', code[max(0, j - 200):j])
+                return m.group(1) if m and m.group(1) not in _LUA_KEYWORDS else None
+        elif depth == 0:
+            if c == '=' and code[j - 1] not in '=~<>' and code[j + 1] != '=':
+                return None
+            if c.isalnum() or c == '_':
+                k = j
+                while k > 0 and (code[k - 1].isalnum() or code[k - 1] == '_'):
+                    k -= 1
+                if code[k:j + 1] in _STOP_WORDS and (k == 0 or code[k - 1] not in '.:'):
+                    return None
+                j = k
+    return None
+
+
 def _registrations(code, name, before):
     """How a function runs: Events / GameEvents / LuaEvents registrations, control callbacks, ContextPtr handlers."""
     out = []
@@ -325,6 +374,7 @@ class _LuaFile:
         self.code = _strip_lua(text)
         self.spans = _functions_at(self.code)
         self.line_starts = [0] + [m.end() for m in re.finditer(r'\n', self.code)]
+        self.memo = {}
 
     def line_of(self, pos):
         lo, hi = 0, len(self.line_starts)
@@ -336,30 +386,86 @@ class _LuaFile:
                 hi = mid
         return lo + 1
 
-    def context(self, pos, depth=2):
-        """(enclosing function names, triggers). Triggers: 'load' at top level; else, from the innermost function out,
-        the first that has registrations (Events.X.Add, callbacks, ContextPtr handlers) or other uses: called by
-        another function ('via' its triggers, depth levels), or passed as a value ('passed to' the callee)."""
+    def context(self, pos, depth=3):
+        """(enclosing function names, triggers). Triggers: 'load' at top level; else how the innermost function runs:
+        registrations (Events.X.Add, control callbacks, ContextPtr handlers); calls from another function ('via' its
+        triggers, depth levels); passed as a value ('passed to' the callee, or 'via' the callee's triggers when the
+        callee is a function of the file); stored ('assigned to' a handler table entry, a table key such as
+        [Mouse.eLClick], a named field). A function passed to pcall, xpcall, sort or gsub runs with its enclosing
+        one. No trigger found: []."""
         inner = sorted((s for s in self.spans if s[0] <= pos < s[1]), key=lambda s: s[0])
         if not inner:
             return '', ['load']
         names = [s[2] or '<anonymous>' for s in reversed(inner)]
         for start, end, name, before in reversed(inner):
-            found = _registrations(self.code, name, before)
-            if not found and name:
-                found = self._uses(name, start, depth)
-            if not found and not name:
-                m = re.search(r'([\w.:\[\]]+)\s*\(\s*(?:[^()]*,\s*)?$', before)
-                if m:
-                    found = ['passed to ' + m.group(1)]
-            if found:
+            found, outward = self._triggers(start, name, before, depth)
+            if found or not outward:
                 return ' < '.join(names), found
         return ' < '.join(names), []
 
-    def _uses(self, name, def_start, depth):
+    def _triggers(self, start, name, before, depth):
+        """(triggers of one function, whether it runs as part of its enclosing function)."""
+        key = (start, depth)
+        if key not in self.memo:
+            self.memo[key] = ([], False)  # a use inside its own chain adds nothing
+            self.memo[key] = self._find_triggers(start, name, before, depth)
+        return self.memo[key]
+
+    def _find_triggers(self, start, name, before, depth):
+        found = _registrations(self.code, name, before)
+        if found:
+            return found, False
+        if name:
+            field = bool(re.search(r'[{,]\s*\w+\s*=\s*$', before))
+            found = self._uses(name, start, depth, field or '.' in name or ':' in name)
+            if not found and ('.' in name or ':' in name):
+                found = ['assigned to ' + name]
+            return found, False
+        a = re.search(r'((?:[\w.]*)(?:\[[^\[\]\n]*\])+)\s*=\s*$', before)
+        if a:
+            target = a.group(1)
+            base = re.match(r'[\w.]*', target).group(0)
+            if not _INPUT_ASSIGNED.search(target) and base:
+                found = self._table_calls(base, depth)
+            return found or ['assigned to ' + target], False
+        callee = _enclosing_call(self.code, start)
+        if callee:
+            if re.split(r'[.:]', callee)[-1] in _IMMEDIATE:
+                return [], True
+            return self._passed(callee, depth), False
+        return [], False
+
+    def _via(self, pos, depth):
+        if depth <= 0:
+            return []
+        _, t = self.context(pos, depth - 1)
+        return [x if x.startswith(('via ', 'passed to ', 'assigned to ')) else 'via ' + x for x in t]
+
+    def _passed(self, callee, depth):
+        """A function passed to callee: 'via' the callee's triggers when the file defines it (and its name is not that
+        of a callback registration such as AddButton), else 'passed to'."""
+        if _INPUT_PASSED.search(callee):
+            return ['passed to ' + callee]
+        for start, end, name, before in self.spans:
+            if name and name == callee:
+                t, _ = self._triggers(start, name, before, depth - 1) if depth > 0 else ([], False)
+                return [x if x.startswith(('via ', 'passed to ', 'assigned to ')) else 'via ' + x for x in t]
+        return ['passed to ' + callee]
+
+    def _table_calls(self, base, depth):
+        """Triggers of the calls of a function stored in a table entry: base[...](...)."""
+        found = set()
+        for m in re.finditer(r'(?<![\w.:])%s\s*\[[^\[\]\n]*\]\s*\(' % re.escape(base), self.code):
+            found.update(self._via(m.start(), depth))
+        return sorted(found)
+
+    def _uses(self, name, def_start, depth, qualified=False):
+        """Triggers from the uses of a named function: calls, values passed or stored. qualified (a table field or a
+        dotted name): uses as t.name / t:name count too."""
         short = name.split('.')[-1].split(':')[-1]
         found = set()
-        for m in re.finditer(r'(?<![\w.:])%s\b' % re.escape(short), self.code):
+        pattern = r'(?<![\w])%s\b' if qualified else r'(?<![\w.:])%s\b'
+        for m in re.finditer(pattern % re.escape(short), self.code):
             if def_start <= m.start() < def_start + 12 + len(name):
                 continue  # the definition
             head = self.code[self.code.rfind('\n', 0, m.start()) + 1:m.start()]
@@ -367,13 +473,16 @@ class _LuaFile:
                 continue
             tail = self.code[m.end():m.end() + 40].lstrip()[:1]
             if tail == '(':
-                if depth > 0:
-                    _, t = self.context(m.start(), depth - 1)
-                    found.update(x if x.startswith(('via ', 'passed to ')) else 'via ' + x for x in t)
+                found.update(self._via(m.start(), depth))
             elif tail != '=':
-                callee = re.search(r'([\w.:\[\]]+)\s*\([^()]*$', self.code[max(0, m.start() - 200):m.start()])
+                callee = _enclosing_call(self.code, m.start())
+                if callee in _INSPECT:
+                    continue
                 if callee:
-                    found.add('passed to ' + callee.group(1))
+                    if re.split(r'[.:]', callee)[-1] in _IMMEDIATE:
+                        found.update(self._via(m.start(), depth))
+                    else:
+                        found.update(self._passed(callee, depth))
                 else:
                     a = re.search(r'([\w.\[\]]+)\s*=\s*$', head)
                     if a:
@@ -398,9 +507,33 @@ def _receiver(code, pos):
     return code[j:pos].strip()
 
 
-def scan_text(text, methods, engine_patterns):
-    """[{line, method, classes, kind, why, call, function, triggers}] of the hazardous calls in one Lua file."""
-    f = _LuaFile(text)
+def _call_args(code, pos):
+    """The number of arguments of the call whose name ends at pos, or None when it cannot tell."""
+    j = pos
+    while j < len(code) and code[j] in ' \t\r\n':
+        j += 1
+    if j >= len(code) or code[j] != '(':
+        return 1 if j < len(code) and code[j] in '"\'{' else None
+    depth, count, empty = 0, 0, True
+    for k in range(j + 1, min(len(code), j + 2000)):
+        c = code[k]
+        if c in '([{':
+            depth += 1
+        elif c in ')]}':
+            if depth == 0:
+                return 0 if empty else count + 1
+            depth -= 1
+        elif c == ',' and depth == 0:
+            count += 1
+        if not c.isspace():
+            empty = False
+    return None
+
+
+def scan_text(text, methods, engine_patterns, lua_events=None):
+    """[{line, method, classes, kind, why, call, function, triggers, reach}] of the hazardous calls in one Lua file
+    (text, or a parsed _LuaFile). lua_events: see reach."""
+    f = text if isinstance(text, _LuaFile) else _LuaFile(text)
     code = f.code
     hits = []
     for m in _LUA_MEMBER.finditer(code):
@@ -418,18 +551,94 @@ def scan_text(text, methods, engine_patterns):
             entries = [e for e in methods[name] if e['class'] not in _STATIC and e['class'] != 'engine']
         if not entries:
             continue
+        if is_call and all(e.get('minArgs') for e in entries):
+            n = _call_args(code, m.end())
+            if n is not None and n < min(e['minArgs'] for e in entries):
+                continue  # writes only with more arguments (writesWithArgs)
         func, triggers = f.context(m.start())
         hits.append(dict(line=f.line_of(m.start(2)), method=name, classes=sorted({e['class'] for e in entries}),
                          kind=_worst(entries), why='; '.join(sorted({e['class'] + ': ' + e['why'] for e in entries})),
                          call=recv + sep + name + ('(' if is_call else ' (reference)'), function=func,
-                         triggers=triggers))
+                         triggers=triggers, reach=reach(triggers, lua_events)))
     for pat, why in engine_patterns:
         for m in pat.finditer(code):
             func, triggers = f.context(m.start())
             hits.append(dict(line=f.line_of(m.start()), method=m.group(1), classes=['engine'], kind='engine', why=why,
-                             call=m.group(0).rstrip('( '), function=func, triggers=triggers))
+                             call=m.group(0).rstrip('( '), function=func, triggers=triggers,
+                             reach=reach(triggers, lua_events)))
     hits.sort(key=lambda h: (h['line'], h['method']))
     return hits
+
+
+# Reach: whether a call can run in an autoplayed game. 'load' (the file's top level, or a function it calls),
+# 'game' (game or UI events, per-frame updates, show/hide, anything not known to be input) or 'input' (only player
+# input: control callbacks, input handlers, tooltips, popup buttons, mouse and key handlers).
+_INPUT_PASSED = re.compile(r'Register\w*Callback|RegisterCheckHandler|SetToolTipCallback|ToolTip|AddButton|CommitConfirm|'
+                           r'SetInputHandler|SetVoid\d', re.I)
+_INPUT_ASSIGNED = re.compile(r'MouseEvents\.|KeyEvents\.|\bMouse\.|InterfaceModeMessageHandler|ToolTip|Callback', re.I)
+# Engine events that only follow player input: hovering, the Civilopedia, keys, opening and closing the city screen.
+_INPUT_EVENTS = {'SerialEventMouseOverHex', 'SearchForPediaEntry', 'GoToPediaHomePage', 'KeyUpEvent', 'KeyDownEvent',
+                 'SerialEventEnterCityScreen', 'SerialEventExitCityScreen'}
+_LUA_EVENT_USE = re.compile(r'\bLuaEvents\s*\.\s*(\w+)\s*([(.]?)')
+
+
+def trigger_reach(trigger, lua_events=None):
+    """The reach of one trigger (see reach). lua_events: {LuaEvents name: reach of the places that fire it}."""
+    t = trigger or ''
+    while t.startswith('via '):
+        t = t[4:]
+    if t == 'load':
+        return 'load'
+    if t.startswith('callback ') or t == 'ContextPtr:SetInputHandler':
+        return 'input'
+    if t.startswith('passed to '):
+        return 'input' if _INPUT_PASSED.search(t) else 'game'
+    if t.startswith('assigned to '):
+        return 'input' if _INPUT_ASSIGNED.search(t) else 'game'
+    if t.startswith(('Events.', 'LuaEvents.')) and t.split('.', 1)[1] in _INPUT_EVENTS:
+        return 'input'
+    if t.startswith('LuaEvents.') and lua_events and lua_events.get(t.split('.', 1)[1]) == 'input':
+        return 'input'
+    return 'game'
+
+
+def reach(triggers, lua_events=None):
+    """'load' when any trigger is the file's load, else 'game' when any can come from the game (or none was found),
+    else 'input' (every trigger is player input). A LuaEvents listener is input when every place that fires the
+    event (lua_events, from the scanned files) is input."""
+    found = {trigger_reach(t, lua_events) for t in triggers or [] if t}
+    if not found:
+        return 'game'
+    for r in ('load', 'game'):
+        if r in found:
+            return r
+    return 'input'
+
+
+def lua_event_reach(texts, passes=2):
+    """{LuaEvents name: 'input' or 'game'} over Lua files (texts): 'input' when every place that fires the event
+    (LuaEvents.X(...)) is reached only through player input. Events fired nowhere in texts are left out (unknown)."""
+    files = [_LuaFile(t) if isinstance(t, str) else t for t in texts]
+    sites = []
+    for f in files:
+        for m in _LUA_EVENT_USE.finditer(f.code):
+            if m.group(2) == '(':  # fired here
+                sites.append((m.group(1), f.context(m.start())[1]))
+                continue
+            if m.group(2) == '.':  # .Add, .Remove
+                continue
+            # the event as a value: a handler (InterfaceModeMessageHandler[...][...] = LuaEvents.X) or an argument
+            head = f.code[f.code.rfind('\n', 0, m.start()) + 1:m.start()]
+            a = re.search(r'([\w.\[\]]+)\s*=\s*$', head)
+            callee = None if a else _enclosing_call(f.code, m.start())
+            sites.append((m.group(1), ['assigned to ' + a.group(1)] if a else ['passed to ' + callee] if callee else []))
+    out = {}
+    for _ in range(passes):
+        cur = defaultdict(set)
+        for name, triggers in sites:
+            cur[name].add(reach(triggers, out))
+        out = {name: 'input' if r == {'input'} else 'game' for name, r in cur.items()}
+    return out
 
 
 _RANK = {'curated': 0, 'writes': 1, 'engine': 2, 'cache': 3}
@@ -498,67 +707,161 @@ def default_profiles_dir():
     return None
 
 
-def scan(files, methods, curated, covers):
+def _review(reviews, name, sha, h):
+    """The first curated review (lua-hazards.json reviews) that matches a hit, or None."""
+    for r in reviews:
+        if r['file'].lower() != name.lower():
+            continue
+        if r.get('sha256') and sha not in {s.upper() for s in r['sha256']}:
+            continue
+        if r.get('methods') and h['method'] not in r['methods']:
+            continue
+        if r.get('function') and not re.search(r['function'], h['function'] or ''):
+            continue
+        if r.get('lines') and h['line'] not in r['lines']:
+            continue
+        return r
+    return None
+
+
+# UI events the host fires itself (docs/engine-contract.md 10.6); GameEvents come from the DLL.
+_HOST_EVENTS = {'Events.SequenceGameInitComplete', 'Events.LoadScreenClose'}
+HOST_RUN_WHY = ('add-in the host runs: its load, GameEvents listeners and SequenceGameInitComplete/LoadScreenClose '
+                'listeners run in the host as in the game')
+
+
+def _host_runs(trigger):
+    t = trigger
+    while t.startswith('via '):
+        t = t[4:]
+    return t == 'load' or t.startswith('GameEvents.') or t in _HOST_EVENTS
+
+
+def _dll_fixed(methods, h, dll):
+    """The reason a hit's method does not change state with the run's DLL (curated notWithDll), or None."""
+    entries = [e for e in methods.get(h['method'], []) if e['class'] in h['classes']]
+    if not dll or not entries:
+        return None
+    for e in entries:
+        cond = e.get('notWithDll')
+        if not cond or any(dll.get(k) != v for k, v in cond.items()):
+            return None
+    return '; '.join(sorted({e['notWithDllWhy'] for e in entries}))
+
+
+def scan(files, methods, curated, covers, report=None):
+    """(scanned files, hits). Each hit adds to scan_text's fields: file, path, sha256; covered, coveredBy and reason
+    (profile: a selected profile emulates the call, named in profile; review: a curated review; dll: the run's DLL
+    does not change state in this method; host: an add-in the host runs, reached only from its load, GameEvents or
+    the UI events the host fires); review (a curated review's verdict and why: verdict input sets reach to input,
+    covered covers the hit). report (a host-report.json document) enables the dll and host rules."""
     engine = [(re.compile(e['pattern']), e['why']) for e in curated.get('engine', [])]
-    hits, scanned = [], []
+    reviews = curated.get('reviews', [])
+    dll = (report or {}).get('dll') or {}
+    host_run = {c.get('path') for c in (report or {}).get('addins', {}).get('contexts', []) if c.get('status') == 'run'}
+    hits, scanned, parsed = [], [], []
     for name, path, kind, source in files:
         try:
-            text = Path(path).read_text(encoding='utf-8', errors='replace')
+            data = Path(path).read_bytes()
         except OSError as e:
             scanned.append(dict(file=name, path=path, kind=kind, source=source, error=str(e)))
             continue
-        found = scan_text(text, methods, engine)
-        scanned.append(dict(file=name, path=path, kind=kind, source=source, hits=len(found)))
+        parsed.append((name, path, kind, source, hashlib.sha256(data).hexdigest().upper(),
+                       _LuaFile(data.decode('utf-8', errors='replace'))))
+    lua_events = lua_event_reach([p[5] for p in parsed])
+    for name, path, kind, source, sha, f in parsed:
+        found = scan_text(f, methods, engine, lua_events)
+        scanned.append(dict(file=name, path=path, kind=kind, source=source, sha256=sha, hits=len(found)))
         for h in found:
-            profile = None
+            hit = dict(file=name, path=path, sha256=sha, **h, covered=False, profile=None, coveredBy=None, reason=None)
             for prof, ms in covers.get(name.lower(), []):
                 if ms is None or h['method'] in ms:
-                    profile = prof
+                    hit.update(covered=True, profile=prof, coveredBy='profile', reason=f'profile {prof} emulates it')
                     break
-            hits.append(dict(file=name, path=path, **h, covered=profile is not None, profile=profile))
+            r = _review(reviews, name, sha, h)
+            if r:
+                hit['review'] = dict(verdict=r['verdict'], why=r['why'])
+                if r['verdict'] == 'input':
+                    hit['reach'] = 'input'
+                elif r['verdict'] == 'covered' and not hit['covered']:
+                    hit.update(covered=True, coveredBy='review', reason=r['why'])
+            if not hit['covered']:
+                why = _dll_fixed(methods, h, dll)
+                if why:
+                    hit.update(covered=True, coveredBy='dll', reason=why)
+            if not hit['covered'] and path in host_run and any(_host_runs(t) for t in h['triggers']) \
+                    and all(_host_runs(t) or trigger_reach(t, lua_events) == 'input' for t in h['triggers']):
+                hit.update(covered=True, coveredBy='host', reason=HOST_RUN_WHY)
+            hits.append(hit)
     return scanned, hits
 
 
+def _methods_for(dll_source=None, include_cache=False):
+    methods, source, curated = load_methods(dll_source)
+    if not include_cache:
+        methods = {k: [e for e in v if e['kind'] != 'cache'] for k, v in methods.items()}
+        methods = {k: v for k, v in methods.items() if v}
+    return methods, source, curated
+
+
+def scan_report(report_path, unknown_only=False, profiles_dir=None, include_cache=False, dll_source=None):
+    """The hits over the UI Lua a host run loaded (host-report.json), as `scan --report` finds them: state-writing
+    calls (lazy caches only with include_cache), each with reach, covered, coveredBy and reason from the profiles
+    that run selected (from profiles_dir, else the folder the run used, else the repository's profiles/), the curated
+    reviews, the run's DLL and the add-ins the host ran. One entry point for other tools (c5h verify)."""
+    doc = json.loads(Path(report_path).read_text(encoding='utf-8'))
+    files, selected = files_from_report(report_path, unknown_only)
+    methods, _, curated = _methods_for(dll_source, include_cache)
+    used = (doc.get('profiles') or {}).get('dir')
+    profiles = Path(profiles_dir) if profiles_dir else Path(used) if used and Path(used).is_dir() else default_profiles_dir()
+    covers = load_covers(profiles, selected) if profiles else {}
+    return scan(files, methods, curated, covers, report=doc)[1]
+
+
 def summarize(hits):
-    by_kind = defaultdict(int)
-    uncovered = defaultdict(int)
+    by_kind, uncovered, covered_by, reach_open = defaultdict(int), defaultdict(int), defaultdict(int), defaultdict(int)
     for h in hits:
         by_kind[h['kind']] += 1
-        if not h['covered']:
+        if h['covered']:
+            covered_by[h.get('coveredBy') or 'profile'] += 1
+        else:
             uncovered[h['method']] += 1
+            reach_open[h.get('reach', 'game')] += 1
     return dict(hits=len(hits), byKind=dict(sorted(by_kind.items())), covered=sum(h['covered'] for h in hits),
+                coveredBy=dict(sorted(covered_by.items())), uncoveredByReach=dict(sorted(reach_open.items())),
                 uncoveredByMethod=dict(sorted(uncovered.items(), key=lambda kv: (-kv[1], kv[0]))))
 
 
 def cmd_scan(a):
-    files, selected = [], None
+    files, selected, report = [], None, None
     if a.report:
         files, selected = files_from_report(a.report, a.unknown_only)
+        report = json.loads(Path(a.report).read_text(encoding='utf-8'))
     files += files_from_paths(a.paths)
     if not files:
         print('nothing to scan: give --report or paths')
         return 2
-    methods, source, curated = load_methods(a.dll_source)
-    if not a.all:
-        methods = {k: [e for e in v if e['kind'] != 'cache'] or v for k, v in methods.items()}
-        methods = {k: v for k, v in methods.items() if any(e['kind'] != 'cache' for e in v)}
+    methods, source, curated = _methods_for(a.dll_source, a.all)
     profiles = Path(a.profiles) if a.profiles else default_profiles_dir()
     covers = load_covers(profiles, selected) if profiles else {}
-    scanned, hits = scan(files, methods, curated, covers)
+    scanned, hits = scan(files, methods, curated, covers, report=report)
     doc = dict(format=FORMAT, methods=dict(source=source, cacheIncluded=bool(a.all)),
                profiles=dict(dir=str(profiles) if profiles else None, selectedOnly=selected is not None),
                files=scanned, hits=hits, summary=summarize(hits))
     if a.json:
         Path(a.json).write_text(json.dumps(doc, indent=1) + '\n', encoding='utf-8')
     for h in hits:
-        if h['covered'] and not a.verbose:
+        if (h['covered'] or h['reach'] == 'input') and not a.verbose:
             continue
-        print(f"{h['file']}:{h['line']}: {h['call']} [{h['kind']}] {h['function'] or 'top level'}"
+        print(f"{h['file']}:{h['line']}: {h['call']} [{h['kind']}, {h['reach']}] {h['function'] or 'top level'}"
               + (f" ({', '.join(h['triggers'])})" if h['triggers'] else '')
-              + (f" covered by {h['profile']}" if h['covered'] else ''))
+              + (f" covered ({h['coveredBy']}): {h['reason']}" if h['covered'] else '')
+              + (f" review: {h['review']['why']}" if h.get('review') and not h['covered'] else ''))
     s = doc['summary']
-    print(f"{len(scanned)} files, {s['hits']} hazardous calls ({s['covered']} covered by profiles); "
-          + ', '.join(f'{k} {v}' for k, v in s['byKind'].items()))
+    print(f"{len(scanned)} files, {s['hits']} hazardous calls ({s['covered']} covered: "
+          + ', '.join(f'{k} {v}' for k, v in s['coveredBy'].items()) + '; uncovered by reach: '
+          + ', '.join(f'{k} {v}' for k, v in s['uncoveredByReach'].items()) + '); '
+          + ', '.join(f'{k} {v}' for k, v in s['byKind'].items()) + ('' if a.verbose else ' (-v lists input-only and covered calls)'))
     return 0
 
 

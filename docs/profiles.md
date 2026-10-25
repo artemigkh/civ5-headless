@@ -91,10 +91,15 @@ WhosWinning list mode). Errors are counted as profile failures and listed with t
 1. Run a short game with the mod set. The run report lists the UI files that are neither base game nor known
    (`uiFiles.unknown`: add-ins, overrides of base UI files, DLC UI such as EUI).
 2. Scan them: `python -m civ5headless.hazards scan --report RUN/host-report.json` (add `--dll-source` with the
-   DLL's sources to derive the method list from them, `--all` for calls that only reach a lazy cache). Each call to a
-   state-changing method is listed with its function and what runs it: `load`, an event (`Events.X`,
-   `GameEvents.X`, `LuaEvents.X`), a ContextPtr handler (`SetUpdate`: every frame while shown), a control callback,
-   or `via` the function that calls it.
+   DLL's sources to derive the method list from them, `--all` for calls that only reach a lazy cache, `-v` for the
+   input-only and covered calls too). Each call to a state-changing method is listed with its function and what runs
+   it (its triggers): `load`, an event (`Events.X`, `GameEvents.X`, `LuaEvents.X`), a ContextPtr handler (`SetUpdate`:
+   every frame while shown), a control callback, `via` the function that calls it, `passed to` or `assigned to` the
+   place that keeps it (a handler table entry such as `[Mouse.eLClick]`). From the triggers each call gets a
+   **reach**: `load` (the file's load runs it), `game` (game or UI events, per-frame updates, show/hide, or no
+   trigger found) or `input` (only player input: control callbacks, input and mouse handlers, tooltips, popup
+   buttons, the city screen; a `LuaEvents` listener is input when every place in the scanned files that fires the
+   event is). Tools use `hazards.scan_report(report)`, which returns the same hits.
 3. For each call decide whether it runs in an AI autoplay game without user input:
    - **No** (clicks, tooltips, screens autoplay never opens, input handlers): no profile. The trade screen's deal
      calls and the city screen's citizen changes are examples.
@@ -111,8 +116,23 @@ WhosWinning list mode). Errors are counted as profile failures and listed with t
    RUN/host-report.json --note "how they were checked" --write` adds the run's unknown files with their hashes and
    a hazard summary.
 
-The hazard scan is a static check: it does not see calls made through a function stored under another name, and it
-cannot tell whether a screen is shown. The comparison with the real game is the proof.
+A call is **covered** (`covered`, `coveredBy`, `reason`) when a selected profile emulates it (`profile`), when a
+curated review says so (`review`), when the run's DLL does not change state in that method (`dll`: the curated
+`notWithDll` condition on the run report's `dll` section; `CalculateGoldRate` with this fork's DLL, which reports
+digest additions), or when the file is an add-in the host ran and the call is reached only from its load,
+`GameEvents` or the UI events the host fires (`host`). Curated data (`python/civ5headless/data/lua-hazards.json`):
+
+- `reviews`: calls checked by hand, by file name and optionally methods, a function name pattern, lines or sha256.
+  Verdict `input` (reached only through player input, although the scan cannot tell: a screen the player opens)
+  or `covered` (the host does the same, as for the load screen's `SetPausePlayer`), with the reason.
+- `writesWithArgs`: methods that change state only with more arguments (`CountNumBuildings` with the recount
+  flag); a call with fewer is not listed.
+
+On the M5 reference mod set the scan finds no uncovered call that a game can reach; the rest are input-only.
+
+The hazard scan is a static check: it does not see calls made through a function stored under another name or in
+a file another one includes, and it cannot tell whether a screen is shown. The comparison with the real game is the
+proof.
 
 ## Unknown UI files
 

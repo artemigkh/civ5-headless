@@ -27,6 +27,17 @@ struct HHNewGameInterfaces
 		pDbUtil(NULL), pEngine(NULL), pUI(NULL), pDb(NULL), iMaxMajorCivs(22) {}
 };
 
+// A city-state slot once the game has started, with the spec's pin (minorCivs) if any.
+struct HHMinorCivSlot
+{
+	int slot;
+	int id;                  // its city-state (MinorCivilizations.ID), -1 for none
+	std::string type;
+	int pinnedId;            // the spec's city-state for the slot, -1 when not pinned
+	std::string pinnedType;
+	HHMinorCivSlot() : slot(-1), id(-1), pinnedId(-1) {}
+};
+
 struct HHNewGameResult
 {
 	bool bPregameOk, bStarted, bOutputsOk;
@@ -38,6 +49,8 @@ struct HHNewGameResult
 	std::string seedMode;                                    // how the spec seeds reached the game
 	unsigned int uiExeSeed;                                  // pregame seeds before Game.Init (the engine's own)
 	bool hostChoseCivs;                                      // random civilizations or city-states chosen by the host
+	bool hostChoseMinors;                                    // the DLL left the city-states to the host (pins or draws)
+	std::vector<HHMinorCivSlot> minorCivs;                   // every city-state slot after Init2
 	// Autoplay (M3)
 	bool bAutoplayOk;
 	int iTurnsPlayed, iUpdates;
@@ -48,7 +61,7 @@ struct HHNewGameResult
 	std::vector<std::string> probeErrors;                    // --lua-probe files that failed
 	std::map<std::string, int> netMessages;                  // send* counts by kind
 	HHNewGameResult() : bPregameOk(false), bStarted(false), bOutputsOk(false), iWidth(0), iHeight(0), uiExeSeed(0),
-		hostChoseCivs(false), bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
+		hostChoseCivs(false), hostChoseMinors(false), bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
 };
 
 // Pregame from the resolved spec (Task 1). Every engine call is appended to kResult.steps.
