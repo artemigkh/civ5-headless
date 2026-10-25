@@ -97,7 +97,7 @@ def compare_dump(ref_dump, host_dump):
 
 def run_case(ref, a, quiet=False):
     ref = ref_folder(ref)
-    name = a.name or f'parity-{ref.name}'
+    name = a.name or f'parity-{ref.name}' + (f'-{a.tag}' if a.tag else '')
     first_turn, last_turn = dump_turns(ref)
     turns = a.turns if a.turns is not None else last_turn - first_turn
     run = OUT / name
@@ -162,7 +162,8 @@ def main():
     ap.add_argument('--loc-db')
     ap.add_argument('--exe', help='civ5headless.exe (default: work/latest-headless-build-path.txt)')
     ap.add_argument('--turns', type=int, help='default: the reference\'s last dump turn')
-    ap.add_argument('--name', help='run folder name (default parity-<ref>)')
+    ap.add_argument('--name', help='run folder name (default parity-<ref>[-TAG])')
+    ap.add_argument('--tag', help='suffix for the run folder names and the summary file (variants of a matrix run)')
     ap.add_argument('--host-arg', action='append', help='extra host argument (repeatable; use --host-arg=--x)')
     a = ap.parse_args()
     if a.matrix:
@@ -173,7 +174,7 @@ def main():
             results = list(pool.map(lambda c: run_case(c, a), cases))
         summary = dict(dll=str(Path(a.dll).resolve()), cases={r['case']: dict(status=r['status'], line=summary_line(r))
                                                                 for r in results})
-        (OUT / 'parity-summary.json').write_text(json.dumps(summary, indent=1), encoding='utf-8')
+        (OUT / (f'parity-summary-{a.tag}.json' if a.tag else 'parity-summary.json')).write_text(json.dumps(summary, indent=1), encoding='utf-8')
         n_ok = sum(r['status'] == 'identical' for r in results)
         print(f'{n_ok}/{len(results)} identical')
         return 0 if n_ok == len(results) else 1
