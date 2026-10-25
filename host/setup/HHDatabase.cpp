@@ -29,8 +29,10 @@ namespace
 		}
 	};
 
-	HHDatabaseLogger s_dbLogger;
-	HHLocalizationLogger s_locLogger;
+	// Database::Connection owns its logger (it deletes it when the connection is destroyed), so every
+	// connection gets its own heap logger. A shared static one was deleted at HHDatabases::Close: heap
+	// corruption at shutdown that crashed or hung some builds after "game DLL unloaded".
+	// Localization::SetLogger's ownership is unknown: a heap object as well, never deleted by the host.
 }
 
 HHDatabases::HHDatabases() : m_pGame(NULL), m_pLoc(NULL), m_bLocalization(false) {}
@@ -66,7 +68,7 @@ bool HHDatabases::OpenGameDatabase(const std::string& strSource)
 	if(!CopyIntoRun(strSource, m_strGameCopy))
 		return false;
 	m_pGame = new Database::Connection();
-	m_pGame->SetLogger(&s_dbLogger);
+	m_pGame->SetLogger(new HHDatabaseLogger());
 	// The DLL writes to the game database (post-processing, ANALYZE): read-write on the copy.
 	// Host strings are UTF-8, as SQLite expects for file names.
 	if(!m_pGame->Open(m_strGameCopy.c_str(), Database::OPEN_READWRITE))
@@ -84,7 +86,7 @@ bool HHDatabases::InitLocalization(const std::string& strLocSource, const std::s
 	if(!CopyIntoRun(strLocSource, m_strLocCopy))
 		return false;
 	m_pLoc = new Database::Connection();
-	m_pLoc->SetLogger(&s_dbLogger);
+	m_pLoc->SetLogger(new HHDatabaseLogger());
 	if(!m_pLoc->Open(m_strLocCopy.c_str(), Database::OPEN_READWRITE))
 	{
 		HHLogError("cannot open localization database %s: %s", m_strLocCopy.c_str(), m_pLoc->ErrorMessage());
@@ -92,7 +94,7 @@ bool HHDatabases::InitLocalization(const std::string& strLocSource, const std::s
 		m_pLoc = NULL;
 		return false;
 	}
-	Localization::SetLogger(&s_locLogger);
+	Localization::SetLogger(new HHLocalizationLogger());
 	const std::wstring icu = HHWiden(strIcuData);
 	if(!Localization::Initialize(icu.c_str(), *m_pLoc, "Languages", strLanguage.c_str(), false))
 	{
