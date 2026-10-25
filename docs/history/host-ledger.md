@@ -5,19 +5,6 @@ commit it with the change it describes.
 
 ## Resume here
 
-**PAUSED 2026-10-25 ~02:05 (user restarting the app).** To resume:
-- Host agent (worktree `work/wt/hh-host`, branch `hh-host`): paused. WIP commit `6e587ab57` (M3 start: net
-  loopback queue, CanAdvanceTurn, AI-processed flag, IsPlayerConnected, AutoSave no-op, GameEvents dispatch;
-  not built yet); checkpoint `work/wt/hh-host/RESUME.md` (uncommitted). Status at pause: T000 parity exact
-  (no masking) on hh-m2-continents, -earth, -communitu; cdrift still differs (Lua.logs agree until the land
-  statistics after Continental_Drift's plot-type loop; map RNG calls 283789 real vs 283290 host; the real
-  game is deterministic there). Relaunch it with its work order (below, "Agents in flight") plus `RESUME.md`.
-- Real-game chain `m0-chain3.sh`: stopped after `hh-m2-aa100-a` (that run was allowed to finish). Not run:
-  `hh-m2-aa100-b`. To finish it:
-  `python work/headless/game_probe.py --run hh-m2-aa100-b --dll-sha 39F621D3C716FB68ADC7ABD562A617C11DF2569B0B5ABF95933DCB06111F192D --spec work/headless/specs/continents-standard.json --turns 100 --probe InGame@start=work/headless/probes/dump-state.lua --probe InGame@end=work/headless/probes/dump-state.lua`
-  (the field-map DLL must still be deployed; check the MODS DLL hash first).
-- Done in that chain: `hh-m2-cdrift`, `hh-m2-continents`, `hh-m2-earth`, `hh-m2-communitu`, `hh-m2-aa100-a`.
-
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
@@ -80,9 +67,9 @@ commit it with the change it describes.
   normalisation.
 - **M4 accepted** (`hh-m4-testedits`): the four test edits in a real launch gave the builder's values, the
   engine also stops an SQL file at its first error, and the built database equals the game's (dbdiff).
-- **Runs in flight:** chain with the field-map DLL (session scratchpad `m0-chain3.sh`): `hh-m2-cdrift`,
-  `hh-m2-continents`, `hh-m2-earth`, `hh-m2-communitu` (load-screen dump and one after 2–5 turns, Lua.log kept),
-  `hh-m2-aa100-a`, `-b` (100 turns, digest on).
+- **M2 references** (field-map DLL 39F621D3): `hh-m2-cdrift`, `hh-m2-continents`, `hh-m2-earth`,
+  `hh-m2-communitu` (load-screen dump and one after 2–5 turns, Lua.log kept), `hh-m2-aa100-a` (100 turns).
+- **Runs in flight:** `hh-m2-aa100-b` (second half of the A/A pair).
 - **Next steps:**
   1. Check the `hh-m2-aa100` A/A pair: with the normalisation and the fixes, every digest should match.
   2. Review and merge the host agent's work (cdrift, then M3 milestones).
@@ -123,3 +110,5 @@ commit it with the change it describes.
   UI thread too; S1c recorded. Contract open questions 1–4 resolved.
 - 2026-10-25: M2 parity merged (b687e42bf); three uninitialised reads fixed (3fbccb312); field-map DLL deployed and the
   M2 references re-recorded; host agent moves on to M3.
+- 2026-10-25: paused for an app restart (host agent at WIP 6e587ab57, chain stopped after hh-m2-aa100-a);
+  resumed: hh-m2-aa100-b started, host agent continues M3 from its RESUME.md.
