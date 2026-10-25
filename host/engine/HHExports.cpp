@@ -116,6 +116,44 @@ namespace
 	struct HHSmallObjectAllocator { char ach[256]; } s_smallObjectAllocator;
 	struct HHSmallObjectAllocatorInitParams { char ach[64]; } s_smallObjectAllocatorInitParams;
 	volatile LONG s_lSBADisabled = 1;
+
+	// --heap-perturb SEED (address-perturbation self-test): every DLL allocation passes FSBAAllocate
+	// before FireWorks falls back to malloc, so spacer blocks of random sizes are allocated and freed
+	// there, in the same MSVCR90 heap. The DLL's blocks then land at different addresses and in a
+	// different relative order; game results must not change. Own LCG, never the game's RNGs.
+	const int kPerturbSlots = 4096;
+	void* s_apPerturb[kPerturbSlots];
+	unsigned int s_uPerturbState = 0;
+	bool s_bPerturb = false;
+	CRITICAL_SECTION s_csPerturb;
+	unsigned int PerturbNext()
+	{
+		s_uPerturbState = s_uPerturbState * 1103515245u + 12345u;
+		return s_uPerturbState >> 8;
+	}
+	size_t PerturbSize()
+	{
+		unsigned int r = PerturbNext();
+		unsigned int k = r & 255;
+		r >>= 8;
+		if(k < 200) return 4 + r % 252;
+		if(k < 250) return 256 + r % 4096;
+		return 4096 + r % 65536;
+	}
+	void PerturbSlot()
+	{
+		unsigned int i = PerturbNext() % kPerturbSlots;
+		if(s_apPerturb[i])
+			free(s_apPerturb[i]);
+		s_apPerturb[i] = (PerturbNext() & 1) ? malloc(PerturbSize()) : NULL;
+	}
+	void PerturbStep()
+	{
+		EnterCriticalSection(&s_csPerturb);
+		if((PerturbNext() & 3) == 0)
+			PerturbSlot();
+		LeaveCriticalSection(&s_csPerturb);
+	}
 	volatile LONG s_lSBAPreventCreation = 0;
 }
 
@@ -126,6 +164,19 @@ void HHExportsInit()
 	s_tempHeap.uiCapacity = s_tempHeap.pMemHead ? kTempHeapBytes : 0;
 	memset(&s_stringAInit, 0, sizeof(s_stringAInit));
 	memset(&s_stringWInit, 0, sizeof(s_stringWInit));
+	const unsigned int uSeed = HHGetOptions().heapPerturb;
+	if(uSeed && !s_bPerturb)
+	{
+		InitializeCriticalSection(&s_csPerturb);
+		s_uPerturbState = uSeed;
+		// Start with a heap full of holes of random sizes.
+		for(int i = 0; i < kPerturbSlots; ++i)
+			s_apPerturb[i] = malloc(PerturbSize());
+		for(int i = 0; i < kPerturbSlots * 2; ++i)
+			PerturbSlot();
+		s_bPerturb = true;
+		HHLog("heap-perturb %u: spacer allocations on", uSeed);
+	}
 }
 
 void HHExportsCheck()
@@ -194,6 +245,8 @@ extern "C"
 	{
 		UNUSED_VARIABLE(nSize);
 		ExportHit(EX_FSBAAllocate);
+		if(s_bPerturb)
+			PerturbStep();
 		return NULL;
 	}
 	bool __cdecl FSBADeallocate(void* pBlock)

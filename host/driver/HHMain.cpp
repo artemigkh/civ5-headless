@@ -65,7 +65,7 @@ namespace
 		"  --mod <guid[:ver]>   activated mod for IsModActivated (repeatable)\n"
 		"  --dlc <guid>         valid DLC for IsDLCValid (repeatable; default: every DLC valid)\n"
 		"  --game-logging       ICvGameContext1::SetLogging(true) (the DLL's own logs)\n"
-		"  --no-game-logging    newgame: no DLL logs (default: the reference profile's logging, which changes AI results)\n"
+		"  --no-game-logging    newgame: no DLL logs (default: the reference profile's logging; older DLLs' AI results depend on it)\n"
 		"  --turns <n>          newgame: autoplay n turns after T000 (ARM + CONTINUE as game_probe), then dump-t<n>\n"
 		"  --idle-updates <k>   newgame: Updates after autoplay ends, in the human turn (default 10)\n"
 		"  --dump-turns <a:b>   newgame: the DLL dumps the state at doTurnBegin of turns a..b (Logs\\HeadlessDumps)\n"
@@ -80,6 +80,10 @@ namespace
 		"                       and turn-NNNN-final.json in vpbench's format ({utc, seconds, data})\n"
 		"  --checkpoint-every <n>    newgame: checkpoint turns that are multiples of n (default 1)\n"
 		"  --crt-sse2 <0|1>     _set_SSE2_enable in every loaded MSVCR90 instance (experiment)\n"
+		"  --heap-perturb <seed> address-perturbation self-test (results must not change): random heap spacer\n"
+		"                       allocations interleaved with the DLL's allocations, and the game DLL rebased\n"
+		"  --game-log-flags <m> with game logging: 1 AILog, 2 AIPerfLog, 4 BuilderAILog, 8 PlayerAndCityAILogSplit\n"
+		"                       (default 15, as the reference profile; diagnostics of log-dependent results)\n"
 		"  --rand-log <flags>   config.ini RandLog: 5 = every synced RNG call incl. map generation (Logs\\RandCalls.csv)\n"
 		"  --strict             abort on the first unimplemented engine call\n"
 		"  --verbose            log the first call of every implemented engine method too\n"
@@ -212,6 +216,8 @@ namespace
 			else if(a == "--checkpoint-lua") { o.checkpointLua = v; ++i; }
 			else if(a == "--checkpoint-every") { o.checkpointEvery = atoi(v.c_str()); ++i; }
 			else if(a == "--rand-log") { o.randLog = atoi(v.c_str()); ++i; }
+			else if(a == "--game-log-flags") { o.gameLogFlags = atoi(v.c_str()); ++i; }
+			else if(a == "--heap-perturb") { o.heapPerturb = (unsigned int)strtoul(v.c_str(), NULL, 10); ++i; }
 			else if(a == "--idle-updates") { o.idleUpdates = atoi(v.c_str()); ++i; }
 			else if(a == "--crt-sse2") { o.crtSse2 = atoi(v.c_str()); ++i; }
 			else if(a == "--fpu-precision") { o.fpuPrecision = atoi(v.c_str()); ++i; }
@@ -244,8 +250,8 @@ namespace
 			}
 			o.specPath = HHFullPath(o.specPath);
 			// The reference profile's config.ini has LoggingEnabled, AILog, AIPerfLog, BuilderAILog and
-			// PlayerAndCityAILogSplit on, and the DLL's AI logging changes results (CvPlayer::GetBestSettlePlot
-			// computes fresh found values when logging), so newgame logs like the reference by default.
+			// PlayerAndCityAILogSplit on. DLLs before the logging fixes (GetBestSettlePlot, PlotPillageMoves) give
+			// different AI results without AI logging, so newgame logs like the reference by default.
 			if(!o.noGameLogging)
 				o.gameLogging = true;
 			if(o.gameDir.empty()) o.gameDir = "E:\\SteamLibrary\\steamapps\\common\\Sid Meier's Civilization V";
@@ -564,7 +570,21 @@ namespace
 		HHEngineUtility* pEngine = new HHEngineUtility(pScripts);
 		HHUserInterface* pUI = new HHUserInterface();
 
+		// --heap-perturb: map the game DLL somewhere else than usual (reserve its normal base and a
+		// seed-sized block first), so global and static addresses differ too.
+		if(o.heapPerturb)
+		{
+			HMODULE hProbe = LoadLibraryExW(HHWiden(o.dllPath).c_str(), NULL, DONT_RESOLVE_DLL_REFERENCES);
+			void* pBase = hProbe;
+			if(hProbe)
+				FreeLibrary(hProbe);
+			void* pBlock = pBase ? VirtualAlloc(pBase, 64 * 1024, MEM_RESERVE, PAGE_NOACCESS) : NULL;
+			void* pExtra = VirtualAlloc(NULL, (SIZE_T)(1 + o.heapPerturb % 61) * 1024 * 1024, MEM_RESERVE, PAGE_NOACCESS);
+			HHLog("heap-perturb %u: game DLL normal base %p (reserved: %s), extra reservation %p", o.heapPerturb, pBase, pBlock ? "yes" : "no", pExtra);
+		}
 		HMODULE hGame = LoadLibraryExW(HHWiden(o.dllPath).c_str(), NULL, LOAD_WITH_ALTERED_SEARCH_PATH);
+		if(o.heapPerturb)
+			HHLog("heap-perturb: game DLL loaded at %p", (void*)hGame);
 		if(!hGame)
 		{
 			s.error = HHFormat("cannot load the game DLL (error %lu)", GetLastError());
@@ -610,10 +630,10 @@ namespace
 		pContext->SetLogging(o.gameLogging);
 		if(o.gameLogging)
 		{
-			pContext->SetAILogging(true);
-			pContext->SetAIPerfLogging(true);
-			pContext->SetBuilderAILogging(true);
-			pContext->SetPlayerAndCityAILogSplit(true);
+			pContext->SetAILogging((o.gameLogFlags & 1) != 0);
+			pContext->SetAIPerfLogging((o.gameLogFlags & 2) != 0);
+			pContext->SetBuilderAILogging((o.gameLogFlags & 4) != 0);
+			pContext->SetPlayerAndCityAILogSplit((o.gameLogFlags & 8) != 0);
 		}
 		// config.ini RandLog (bit 0 on, 1 callstacks, 2 pregame calls, 3 async): Logs\RandCalls.csv
 		if(o.randLog > 0)
