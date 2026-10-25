@@ -8,76 +8,67 @@ commit it with the change it describes.
 - **Branch:** `headless-host` (base: master `363d26698`), checked out in the main checkout
   `E:\Projects\Civ5StackMod` since 2026-10-24 (the user allowed switching it; `ai-improvements` is
   committed and on hold).
-- **Phase:** M0 in progress (real-game recordings); M1 done (fc197fd34); M2 in progress (agent); M4 in
-  progress (agent).
+- **Phase:** M0 nearly done (A/A and VP-map references being re-recorded); M1 done; M2 in progress (agent,
+  load-screen T000 parity); M4 done (game check of test edits open).
 - **AI program:** paused (`ai-improvements`, see `docs/ai-improvement-ledger.md` on that branch). The real
   game is free for this work. Before handing back, restore the AI program's deployed DLL
   (`F7CB6626…3B111A24`, build `work/msvc-output/Release/20261024-085658`) and its benchmark mods.
   Staging packs the mod files of the checkout it runs in, so restore from an `ai-improvements` checkout
   (a temporary worktree with the toolchain junction), not from this branch.
-- **Deployed now:** the headless-host trace build `work/msvc-output/Release-trace/20261025-002322`
-  (DLL `660FFF0C…F10A7B3B`, includes the digest additions), with this branch's mod package.
-- **Agents in flight** (Opus, high effort; each in its own worktree and branch; each writes `RESUME.md` in
-  its worktree when paused):
-  - host: M2 (new-game generation), worktree `work/wt/hh-host`, branch `hh-host` (at 92caccb78 when last
-    checked; it has the merged recorder and digest work).
-  - contract: writes `docs/headless-engine-contract.md` from the M0 traces, worktree `work/wt/hh-contract`,
-    branch `hh-contract` from 0ed40de35. Reads the run data in the main checkout; no game, no tuner.
-  On resume after a pause: read each worktree's `RESUME.md` and relaunch each agent with its original
-  work order (the briefs are summarised in plan section 4) plus the checkpoint.
-- **Merged:** recorder (D1, 021ba53f4), digest (D2–D5, 92caccb78) and database builder (M4, 0c240f6bb); their
-  worktrees are removed. M4: `work/headless/build_db.py` (+ `civ5headless.exe builddb`) builds a database
-  identical to both oracles in about 3 s; usage and findings in `docs/headless-dbbuild.md`. Still open:
-  the test edits against game launches (`work/headless/dbbuild_test_edits.py`, steps in that doc).
-  Reference: `docs/headless-dll-additions.md`.
-- **Fixed after the merges** (393b7ceb7): a crash at DLL unload (`~CvGlobals` reset the stacking rules
-  cache after its static destruction), which also lost the trace tail; the trace now writes its end line
-  from `DllMain`; the host's log files report full paths (the DLL finds the Logs folder through them).
-  Host boot with the trace DLL: complete trace with end line, both with and without `FreeLibrary`.
-- **M0 steps 5–6 done** (run `hh-dbcapture-20261025b`): the cached `Civ5DebugDatabase.db` equals the
-  in-memory database table by table, both at the mod-free main menu (367 tables) and after mod
-  activation (839 tables). Snapshots in `work/headless/db/` (local; see the README there):
-  `dlc-snapshot-CBF411E4.db`, `mods-reference-08D19878.db` (AI program's package) and
-  `mods-reference-08D19878-input/` (the mod files, `Civ5ModsDatabase.db` and database logs that produced
-  it; the M4 oracle pair).
-- **M0 recordings done** (trace build, runs in `work/test-runs/`):
-  - S1 `hh-m0-s1-continents`: Continents spec, seeds 1001/2002 pinned from the file, autoplay to T5;
-    complete trace (5.7 M boundary calls, 41 k lines kept), per-turn digests. The M2 T0 reference.
-  - S3 `hh-m0-s3s4-earth`: `Earth_Small.Civ5Map`, 2 turns, state dumps at T0 and T2
-    (`hhdigest.py verify` passes on both: the Python hash matches the DLL's).
-  - S4 `hh-m0-s4-hooks`: GameEvents semantics. Every listener always runs (no short-circuit); nil counts as
-    false; a raising listener counts as false or 0; `CallHook`'s value stays false; the accumulator sums
-    numbers.
-  - Facts: x87 control word 0x027F (53-bit, nearest), MXCSR 0x1F80, `timeBeginPeriod(1)` = 0. The engine's
-    pregame seeds are map = sync = one clock value. Autosave = OUT `AutoSave(true,false)` followed by
-    synchronous IN `Write` calls; no `WriteReplay`. `Game`, `Map`, `Players` are nil in the front end
-    (`PreGame` exists), so the seeds file is the only pinning route.
-- **Runs in flight:** 100-turn A/A on the Continents spec: `hh-m0-aa100-a` and `-b` (digest on), `-c`
-  (digest off), each ending with a state dump (`game_probe.py --turns 100`).
-- **Also done:**
-  - `work/headless/gamespec.py` (a93d5faa8): spec → resolved spec (IDs, seeds) and front-end pregame
-    Lua; examples in `work/headless/specs/`.
-  - `vpbench newgame --spec` (7fbcbb988); seeds pinned through `<cache>\HeadlessSeeds.txt`, per-turn
-    digest (`--no-digest` to disable), pregame snapshot, headless logs copied to the run, T0 save only with
-    `--save-name`.
-  - `work/headless/dbdiff.py` (87e91a8b3).
-  - The game's `Civ5ModsDatabase.db` lists every mod's actions (`ModActions`), files and VFS imports
-    (`ModFiles.Import`) and entry points; useful for M4 and the VFS.
+- **Deployed now:** headless-host trace build `work/msvc-output/Release-trace/20261025-005905` (DLL
+  `008A4227…17F91B5D`: digest additions plus the early seed pin), with this branch's mod package. Matching
+  normal build: `work/msvc-output/Release/20261025-005758`.
+- **Agents in flight** (Opus, high effort; own worktree and branch; `RESUME.md` in the worktree on pause):
+  - host: M2, worktree `work/wt/hh-host`, branch `hh-host`. Work order: merge headless-host; T000
+    load-screen state byte-identical to the real game's `dump-t000` for continents (s1b), earth (s3b),
+    communitu and cdrift; normalise or report the uninitialised bytes the DLL serialises (digest not even
+    host-A/A stable today); the unidentified -1 field in major players; contract gaps that affect T000;
+    `work/headless/parity_t000.py`.
+  On resume after a pause: read the worktree's `RESUME.md` and relaunch the agent with its work order (above)
+  plus the checkpoint.
+- **Merged into headless-host:**
+  - D1 recorder (021ba53f4), D2–D5 digest (92caccb78), M4 database builder (0c240f6bb).
+  - M2 first part (hh-host 67b9a9887, merge 2a8b1b3b1-ish "Merge hh-host"): `civ5headless.exe newgame --spec`,
+    pregame from a resolved spec, VFS and include, map-script Lua, start sequence. All test maps generate
+    under `--strict`; the Earth T000 map section is byte-identical to the real game's; HHSEEDS and the
+    whole HHPREGAME snapshot match S1 and S3 line for line.
+  - Engine contract (`docs/headless-engine-contract.md`, merge "Merge hh-contract"): phases, threads and
+    locks, net loopback, state-changing UI calls, gaps G1–G16, open questions.
+- **Fixes on headless-host:**
+  - 393b7ceb7: DLL crash at unload (static destruction order); trace end line from `DllMain`; host log
+    paths.
+  - 255e26ba2: the seeds file is applied at `setGameStarted(true)` too, so the random civs and city-states
+    follow the spec seed (before, the engine's clock seed chose them: S1, S3 and the first AA100 pair
+    are not reproducible for civs).
+- **M0 data** (`work/test-runs/`):
+  - First recordings (trace DLL 660FFF0C, civs from the clock seed): S1 `hh-m0-s1-continents`, S3
+    `hh-m0-s3s4-earth`, S4 `hh-m0-s4-hooks`, `hh-m0-aa100-{a,b,c}` (invalid as A/A: different civs).
+  - Facts: x87 0x027F, MXCSR 0x1F80, `timeBeginPeriod(1)` = 0; autosave = OUT `AutoSave` then synchronous IN
+    `Write` calls on turn 0 and every 10th turn, no `WriteReplay`; `Game`, `Map`, `Players` nil in the front
+    end; GameEvents: every listener runs in order, a raising listener is skipped (no vote), `CallHook`'s value
+    is forced false; one `Update` per alive player per turn.
+  - Database: `work/headless/db/` (README there): DLC snapshot; oracle pairs for the AI package
+    (`mods-reference-08D19878`) and this branch's package (`mods-headless-host-0ed40de35`).
+- **Runs in flight:** chain with trace DLL 008A4227 (script in the session scratchpad, `m0-chain2.sh`):
+  `hh-m0-s1b-continents` (vpbench order, to T5), `hh-m0-s3b-earth`, `hh-m0-communitu`, `hh-m0-cdrift`
+  (load-screen dump and after 2–3 turns), `hh-m0-aa100b-{a,b,c}` (100-turn A/A, c without digest). Each
+  `<run>.out` ends with a `quit` line when complete.
 - **Next steps:**
-  1. Finish M0: compare the A/A pair (`python tools/headless/hhdigest.py compare A B` on their
-     `HeadlessDigest.log`) and the digest-off run's T100 dump against them.
-  2. Review `docs/headless-engine-contract.md` (agent) and merge.
-  3. After the A/A runs: check the four M4 test edits against game launches (the `sqlerror` edit tells
-     whether the engine stops an SQL file at its first error, as the builder does).
-  4. Review and merge `hh-host` (M2) when it reports.
-  5. Restore the AI build and mods before handing back.
+  1. When the chain ends: `python tools/headless/hhdigest.py compare` on the aa100b-a/b
+     `HeadlessDigest.log`; compare the aa100b-c T100 dump with a and b (digest on vs off); check the
+     `HHPREGAME slot` lines match across runs (early pin).
+  2. Check the four M4 test edits against game launches (`work/headless/dbbuild_test_edits.py`, steps in
+     `docs/headless-dbbuild.md`).
+  3. Review and merge the host agent's M2 parity work; then M3 (turn loop: threads, locks, net loopback,
+     autoplay order per the contract).
+  4. Restore the AI build and mods before handing back.
 - **Uncommitted files:** none besides this ledger.
 
 ## Milestones
 
 | ID | Milestone | Status | Commit | Notes |
 |---|---|---|---|---|
-| M0 | Record the engine contract | todo | | trace recordings, reference A/A, DB check, DLC snapshot |
+| M0 | Record the engine contract | nearly done | f96b1be30 | trace recordings, reference A/A, DB check, DLC snapshot |
 | M1 | Host boots the DLL | done | fc197fd34 | go: boot passes; small-block allocator disabled (all DLL memory from the MSVCR90 heap) |
 | M2 | New-game generation | in progress | | T000 digest parity, incl. Communitu and Continental Drift |
 | M3 | Turn loop and autoplay | todo | | per-turn digest parity |
@@ -97,3 +88,6 @@ commit it with the change it describes.
   pins spec seeds. M4 agent started. Trace build deployed for the M0 recordings.
 - 2026-10-25: M4 merged (0c240f6bb): builder output identical to both game oracles; mod order, error semantics and
   engine-only steps (DLC blocking, map script defaults, DLL post-processing) in `docs/headless-dbbuild.md`.
+- 2026-10-25: M2 first part and the engine contract merged. Found that the clock seed chose the random civs;
+  fixed with the early seed pin (255e26ba2), redeployed the trace build and started re-recording the
+  references and the A/A pair.
