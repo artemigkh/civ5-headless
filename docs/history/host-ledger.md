@@ -113,26 +113,36 @@ commit it with the change it describes.
   great-person reward popup, closed slots of dead city-states, turn-timer pin in gamespec and host.
 - **Deployed now:** fixed field-map DLL `work/msvc-output/Release-fieldmap/20261025-053635` (`89F146A7…BA619A6408B`,
   DLL source = headless-host 1d70b7db0: logging-neutral AI, uninitialised-member fixes).
-- **Smoke with the fixed DLL** (`hh-m5f`, 11 cases, references recorded with 89F146A7): the first six
-  (continents-a and -b at 100 turns, archipelago, communitu, era-industrial, marathon) are identical in the host
-  (host 19–91 s against 235–524 s real).
-- **Runs in flight:** the rest of the smoke run (`work/headless/record_matrix.py work/headless/matrix/m5-smoke-fixed.json`,
-  status `work/test-runs/hh-m5f-matrix.json`), then the full games to victory (`m5-fullgames.json`, prefix `hh-m5g`:
-  Continents Standard Emperor seeds 1001/2002, 3101/4202, 5201/6302, maxTurns 400; Pangaea Small 7301/8402, maxTurns
-  350; game_probe stops on a winner or game over, 900 s stall watchdog, 3 h cap, `victory.json`), queued in the same
-  shell. If it stops: `python work/headless/record_matrix.py work/headless/matrix/m5-fullgames.json` resumes from the
-  status file. Then matrix batch 2 (`m5-batch2.json`, prefix `hh-m5b`, 42 cases, 4,327 turns: 0-100 ranges for sizes,
-  speeds, difficulties, players and options; eras 0-50; Communitu and Continental Drift 0-100 with default and random
-  options; map options of three scripts at min, max and random; time victory at 150; cultural and diplomatic disabled
-  on Small; Communitu and Continental Drift Standard to victory), chained after the full games. All M5 references
-  use 89F146A7; the late-game logging fix gets its own smoke re-record afterwards.
-- **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: build and commit the
-  late-game logging fix (the AI log line called `GetDanger`, which rebuilds dirty danger plots: a host full game
-  with logging on vs off differs from T154); compare the remaining smoke cases; compare each full game on 89F146A7
-  (`parity_run.py <ref> --turns N`: digests, then winner, victory type and final turn); host end-of-game handling.
-  The real game keeps 89F146A7 until the four full games are recorded.
+- **Smoke with the fixed DLL** (`hh-m5f`, 11 cases, references recorded with 89F146A7): all 11 identical in the host,
+  victory.json included (host 3–91 s against 67–524 s real).
+- **First full game diverges:** `hh-m5g-continents-s1` (Standard, Emperor, 1001/2002) ended at T277 in the real game
+  (team 1, victory type 3; 2,228 s) and at T285 in the host (653 s). Digests match to T124; p01 differs T125–127,
+  p03 at T131, then the game diverges. continents-s2 was stopped at T163 (partial digests kept in its run folder,
+  status "failed"); s3 and Pangaea Small dropped.
+- **Real-game time rules (user, 2026-10-25):** keep real-game runs short. Hunt divergences on Tiny maps (default 4
+  majors, 8 city-states); one larger-map game only once Tiny is clean (the Standard reference `hh-m5g-continents-s1`
+  serves while the DLL stays 89F146A7). Run the host first and let the real game stop just after the first
+  difference:
+  - `work/headless/host_first.py MATRIX --dll ... --mods-db ... --loc-db ... --exe ...` plays each case in the host
+    into `work/headless-runs/first-<prefix>-<name>` (databases: `work/headless/db/game-cache-20261025/`);
+  - `record_matrix.py MATRIX --require-host --host-digest "work/headless-runs/first-{run}/Logs/HeadlessDigest.log"
+    --rolling-dumps 5`: game_probe compares the live digest log, writes `divergence.json`/`live-compare.json`, quits 2
+    turns after the first difference and keeps the per-turn DLL dumps from 5 turns before it (`<run>/HeadlessDumps`);
+  - short re-records: game_probe `--stop-turn S` (same `--turns` arm count) and `--dump-from/--dump-to`.
+- **Runs in flight:** `hh-m5g-continents-s1-dump` (s1 re-recorded to T128 with dumps at T124–127; also a real-game A/A
+  check of T0–127), then `m5-long.json` (prefix `hh-m5l`: 9 Tiny games to victory, host-first, rolling dumps),
+  chained in one shell once `host_first.py` has written `work/headless-runs/first-hh-m5l.json`. Resume:
+  `python work/headless/record_matrix.py work/headless/matrix/m5-long.json --require-host --host-digest
+  "work/headless-runs/first-{run}/Logs/HeadlessDigest.log" --rolling-dumps 5`. Later: `m5-batch2.json` (prefix
+  `hh-m5b`, 16 short Tiny cases: map options min/max/random, VP scripts 0–100 with default and random options, Quick,
+  Deity, teams).
+- **Host agent** (`work/wt/hh-host`, branch `hh-host`, `RESUME.md` there), work order: the s1 T124–127 dumps against the
+  host's (and the A/A check); the late-game logging fix (the AI settle log called `GetDanger`, which rebuilds dirty
+  danger plots; host logging on/off differed at T154, T209, T252–254, T292–294; the uncommitted fix clears T154 and
+  T209); each m5-long divergence from its rolling dumps; host-only checks wherever they answer the question.
 - **Next steps:**
-  1. Review and merge the host agent's logging fix and end-of-game work.
+  1. Review and merge the host agent's fixes; re-run the Tiny long games host-first until none diverges; then the
+     one larger-map check.
   2. Re-measure parallel scaling on an idle machine (`work/headless/m6/queues/scale-w<W>.json`, see
      `docs/headless-host.md`).
   3. Restore the AI build and mods before handing back.
