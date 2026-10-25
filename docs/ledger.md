@@ -6,8 +6,13 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 ## Resume here
 
 - Phase A done (2026-10-25): history split, SDK vendored, own build, replay check passed.
-- Phases B, C, D: running as three workstreams (plan section 9). Worktrees: `E:\Projects\civ5-headless-wt\<name>`.
-  Each writes `RESUME.md` in its worktree at every milestone and on a pause.
+- Phases B, C, D: running as three workstreams (plan section 9), each in a worktree `../civ5-headless-wt/<name>`
+  next to this checkout, on branch `c5h-<name>`. Each writes `RESUME.md` in its worktree at every milestone and on a
+  pause; merges into main leave `RESUME.md` out.
+  - platform: milestone 1 (package layout, configuration with discovery, `c5h`, tests) merged 2026-10-25;
+    milestone 2 (real-game session, doctor, get_toolchain, user guide) under way.
+  - anydll: under way.
+  - verify: started 2026-10-25 from main after the platform merge.
 - The real game is not used until calibration (phase E) and the coverage comparisons (phase C.6); workstreams run
   host-only games only.
 
@@ -31,3 +36,14 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   remaining-autoplay count (the reference ran 302 turns). The previous exe, built from the same host source, run for
   the same 120 turns gives identical digest lines; the logs differ only in the OS thread id of the `HHENV` lines.
 - Known: `host/setup/HHNewGame.cpp(823)` warning C4129 (an escape in embedded Lua; harmless, predates the split).
+
+### 2026-10-25: platform milestone 1 merged
+
+- Python modules moved with `git mv` into the plan's layout (`spec`, `dbbuild`, `run`, `queue`, `compare/`,
+  `realgame/`), package-relative imports, `config.py` (civ5headless.toml plus discovery of Steam library, My Games,
+  mods, cache, active mods, host exe), `c5h` (`python -m civ5headless`) with doctor, run, queue, compare and the
+  former scripts as subcommands. 50 unit tests (2 integration tests need `C5H_INTEGRATION=1`).
+- Equivalence: a Tiny 30-turn game through `c5h run` and through the old `hhbench.py` gives identical digests,
+  checkpoints, replay data and final dumps.
+- Behaviour changes: queue paths resolve against the queue file; a difference only in `savedb` no longer counts in
+  `compare` and `skew` (as in `parity`). Test packages must not use standard-library names (`tests/platform_tests`).
