@@ -22,9 +22,13 @@ then `... compare runs/baseline runs/NAME` (config and baselines are under the i
 
 - Milestone 1 (committed): items 1, 2 (profiles moved), 4 (host-report.json), 6 (MAX_MAJOR_CIVS, game folder).
   Invariant: 8 of 8 identical (runs/step1).
-- Next: item 5 (fingerprint probe and fingerprint.py), then 3 (hazards.py), docs/profiles.md, engine-contract
-  section on the run report, item 7 (stock DLL), merge main (platform moved python modules; tests go under
-  tests/anydll_tests with the platform_tests __init__ convention).
+- main merged (platform milestone 1 module moves).
+- Milestone 2 (committed): item 5. probes/fingerprint.lua, python/civ5headless/fingerprint.py,
+  tests/anydll_tests/test_fingerprint.py (unit), tests/anydll_tests/probe_check.py (dense / sparse / off runs).
+  Probe on, all 8 cases: digests identical to the baseline (runs/probe-on). probe_check speed-quick and
+  players-teams2 with --every 7: passed (runs/probe-check).
+- Next: item 3 (hazards.py + data/lua-hazards.json), docs/profiles.md, engine-contract section on the run report,
+  known-ui-files.json filled from the reference set, item 7 (stock DLL, mod-free database, probe_check with it).
 
 ## Build and run
 
