@@ -142,6 +142,11 @@ commit it with the change it describes.
   with a trade connections version. Host `--frame-skew K` (8c4406842) adds an Update before every K-th one: a
   host-only detector of frame-dependent caches. Rule: no more real-game recording until skew vs no-skew is identical
   across the Tiny long games, the 100-turn Tiny cases and continents-s1/-s2 Standard (K=2 and K=7).
+- **Second frame-count dependence (3241633ea, in hh-host):** `CvTreasury::GetExpensePerTurnUnitMaintenance` returned the
+  value the last `CalculateTotalCosts` stored, which the UI's gold refresh also calls; AI unit production, vassal costs,
+  CvEconomicAI and replay data read it (host skew 7 on s1: T85 p06, 17 vs 18). Now computed on each call. AI logging
+  on/off is identical over a 295-turn game since 6d42ad0c5 (the T264 difference was the artifact Random()).
+  The agent's `work/headless/skew_sweep.py` runs each case at K=0, 2, 7.
 - **Map options identical** (`hh-m5b-mapopt-*`, DLL 6C73DC9A, Tiny): Continents, Communitu_79a and Continental_Drift
   with every option at min, max and random: 9/9 identical (digests T0–T2 and both dumps; `parity_run.py --matrix
   work/test-runs/hh-m5b-matrix.json --tag b`). About 75 s of real time per case.
