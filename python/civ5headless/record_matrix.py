@@ -16,7 +16,7 @@ To save real-game time, run the host on each case first (same spec, DLL and turn
 path template such as "work/headless-runs/first-{run}/Logs/HeadlessDigest.log" ({run} = <prefix>-<name>, {name} =
 the case name): game_probe then compares the live digests with that log and quits K turns after the first
 difference (divergence.json, live-compare.json in the run). Cases without a host log run in full, or are skipped
-with --require-host.
+with --require-host. --rolling-dumps K also keeps the DLL's per-turn dumps around the divergence (<run>/HeadlessDumps).
 """
 from pathlib import Path
 import argparse, json, re, subprocess, sys, time
@@ -41,6 +41,7 @@ def main():
     ap.add_argument('--host-digest', help='Path template of a host run\'s HeadlessDigest.log per case ({run}, {name})')
     ap.add_argument('--require-host', action='store_true', help='Skip cases without a host digest')
     ap.add_argument('--diverge-turns', type=int, default=2)
+    ap.add_argument('--rolling-dumps', type=int, default=0, help='Dump every turn, keep the last K (around a divergence)')
     args = ap.parse_args()
     matrix = json.loads(Path(args.matrix).read_text(encoding='utf-8'))
     prefix = matrix.get('prefix', 'hh-m5')
@@ -80,6 +81,7 @@ def main():
                    '--spec', str(spec_path), '--turns', str(case['turns']),
                    '--probe', f'InGame@start={PROBES / "dump-state.lua"}', '--probe', f'InGame@end={PROBES / "dump-state.lua"}']
         if host_digest: command += ['--host-digest', str(host_digest), '--diverge-turns', str(args.diverge_turns)]
+        if args.rolling_dumps: command += ['--rolling-dumps', str(args.rolling_dumps)]
         entry.update(state='running', run=run, dllSha=dll_sha, utc=utc(), hostDigest=str(host_digest) if host_digest else None)
         save()
         print(f'{utc()} {name}: {case["turns"]} turns', flush=True)

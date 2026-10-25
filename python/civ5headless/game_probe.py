@@ -23,9 +23,11 @@ probes are skipped then.
 --host-digest HOST_LOG compares the game's live HeadlessDigest.log with a host run of the same case (same spec,
 DLL and --turns), point by point as the turns pass. At the first difference it writes <run>/divergence.json and
 quits --diverge-turns turns later (default 2), so a long reference costs real-game time only up to its divergence.
+--rolling-dumps K dumps every turn and keeps the last K (after a divergence: from K turns before it), so the run
+that finds a divergence also has the field-level dumps around it (about 85 MB per Tiny dump).
 """
 from pathlib import Path
-import argparse, json, shutil, subprocess, sys, time
+import argparse, json, re, shutil, subprocess, sys, time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'work/vpbench'))
@@ -43,6 +45,14 @@ TURN = ("return {turn=Game.GetGameTurn(),autoplay=Game.GetAIAutoPlay(),pause=Gam
         "winner=Game.GetWinner(),state=Game.GetGameState()}")
 VICTORY = ("local ok,v=pcall(function() return Game.GetVictory() end);"
            "return {turn=Game.GetGameTurn(),winner=Game.GetWinner(),victory=ok and v or -2,state=Game.GetGameState()}")
+
+
+def prune_dumps(dumps, keep_from):
+    """Delete the DLL's doTurnBegin dumps of turns before keep_from (never the one being written: it is newer)."""
+    if not dumps.exists(): return
+    for d in dumps.iterdir():
+        m = re.fullmatch(r'doTurnBegin-t(\d+)', d.name)
+        if m and int(m.group(1)) < keep_from: shutil.rmtree(d, ignore_errors=True)
 
 
 class LiveDigest:
@@ -98,7 +108,9 @@ def main():
     ap.add_argument('--host-digest', help='With --spec and --turns: a host run\'s HeadlessDigest.log of the same case; '
                     'stop --diverge-turns turns after the first difference')
     ap.add_argument('--diverge-turns', type=int, default=2)
+    ap.add_argument('--rolling-dumps', type=int, default=0, help='With --spec: dump every turn, keep the last K')
     args = ap.parse_args()
+    if args.rolling_dumps and args.dump_from is None: args.dump_from, args.dump_to = 0, 100000
     if args.host_digest and not (args.spec and args.turns > 0 and args.digest): ap.error('--host-digest needs --spec, --turns and the digest')
     if args.dump_from is not None and args.dump_to is None: args.dump_to = args.dump_from
     probes = []
@@ -185,6 +197,8 @@ def main():
                         write(b.run / 'divergence.json', dict(utc=utc(), hostDigest=args.host_digest, **live.first))
                         b.log('diverged', **live.first)
                     if live and live.first and state['turn'] >= live.first['turn'] + args.diverge_turns: early = True; break
+                    if args.rolling_dumps:
+                        prune_dumps(dumps, (live.first['turn'] if live and live.first else state['turn']) - args.rolling_dumps)
                     if now - last_change >= args.stall_seconds: raise TimeoutError(f'autoplay stalled: {state}')
                     if now - started >= args.max_seconds: raise TimeoutError(f'autoplay over the time cap: {state}')
                 b.log('autoplay_done', early=early, **state)
