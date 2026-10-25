@@ -7,23 +7,22 @@ end with real host runs (field-map DLL, local gitignored civ5headless.toml); sta
 real game, never write into the game or My Games folders, never modify the source repository, no pushes, no machine
 paths in committed files, at most 8 host processes.
 
-## State (2026-10-25)
+## State (2026-10-25): work order complete
 
 Done and committed:
-- package: settings, capabilities, stats (envelope + bias with leave-one-out calibration), series, exact (digest,
-  fingerprint, checkpoint comparisons; pregame; Lua errors; same_game), hostside (phases, cost model, budget),
-  realside (RealGameSession driver), checks, perf (thirds, load timeline, throughput, history), report (HTML),
-  selftest, suite (plan/execute/analyse), CLI in `__init__.py`;
-- ensemble seed choice: a short sync-seed probe; Vox Populi ignores the sync seed, so the ensemble varies the map;
-- tests: `python -m unittest discover -s tests` (96 tests, about 40 s): fakes in tests/verify_tests.
+- package: settings, capabilities, stats (envelope + bias with leave-one-out calibration), series (mean, max, sum),
+  exact, hostside (phases, cost model, budget), realside (RealGameSession driver: launch with seeds, games grouped
+  by seed pair, log segments across relaunches, replay data through session.call, exported database), checks
+  (incl. setup.civ-choice, host twin rule, UI hazards split into game-reachable and input-only), perf, report,
+  selftest, suite, CLI in `__init__.py`;
+- main merged (platform milestone 2, anydll): real fingerprint module, host-report.json, hazards, civ pinning;
+- tests: `python -m unittest discover -s tests` (153 tests, about 55 s);
+- host-only with the merged host: runs/host-only-2, 3.5 min, verdict warn (58 game-reachable UI hazards without a
+  profile; 217 input-only), everything else pass/info;
+- self-test (runs/host-only-e32 + runs/foreign): hold-outs 12/12 envelope pass, bias quiet 11/12; 5% shifts not
+  detected; foreign Pangaea 2/3, Small 3/3 with sums;
+- docs/verification.md up to date.
 
-- host-only mode at full size measured: 4.2 min (runs/host-only-1), verdict pass apart from the bias self-test;
-- docs/verification.md written.
-
-In progress / next:
-1. 32-game host-only ensemble: `runs/host-only-e32` (`--host-only --ensemble 32 --budget 14`), then foreign games
-   (`c5h queue run <scratchpad>/foreign/foreign.json`: Pangaea Tiny and Small Continents, 150 turns) and
-   `c5h verify --analyse runs/host-only-e32 --self-test --foreign runs/foreign/<game>...`.
-2. Final report to the orchestrator.
+Next: the final report to the orchestrator (only). Phase E (real game) calibrates thresholds and budgets.
 
 Uncommitted: civ5headless.toml (gitignored, local paths), runs/ (gitignored).
