@@ -68,7 +68,8 @@ def main():
         started = time.monotonic()
         with (runs / f'{run}.out').open('wb') as out:
             code = subprocess.run(command, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT).returncode
-        quit_ok = (runs / f'{run}.out').read_text(encoding='utf-8', errors='replace').rstrip().endswith('"gameExited": true}')
+        last = (runs / f'{run}.out').read_text(encoding='utf-8', errors='replace').rstrip().splitlines()[-1:]
+        quit_ok = bool(last) and '"action": "quit"' in last[0] and ('"gameExited": true' in last[0] or '"killed": true' in last[0])
         entry.update(state='done' if code == 0 and quit_ok else 'failed', exitCode=code, seconds=round(time.monotonic() - started, 1), utc=utc())
         save()
         print(f'{utc()} {name}: {entry["state"]} in {entry["seconds"]} s', flush=True)
