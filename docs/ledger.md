@@ -11,10 +11,12 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   - The kit with bundled Python is remade and checked.
   - Phase E has started with a short real-game pass (the user asked to keep it short).
   - See the log entry "phase E, first real-game runs" for the outcome.
-- **The real game keeps this fork's field-map DLL (`CB6B0BED`) with the VP mods.** The user is playing test games
-  with it, so don't restore the source repository's AI program DLL unless asked; its ledger has the steps.
+- **The real game has plain VP 5.4.8 (packaged DLL `262AEE88`) with the 5 VP mods active.** The user asked for it, to
+  play test games. Leave it installed; the source repository's ledger says where the field-map install is archived and
+  how to restore it.
 - **Phase E, what is left (real game; keep runs short):**
-  1. Plain VP: an upstream build plus its mod files deployed; back up and restore MODS.
+  1. Optional: one more plain-VP `verify --quick`, to see a clean ensemble with the localization copy (run 2 lost one
+     game to the localization rebuild).
   2. `c5h verify --full` once, then set the thresholds, ensemble sizes, budgets and the planner's real/host ratio
      (docs/verification.md, "Calibration").
   3. The PreGame API gaps: the host has no `GetQuickCombat`, `GetQuickMovement` or `GetOverrideScenarioHandicap` (the
@@ -223,4 +225,36 @@ The host's own history (milestones M0–M6, parity work against the real game) i
     `CvGame::update` ends the game once autoplay is off and the active player is dead, and the stock DLL's autoplay
     kills the human slot. The 150-turn game keeps autoplay on and plays through.
   - Afterwards the VP mod set was enabled and activated again (the same 5 mods; the session leaves the mods it set).
+
+### 2026-10-26: plain VP 5.4.8 against the real game; example specs
+
+- **Plain VP 5.4.8:** upstream `Release-5.4.8` (`7307aefdf`), its packaged DLL `262AEE88` and its mod and UI files.
+  - Deployed from a worktree of the source repository at the tag (`work/wt/vp548`), with adapted copies of its
+    staging and deploy scripts: packaged DLL, no PDB.
+  - The field-map install was archived by the deploy. The 5 mods were enabled again (the deploy clears the list).
+  - The user asked for it to stay installed for their test games.
+- **Plain VP `verify --quick` #1: fail.** 24 of 32 ensemble games stopped with "no activated mods". With nothing
+  pinned in the configuration, host games read the game's live `Civ5ModsDatabase.db`, which the real game rewrites
+  while it launches and activates mods. Fix: the suite turns the active mods into an explicit mod set at the start,
+  so host games use a registry generated from the `.modinfo` files.
+- **#2 (`runs/verify-quick-20261026-123158`): fail, on 1 ensemble game only.** It hit "localization initialisation
+  failed": the game rebuilds `Localization-Merged.db` when it activates mods. Fix: with the real game, the host games
+  read a copy taken before it starts (`<run>/loc/`). Tested with the fake game; not rerun live, to keep it short.
+- **Everything else passed in both plain-VP runs:**
+  - Turn 0: 4 of 4 setups identical.
+  - Real trajectory: 150 of 150 turns identical by fingerprint (the release DLL has no digests). A/A, frame skew and
+    heap perturbation give 150 of 150.
+  - Database identical; no Lua errors; no unknown stubs; the city-states match.
+  - Envelope 95.3%; no bias flagged.
+  - Host 0.18 s/turn against the real game's 2.29 (13x), 289 MB against 1559 MB.
+  - Warnings: the PreGame API getters, and 3 reachable UI hazards.
+  - So the determinism fixes in the upstream PR drafts are not needed for these 150 Tiny turns. Where they matter is
+    still open: longer or larger games.
+- **Example specs:**
+  - Every `examples/specs/NAME.json` is now `NAME-fixed-seed.json`. A new `NAME.json` without seeds draws new ones
+    each run. The test checks the twins match; the A/A integration tests use the fixed-seed ones.
+  - Quick start (kit), README and `running.md`: a full Continental Drift game (`--turns 750`, Epic's last turn), the
+    last turn of each speed, game lengths, replaying a seedless game from `spec-resolved.json`.
+- **Kit `0.1.0-619656f23`:** smoke test passes. From the unpacked kit, the seedless spec drew new seeds on each run,
+  playing plain VP's DLL.
 
