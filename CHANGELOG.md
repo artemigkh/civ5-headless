@@ -2,6 +2,24 @@
 
 Every release of civ5-headless. Each GitHub release has the kit (`civ5-headless-<version>-<commit>.zip`) attached.
 
+## 0.2.0 (2026-10-26)
+
+- **Saved games** ([docs/saves.md](docs/saves.md)): the host reads and writes the real game's `.Civ5Save` files.
+  - `c5h run SAVE.Civ5Save --turns T` (or `--load SAVE`) continues a save, the real game's or the host's, with the
+    save's mod set.
+  - Every run saves its last turn, `saves\Final_<turn and date>.Civ5Save` (`--no-save-final`: not). All saves stay in
+    the run folder.
+  - `--autosave none|game|N` (default none) and `--save-at T` write more saves, which the real game loads too.
+    Autosaves are named and timed as the real game's (`AutoSave_Initial_`, `AutoSave_Post_`).
+  - `c5h save FILE` shows a save's header: turn, civilization, map, mods, DLL.
+  - Queue jobs take `load` (or a save as `spec`), `autosave`, `saveAt` and `saveFinal`.
+  - The real-game session has `load_game` (from the Mods menu) and `save_game` (moved into the run folder).
+  - The host's `UI.SaveGame(name)` saves into the run folder.
+  - `Modding.OpenSaveData()` is the game's save database (TableSaverLoader works); `UI.IsLoadedGame()` is true in a
+    loaded game.
+  - Known limit: a save the real game wrote, loaded in both the host and the real game, can differ slightly after the
+    first turn (1 gold in one test; saves.md section 6).
+
 ## 0.1.0 (2026-10-26)
 
 First release.

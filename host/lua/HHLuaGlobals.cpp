@@ -1,6 +1,8 @@
 #include "lua/HHLuaGlobals.h"
+#include "lua/HHLuaEnv.h"
 #include "lua/HHScriptSystem.h"
 #include "setup/HHVfs.h"
+#include "setup/HHSaveGame.h"
 #include "engine/HHRuntime.h"
 
 namespace
@@ -59,6 +61,21 @@ namespace
 		const char* szText = str.toUTF8();
 		// ASSUMPTION: a missing key looks up to the key itself (or nothing).
 		lua_pushboolean(L, szText && *szText && strcmp(szText, szKey) != 0);
+		return 1;
+	}
+
+	// UI.IsLoadedGame(): true once a save has been loaded.
+	int HHLuaIsLoadedGame(lua_State* L)
+	{
+		lua_pushboolean(L, HHIsLoadedGame());
+		return 1;
+	}
+
+	// UI.SaveGame(name): the in-game Save menu's call, a save named name in the run's save folder.
+	int HHLuaSaveGame(lua_State* L)
+	{
+		const char* szName = lua_tostring(L, 1);
+		lua_pushboolean(L, szName && HHSaveNamed(szName));
 		return 1;
 	}
 
@@ -425,21 +442,20 @@ namespace
 		"Locale.Compare = function(a, b) if a == b then return 0 elseif a < b then return -1 else return 1 end end\n"
 		"Locale.ToNumber = function(n, fmt) return tostring(n) end\n"
 		"Locale.GetCurrentLanguage = function() return {Type = 'en_US'} end\n"
-		"-- Modding.OpenUserData(id, version): a mod's saved settings; Modding.OpenSaveData(): the game save's mod data. Headless\n"
-		"-- both start empty (every mod's defaults) and live in memory for the run: the game keeps user data in the user's cache,\n"
-		"-- which a run must not depend on, and save data in the save's embedded database, which the digest leaves out (savedb).\n"
+		"-- Modding.OpenUserData(id, version): a mod's saved settings. Headless they start empty (every mod's defaults) and live\n"
+		"-- in memory for the run: the game keeps them in the user's cache, which a run must not depend on. Modding.OpenSaveData()\n"
+		"-- is the C function on the run's save database (HHLuaEnv.h), which saves embed and loads restore.\n"
 		"local userData = {}\n"
 		"local function store(key)\n"
 		"  if userData[key] == nil then\n"
 		"    local values = {}\n"
-		"    -- Query(sql): the save data's SQL (TableSaverLoader); no tables, so every query gives no rows.\n"
+		"    -- Query(sql): no tables, so every query gives no rows.\n"
 		"    userData[key] = {GetValue = function(self, k) return values[k] end, SetValue = function(self, k, v) values[k] = v end,\n"
 		"                     Query = function() return function() return nil end end}\n"
 		"  end\n"
 		"  return userData[key]\n"
 		"end\n"
-		"Modding.OpenUserData = Modding.OpenUserData or function(id, version) return store(tostring(id) .. '|' .. tostring(version)) end\n"
-		"Modding.OpenSaveData = Modding.OpenSaveData or function() return store('save data') end\n";
+		"Modding.OpenUserData = Modding.OpenUserData or function(id, version) return store(tostring(id) .. '|' .. tostring(version)) end\n";
 
 	// Stub UI contexts (InGameUIAddin scripts, UI emulation profiles, Lua probes): each context is a Lua thread whose
 	// environment gets the UI-only globals the game gives a UI context. Nothing is shown, so they absorb every call:
@@ -504,7 +520,8 @@ namespace
 		"  env.Controls = stub\n"
 		"  local ui = nilApi()\n"
 		"  ui.RemoveNotification = function(id) if __HHUIRemoveNotification then return __HHUIRemoveNotification(id) end end\n"
-		"  ui.IsLoadedGame = function() return false end\n"
+		"  ui.IsLoadedGame = function() return __HHIsLoadedGame() end\n"
+		"  ui.SaveGame = function(name) return __HHSaveGame(name) end\n"
 		"  env.UI = ui\n"
 		"  local uim = stubApi()\n"
 		"  uim.GetScreenSizeVal = function() return 1024, 768 end\n"
@@ -543,9 +560,15 @@ bool HHLuaRegisterEngineGlobals(HHScriptSystem& kScripts, HHVfs& kVfs, ICvPreGam
 		{ "GetModProperty", HHLuaModdingGetModProperty },
 		{ "IsModActivated", HHLuaModdingIsModActivated },
 		{ "GetEvaluatedFilePath", HHLuaModdingGetEvaluatedFilePath },
+		{ "OpenSaveData", HHLuaModdingOpenSaveData },
 		{ NULL, NULL }
 	};
 	RegisterWithUpvalue(L, "Modding", kModding, &kVfs);
+	// UI.IsLoadedGame of the stub UI contexts (kUIContextLua).
+	lua_pushcfunction(L, HHLuaIsLoadedGame);
+	lua_setglobal(L, "__HHIsLoadedGame");
+	lua_pushcfunction(L, HHLuaSaveGame);
+	lua_setglobal(L, "__HHSaveGame");
 	if(pPreGame)
 		RegisterWithUpvalue(L, "PreGame", kPreGame, pPreGame);
 

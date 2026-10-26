@@ -16,3 +16,8 @@ struct HHSelfTestResult
 
 // Runs the boot self-test in a new Lua thread and checks it against direct SQL.
 HHSelfTestResult HHLuaSelfTest(HHScriptSystem& kScripts, Database::Connection& kDb, int iDllUnitInfos);
+
+// Modding.OpenSaveData(): the game's save data, <run>\cache\Civ5SavedGameDatabase.db, which the DLL creates for a
+// new game, embeds in every save and restores from a loaded one. {Query(sql, ...), GetValue(name),
+// SetValue(name, value)} as the game's: Query is DB.Query on it, the values live in its SimpleValues table.
+int HHLuaModdingOpenSaveData(lua_State* L);

@@ -4,6 +4,8 @@
     s.launch()                                  # start the game, wait for the main menu       -> dict
     s.set_mods(mod_ids)                         # enable exactly these mods, activate them      -> dict
     s.start_game(spec, map_seed, sync_seed, lua_probes=[...], fingerprint=True)   # setup, start, load, probes -> dict
+    s.load_game(save, lua_probes=[...], fingerprint=True)   # or continue a saved game (its mods by default) -> dict
+    s.save_game(name)                           # UI.SaveGame, then moved to <run>/saves/<name>.Civ5Save   -> dict
     s.autoplay(turns, max_seconds=None)         # observer autoplay; per-turn wall times        -> dict
     s.replay_data()                             # every major's replay datasets (in a game)     -> dict
     s.to_main_menu()                            # for the next setup in the same session        -> dict
@@ -22,6 +24,9 @@ Order, as in the host: start_game sets up the pregame state (spec.pregame_lua) i
 game, waits until it has loaded, runs the Lua probes in InGame and leaves the game paused at turn 0 behind the load
 screen. autoplay then arms (quick combat and movement, Game.SetAIAutoPlay(turns, 0): the human slot becomes the
 observer) and only then closes the load screen and unpauses. A later autoplay in the same game just re-arms.
+load_game loads a .Civ5Save as the Mods menu's Load screen does: the mods activated (set_mods, by default the save's),
+then Events.PlayerChoseToLoadGame in ModsSinglePlayer. It leaves the game as start_game leaves a new one: loaded,
+behind the load screen, probes run; autoplay then arms and continues it.
 
 Seeds (seeds.py): the game reads config.ini's MapRandSeed/SyncRandSeed when its DLL loads, so the seeds must be in
 the file before the launch. launch(map_seed, sync_seed) pins them up front (optional arguments); start_game with
@@ -65,6 +70,11 @@ VICTORY = ("local ok,v=pcall(function() return Game.GetVictory() end);local info
 HALT = ("local rp=-1;for i=0,GameDefines.MAX_MAJOR_CIVS-1 do local p=Players[i];"
         "if p and p:IsAlive() and not p:IsMinorCiv() and not p:IsBarbarian() and not p:IsObserver() then rp=i;break end end;"
         "if Game.GetAIAutoPlay()>0 and rp>=0 then Game.SetAIAutoPlay(0,rp) end;return Game.GetAIAutoPlay()")
+# LoadMenu.lua OnStartButton (single player): the cursor, then the load request; the game checks the file first.
+LOAD = ("local path=%s;assert(PreGame.GetFileHeader(path),'unreadable save');UIManager:SetUICursor(1);"
+        "Events.PlayerChoseToLoadGame(path);return 'load requested'")
+SAVE = "UI.SaveGame(%s);return 'save requested'"  # SaveMenu.lua; ModdedSaves/single in a modded game, else Saves/single
+DIGEST_ON = "if Game.SetHeadlessDigestLogging then Game.SetHeadlessDigestLogging(true) end;return true"
 MENU = "Events.ExitToMainMenu();return 'menu requested'"
 QUIT = "UI.ExitGame();return 'quit requested'"
 # The database the game holds in memory, copied table by table into a new file (ATTACH ... CREATE TABLE AS).
@@ -131,7 +141,7 @@ def hhseeds(log_path, since):
 class RealGameSession:
     def __init__(self, cfg, run_dir, *, reseed='relaunch', cpu_guard=True, cpu_limit=95, port=tuner.GAME_PORT,
                  launcher=None, launch_timeout=180, menu_timeout=300, load_timeout=900, poll=2.0, stall_seconds=900,
-                 log=None, digest=True):
+                 log=None, digest=True, load_settle=5.0):
         if reseed not in ('relaunch', 'reload'):
             raise ValueError("reseed must be 'relaunch' or 'reload'")
         self.cfg = cfg
@@ -141,6 +151,8 @@ class RealGameSession:
         self.launcher = launcher or launchmod.launch_game
         self.launch_timeout, self.menu_timeout, self.load_timeout = launch_timeout, menu_timeout, load_timeout
         self.poll, self.stall_seconds = poll, stall_seconds
+        self.load_settle = load_settle  # seconds from a mod activation to a load: the front end reloads its Lua
+        self.activated_at = None
         self.log = log or (lambda message: None)
         self.digest = digest         # ask DLLs with the digest additions for per-turn state digests
         self.marker = Path(cfg.workspace or self.dir) / 'cache' / seeds.MARKER  # one game at a time: one marker
@@ -180,21 +192,22 @@ class RealGameSession:
             raise SessionError(f"{label or context}: {result.get('error', 'Lua call failed')}")
         return (result.get('values') or [None])[0]
 
-    def states(self):
+    def states(self, timeout=30):
         if self.tuner is None:
             raise SessionError('the game is not running')
-        return {s['name'] for s in self.tuner.states(30)}
+        return {s['name'] for s in self.tuner.states(timeout)}
 
     def alive(self):
         return self.game is not None and self.game.alive()
 
-    def wait_for(self, check, timeout, what):
-        """Poll the contexts until check(names) is true; returns the names."""
+    def wait_for(self, check, timeout, what, call_timeout=30):
+        """Poll the contexts until check(names) is true; returns the names. call_timeout: how long the game may take to
+        answer one poll (it does not answer while it rebuilds its database)."""
         deadline = time.monotonic() + timeout
         while True:
             if not self.alive():
                 raise SessionError(f'the game exited while waiting for {what}')
-            names = self.states()
+            names = self.states(call_timeout)
             if check(names):
                 return names
             if time.monotonic() >= deadline:
@@ -276,7 +289,7 @@ class RealGameSession:
         # pregame setup and the start run in it as they are (as the user's click on Single Player would show it).
         self.wait_for(lambda n: 'ModsSinglePlayer' in n and any(c in n and self.check(c, SHOWN) for c in ('ModsMenu', 'ModsSinglePlayer')),
                       self.menu_timeout, 'mod activation')
-        self.activated = True
+        self.activated, self.activated_at = True, time.monotonic()
         out = dict(before=as_list(result.get('before')), after=as_list(result.get('after')),
                    disabled=result.get('disabled', 0), enabled=result.get('enabled', 0))
         self.event('mods_activated', **out)
@@ -377,6 +390,98 @@ class RealGameSession:
                     seconds=round(time.monotonic() - t, 2))
         self.event('game_started', **info)
         return info
+
+    def load_game(self, save, lua_probes=(), fingerprint=None):
+        """Load a saved game (.Civ5Save, the game's or the host's) and leave it loaded and paused behind the load
+        screen, as start_game leaves a new one. lua_probes and fingerprint as for start_game. Seeds do not apply: the
+        save carries its random state.
+
+        Mods: those of set_mods, else the save's (its header lists the mods that affect saved games). The active mods
+        that affect saved games must be the save's: otherwise the game activates the save's list during the load, and
+        with Vox Populi active that rebuild fails (VP's front end reads the database meanwhile: "database table is
+        locked") and the game crashes on the half-built database. Loading from the main menu with no mods active
+        crashed too (Vox Populi's DLL, in CvGame::Read): the game's own path is the Mods menu."""
+        from .. import savegame
+        if fingerprint:
+            options = probes_mod.fingerprint_options(fingerprint)
+            lua_probes = probes_mod.fingerprint_probes(self.cfg, self.dir, **options) + list(lua_probes)
+        if self.game is None:
+            raise SessionError('launch() first')
+        if not self.alive():
+            raise SessionError(f'the game exited (code {self.game.popen.returncode})')
+        if self.in_game:
+            raise SessionError('a game is running: call to_main_menu() first')
+        t = time.monotonic()
+        save = Path(save).resolve()
+        header = savegame.read_header(save)
+        if not self.activated:
+            if self.mods is None:
+                self.mods = modsmod.resolve(self.cfg, header.mod_set)
+            self._activate()
+        if self.activated_at is not None:
+            time.sleep(max(0.0, self.activated_at + self.load_settle - time.monotonic()))
+        loaded_wall = time.time()
+        request = Path(self.cfg.cache_dir) / 'HeadlessSeeds.txt' if self.digest and self.cfg.cache_dir else None
+        try:
+            if request:
+                request.write_text('digest=1\nnormalise=1\n', encoding='ascii')
+            self.call('ModsSinglePlayer', LOAD % tuner.lua_string(save.as_posix()), 'load-game')
+            self.activated = False
+            # loading can keep the game from answering for a while (a database rebuild, if it changes the mods)
+            self.wait_for(lambda n: {'InGame', 'LoadScreen'} <= n and self.check('LoadScreen', LOADED),
+                          self.load_timeout, 'the saved game to load', call_timeout=300)
+        finally:
+            if request:
+                request.unlink(missing_ok=True)
+        self.in_game, self.continued = True, False
+        if self.digest:  # as the host does after a load: DLLs with the digest additions start logging in CvGame::init
+            self.call('InGame', DIGEST_ON, 'digest-logging')
+        setup = self.call('InGame', SETUP, 'setup-info')
+        if setup.get('turn') != header.turn:
+            raise SessionError(f'the game loaded is at turn {setup.get("turn")}, the save at {header.turn}')
+        observed = hhseeds(self.cfg.user_dir / 'Logs/HeadlessDigest.log', loaded_wall) if self.cfg.user_dir else []
+        probes = []
+        for path in lua_probes:
+            path = Path(path)
+            try:
+                value = self.call('InGame', path.read_text(encoding='utf-8-sig'), f'probe-{path.stem}')
+                probes.append(dict(file=str(path), ok=True, value=value))
+            except (SessionError, tuner.TunerError) as error:
+                probes.append(dict(file=str(path), ok=False, error=str(error)))
+        info = dict(save=str(save), turn=header.turn, setup=setup, seedsObserved=observed[-1] if observed else None,
+                    probes=probes, seconds=round(time.monotonic() - t, 2))
+        self.event('game_loaded', **info)
+        return info
+
+    def save_game(self, name, timeout=120):
+        """Save the game as the in-game Save menu does (UI.SaveGame(name)) and move the file the game writes
+        (<user_dir>/ModdedSaves/single/<name>.Civ5Save in a modded game, else Saves/single) into the run folder:
+        <run>/saves/<name>.Civ5Save, so runs leave no saves in the game's folders. Returns {path, bytes, seconds}."""
+        if not self.in_game:
+            raise SessionError('no game to save')
+        t = time.monotonic()
+        since = time.time()
+        user = self.cfg.require('user_dir')
+        folders = [user / 'ModdedSaves/single', user / 'Saves/single']
+        self.call('InGame', SAVE % tuner.lua_string(name), 'save-game')
+        deadline = time.monotonic() + timeout
+        while True:
+            found = [f / f'{name}.Civ5Save' for f in folders if (f / f'{name}.Civ5Save').is_file()]
+            found = [p for p in found if p.stat().st_mtime >= since - 2]
+            if found:
+                size = -1
+                while size != found[0].stat().st_size:  # written once the size settles
+                    size = found[0].stat().st_size
+                    time.sleep(0.5)
+                dest = self.dir / 'saves' / found[0].name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(found[0]), str(dest))
+                info = dict(path=str(dest), bytes=size, seconds=round(time.monotonic() - t, 2))
+                self.event('game_saved', **info)
+                return info
+            if time.monotonic() >= deadline:
+                raise SessionError(f'no {name}.Civ5Save appeared within {timeout} s')
+            time.sleep(0.5)
 
     def autoplay(self, turns, max_seconds=None, on_poll=None, stall_seconds=None):
         """Autoplay turns turns with every player an AI (see the module docstring for the result)."""

@@ -1,5 +1,6 @@
 #include "engine/HHEngineServices.h"
 #include "engine/HHRuntime.h"
+#include "setup/HHSaveGame.h"
 
 namespace
 {
@@ -312,7 +313,7 @@ bool HHEngineUtility::IsPlayerConnected(PlayerTypes ePlayer)
 	HH_IMPL_CALL("ICvEngineUtility1::IsPlayerConnected");
 	return m_pPreGame && ePlayer >= 0 && ePlayer < MAX_PLAYERS && m_pPreGame->slotStatus(ePlayer) == SS_TAKEN;
 }
-void HHEngineUtility::AutoSave(bool, bool) { HH_IMPL_CALL("ICvEngineUtility1::AutoSave"); }
+void HHEngineUtility::AutoSave(bool bInitial, bool bPostTurn) { HH_IMPL_CALL("ICvEngineUtility1::AutoSave"); HHOnAutoSave(bInitial, bPostTurn); }
 
 const char* HHEngineUtility::GetCacheFolderPath()
 {
@@ -460,7 +461,8 @@ bool HHUserInterface::IsModalStackEmpty() { HH_IMPL_CALL("ICvUserInterface1::IsM
 bool HHUserInterface::IsDontShowPopups() const { HH_IMPL_CALL("ICvUserInterface1::IsDontShowPopups"); return true; }
 // The user setting is off in the reference profile (contract G10).
 bool HHUserInterface::IsOptionNoRewardPopups() { HH_IMPL_CALL("ICvUserInterface1::IsOptionNoRewardPopups"); return false; }
-bool HHUserInterface::IsLoadedGame() const { HH_IMPL_CALL("ICvUserInterface1::IsLoadedGame"); return false; }
+// True once a save has been loaded (loadgame; setup/HHSaveGame.h).
+bool HHUserInterface::IsLoadedGame() const { HH_IMPL_CALL("ICvUserInterface1::IsLoadedGame"); return HHIsLoadedGame(); }
 bool HHUserInterface::isInAdvancedStart() const { HH_IMPL_CALL("ICvUserInterface1::isInAdvancedStart"); return false; }
 bool HHUserInterface::IsDealInTransit() { HH_IMPL_CALL("ICvUserInterface1::IsDealInTransit"); return false; }
 bool HHUserInterface::isDirty(InterfaceDirtyBits) { HH_IMPL_CALL("ICvUserInterface1::isDirty"); return false; }

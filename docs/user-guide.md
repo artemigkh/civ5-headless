@@ -183,6 +183,8 @@ configuration. Useful options:
 | `--heap-perturb N`, `--frame-skew K` | the verification suite's address and frame-count checks |
 | `--detail summary\|standard\|full` | what the run folder keeps ([Run folders](#run-folders)); default `standard`. `--prune` is the old name of `standard` |
 | `--no-report` | no `report.html` (`c5h report RUN` writes it later) |
+| `--load SAVE` | continue a saved game (`.Civ5Save`, the real game's or the host's) instead of a spec; its mod set unless one is given ([saves.md](saves.md)). A `.Civ5Save` given as the spec does the same |
+| `--autosave none\|game\|N`, `--save-at T`, `--no-save-final` | the saves the real game loads, in `<run>\saves`: the last turn by default, autosaves none by default ([saves.md](saves.md)) |
 | `--host-arg=ARG` | pass an option to `civ5headless.exe` (run it without arguments for the list) |
 
 From Python, `civ5headless.run.play(spec, turns, ...)` plays one game and returns its run folder, whether it
@@ -291,8 +293,8 @@ Where they differ from a real run, by design:
 - **Checkpoints and times** are exact: taken when the game turn advances, not by a poll during a turn. They do not
   change the game. `wallSeconds` counts from arming autoplay to the last turn; start-up (database copy, map
   generation, about 3 s) is outside it.
-- **save:** no save is written; `save` holds a seed key `headless-<spec>-m<map>-s<sync>-<hash>` that groups runs of
-  the same game.
+- **save:** not a saved game (those are in `saves\`, listed in `saves` and `finalSave`); `save` holds a seed key
+  `headless-<spec>-m<map>-s<sync>-<hash>` that groups runs of the same game.
 - **background:** system busy cores, the real game's CPU and everything but the host during the run, so timings can
   be judged.
 - **Victory** ends autoplay: `endReason` is `victory`, with `winner` and `victory`.
@@ -319,8 +321,9 @@ c5h queue report QUEUE.json
   `["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`, `noAddins`, `fingerprint` (`true` or
   `{"every": K, "turns": [...], "split": N}`), `diagnostics`, `improvedMask`, `abRole`, `checkpointEvery`,
   `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail` (default `standard`; the old `prune: false` is `full`),
-  `report` (default on), `hostArgs`, `luaProbes`, `lowPriority` (default on)) can be set in `defaults`, a variant or a
-  job. Examples are in `examples/queues/`.
+  `report` (default on), `hostArgs`, `luaProbes`, `lowPriority` (default on), `load` (a save instead of `spec`),
+  `autosave`, `saveAt`, `saveFinal`) can be set in `defaults`, a variant or a job. Examples are in
+  `examples/queues/`.
 - Mod sets' registries and databases are built once per (mods input, DLL) before the workers start.
 - Worker k is pinned to the k-th physical core: P-cores (both hyperthreads) first, then E-cores.
 - State is in `QUEUE.state.json`. A restart skips completed runs, re-queues interrupted ones (the partial folder is
@@ -368,6 +371,11 @@ with RealGameSession(cfg, cfg.runs / 'my-reference') as s:
     s.collect_logs(cfg.runs / 'my-reference/logs')
     stats = s.process_stats()                  # peak working set, peak private bytes, CPU seconds
 ```
+
+`load_game(save, fingerprint=True)` continues a saved game instead of `start_game`: it activates the `set_mods`
+mods, else the save's (the save lists only the mods that affect saved games, so set the full set to keep the others),
+and loads from the Mods menu as the game's Load screen does. `save_game(name)` saves as the in-game Save menu does and
+moves the file into `<run>\saves\` ([saves.md](saves.md)).
 
 - **Launch:** `CivilizationV_DX11.exe -DX11` directly, with `steam_appid.txt` in the game folder until the tuner port
   is open (a Steam SDK development launch; the file is removed again), then the main menu.
@@ -508,7 +516,8 @@ busy.
   new profile; `host-report.json` lists its files as unknown and `c5h hazards scan` finds the calls.
 - **DLL logging changes AI results** in some DLLs: the host turns on the profile's logging like the real game's
   config. `--host-arg=--no-game-logging` is faster but may play a different game; never mix the two in a comparison.
-- **No saves:** the host neither writes nor loads `.Civ5Save` files, so host runs start from a spec, not a save.
+- **Saves:** a real-game save loaded in the host and in the real game can drift apart after the first turn (1 gold at
+  the next turn in one test); the host's load sequence is reconstructed, not traced ([saves.md](saves.md) section 6).
 - **Text:** the localization database is the game's `Localization-Merged.db`; mod text edits need a game launch to
   appear in city names and replay messages (rules are unaffected).
 - **32-bit:** the host is a large-address-aware 32-bit process (4 GB address space), far above its needs.

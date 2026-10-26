@@ -122,6 +122,24 @@ def parse_mods(specs):
     return out
 
 
+def activated(mods_db, saved_games_only=False):
+    """The mods a registry (Civ5ModsDatabase.db) activates, as [(id, version)] in its order; None when it cannot be read.
+    saved_games_only: only those whose AffectsSavedGames property is not 0 (the ones a save lists)."""
+    sql = 'SELECT ModID, Version FROM Mods m WHERE Activated = 1'
+    if saved_games_only:
+        sql += (" AND NOT EXISTS (SELECT 1 FROM ModProperties p WHERE p.ModID = m.ModID AND p.Version = m.Version"
+                " AND p.Name = 'AffectsSavedGames' AND trim(p.Value) = '0')")
+    try:
+        con = sqlite3.connect(f'file:{Path(mods_db).as_posix()}?mode=ro', uri=True)
+        try:
+            rows = con.execute(sql + ' ORDER BY rowid').fetchall()
+        finally:
+            con.close()
+        return parse_mods([(mid, ver) for mid, ver in rows])
+    except (sqlite3.Error, ModsDbError, TypeError):
+        return None
+
+
 def select(mods_dir, specs):
     """The mods for specs below mods_dir, in activation order (dbbuild.ModInfo list). Raises ModsDbError."""
     wanted = parse_mods(specs)

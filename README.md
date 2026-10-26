@@ -5,7 +5,7 @@ from the Civ V SDK (the stock DLL, Community Patch, Vox Populi or your own) and 
 setup options, several games at a time, much faster than the real game. A verification suite measures how closely the
 headless games represent real Civ V autoplay for your DLL and mods.
 
-Status: 0.1.0, the first release ([CHANGELOG.md](CHANGELOG.md)). It was developed in a Vox Populi fork:
+Status: 0.2.0, which adds saved games ([CHANGELOG.md](CHANGELOG.md)). It was developed in a Vox Populi fork:
 [docs/plan.md](docs/plan.md) has the plan, and [docs/history](docs/history) shows how the host was built and checked
 against the real game.
 
@@ -39,6 +39,11 @@ Each example spec comes twice: `NAME.json` draws new seeds for every run (a new 
 
 [docs/running.md](docs/running.md) shows every option with examples: game specs, seeds, DLLs and mod sets, UI
 profiles, fingerprints, run outputs, queues, comparisons, the verification suite and the configuration file.
+
+Games save and load as the real game's `.Civ5Save` files, in both directions: `c5h run SAVE.Civ5Save --turns T`
+continues a save from the real game (or from another run), every run saves its last turn into its `saves\` folder
+(`--no-save-final`: not), and `--autosave` and `--save-at` write more; the real game loads them
+([docs/saves.md](docs/saves.md)).
 
 `python tools/make_kit.py` makes the kit from a commit and a host built at that commit, with python.org's embeddable
 Python (pinned version and hash) in `runtime\`.

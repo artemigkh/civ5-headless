@@ -19,13 +19,15 @@ QUEUE.json (relative paths are relative to the queue file's folder):
    "seeds": [[1001, 2002], [1003, 2004]],   # [map, sync]; jobs = seeds x variants, named <variant>-m<map>-s<sync>
    "jobs": [{"name": "extra", "turns": 250}]}  # optional explicit jobs (defaults apply)
 
-Job keys: spec, turns, dll, db (a built database; otherwise built once per (mods input, DLL) and cached),
+Job keys: spec or load (a .Civ5Save to continue; its mod set unless mods, noMods or modsDb is given; turns is still
+the turn to play to), turns, dll, db (a built database; otherwise built once per (mods input, DLL) and cached),
 modsDir, modsDb, mods (the mod set as ["ID[:VER]", ...]: a generated registry instead of modsDb), noMods, locDb,
 exe, gameDir, profiles, noProfiles, skipAddins, noAddins, fingerprint (true, or {"every": K, "turns": [...],
 "split": N}), seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery, maxSeconds, stallSeconds,
 maxMemoryMB, detail (summary, standard (default) or full; the old prune: false is full), report (default true),
-hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true); they are the c5h run options of the same
-name. Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
+hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true), autosave (none (default), game or N),
+saveAt [turns], saveFinal (default true); they are the c5h run options of the same name (a spec that is a
+.Civ5Save is a load). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
 doctor); the DLL is chosen as c5h run chooses it (a mod set's own, or the game's for noMods, unless dll is given or
 set in civ5headless.toml).
 
@@ -41,13 +43,13 @@ import argparse, collections, json, os, subprocess, sys, threading, time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from . import config, dbcache, modsdb, winproc
+from . import config, dbcache, modsdb, savegame, winproc
 from . import run as host_run
 from .compare import digest
 
 DEFAULTS = dict(turns=100, diagnostics=0, checkpointEvery=1, maxSeconds=7200, stallSeconds=900, maxMemoryMB=3500,
                 hostArgs=[])
-PATH_KEYS = ('spec', 'dll', 'db', 'modsDir', 'modsDb', 'locDb', 'exe', 'gameDir', 'profiles')
+PATH_KEYS = ('spec', 'load', 'dll', 'db', 'modsDir', 'modsDb', 'locDb', 'exe', 'gameDir', 'profiles')
 
 
 def utc(): return datetime.now(timezone.utc).isoformat()
@@ -57,8 +59,9 @@ def rel(base, value):
     return str((base / value).resolve()) if value and not Path(value).is_absolute() else value
 
 
-def expand(queue, qpath):
-    """The job list: explicit jobs plus seeds x variants, each merged over the defaults."""
+def expand(queue, qpath, cfg=None):
+    """The job list: explicit jobs plus seeds x variants, each merged over the defaults. cfg: the configuration (a
+    job that loads a save without a mod set keeps the configured registry when it fits the save)."""
     base = Path(qpath).resolve().parent
     defaults = dict(DEFAULTS, **queue.get('defaults', {}))
     jobs = []
@@ -78,8 +81,22 @@ def expand(queue, qpath):
             if j.get(k):
                 j[k] = rel(base, j[k])
         j['luaProbes'] = [rel(base, p) for p in j.get('luaProbes') or []]
-        if not j.get('spec'):
-            raise SystemExit(f"job {j['name']}: spec is required")
+        if j.get('spec') and not j.get('load') and savegame.is_save(j['spec']):
+            j['load'], j['spec'] = j['spec'], None
+        if bool(j.get('spec')) == bool(j.get('load')):
+            raise SystemExit(f"job {j['name']}: spec or load is required (one of them)")
+        if j.get('load') and j.get('mods') is None and not j.get('noMods') and not j.get('modsDb'):
+            try:
+                header = savegame.read_header(j['load'])
+            except (OSError, savegame.SaveError) as error:
+                raise SystemExit(f"job {j['name']}: {error}")
+            mods = host_run.load_mod_set(cfg, header)  # as c5h run --load chooses
+            if mods is not None:
+                j.update(mods=mods) if mods else j.update(noMods=True)
+        try:
+            j['autosave'] = host_run.autosave_mode(j.get('autosave'))
+        except ValueError as error:
+            raise SystemExit(f"job {j['name']}: {error}")
         if (j.get('mods') is not None or j.get('noMods')) and j.get('modsDb'):
             raise SystemExit(f"job {j['name']}: mods and noMods exclude modsDb (the registry is generated)")
         if j.get('detail') and j['detail'] not in host_run.DETAILS:
@@ -94,7 +111,7 @@ class Queue:
         self.queue = json.loads(self.qpath.read_text(encoding='utf-8'))
         out = self.queue.get('out')
         self.out = Path(rel(self.qpath.parent, out)) if out else cfg.require('runs') / self.qpath.stem
-        self.jobs = expand(self.queue, self.qpath)
+        self.jobs = expand(self.queue, self.qpath, cfg)
         self.state_path = self.qpath.with_suffix('.state.json')
         self.stop_path = self.qpath.with_suffix('.stop')
         self.log_path = self.qpath.with_suffix('.log')
@@ -130,7 +147,9 @@ def job_detail(job):
 
 def job_args(job, folder, inputs, affinity):
     """run.py's namespace for a job; inputs: its database, mods and DLL (databases())."""
-    return SimpleNamespace(run=None, run_dir=str(folder), spec=job['spec'], target_turn=int(job['turns']),
+    return SimpleNamespace(run=None, run_dir=str(folder), spec=job.get('spec'), load=job.get('load'),
+                           autosave=job.get('autosave'), save_at=list(job.get('saveAt') or []),
+                           save_final=bool(job.get('saveFinal', True)), target_turn=int(job['turns']),
                            dll=inputs.get('dll') or job.get('dll'), dll_reason=inputs.get('dllReason'),
                            db=inputs['db'], mods_dir=inputs['modsDir'], mods_db=inputs['modsDb'], mod=None,
                            no_mods=bool(job.get('noMods')), loc_db=job.get('locDb'), exe=job.get('exe'),

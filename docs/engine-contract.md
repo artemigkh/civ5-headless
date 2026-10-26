@@ -363,7 +363,10 @@ player options) and deliver the queue in order after the current top-level inbou
 `(false,true)` once per turn (first alive player's turn deactivation). The engine then synchronously calls
 `SetTimeStr("",turn,true)`, `PreGame::write`, `Game::Write`, `Map::Write`, `Team::Write` ×64, `Player::Write` ×64,
 `WriteSupportingClassData` — only at turn 0 (both calls) and when `turn % 10 == 0` (AA100: 10…90); otherwise only
-`SetTimeStr`. No `WriteReplay`. Host: no file needed; optionally write a checkpoint at the same turns.
+`SetTimeStr`. No `WriteReplay`. The files are `AutoSave_Initial_<date>` and `AutoSave_Post_<date>` in
+`ModdedSaves\single\auto` (a 50-turn VP autoplay game: all seven kept, `NumAutosavesKept = 5`). Host: no file at
+these calls by default; `--autosave` and `--save-at` write real `.Civ5Save` files at them, into `<run>\saves`
+([saves.md](saves.md)). The last turn's save comes after autoplay, not at these calls.
 
 ### 6.6 Inbound calls between updates [M]
 
@@ -548,11 +551,14 @@ InGame state (`CreateLuaThread`) whose environment adds the UI-only globals (`HH
   arithmetic gives 0, concatenation and `tostring` give '').
 - `UI`, `Network`, `Steam`, `OptionsManager`, `Matchmaking`: every member returns nil (nothing selected, nothing
   sent), except `UI.RemoveNotification`, the engine's dismiss (`MayUserDismissNotification`, then
-  `DismissNotification`, for a notification shown to the active player). `UI.IsLoadedGame` is false.
+  `DismissNotification`, for a notification shown to the active player). `UI.IsLoadedGame` is true only in a game
+  loaded from a save (`loadgame`).
 - `UIManager` (1024x768, nothing modal), `ContentManager.IsActive` (true), grid/world conversions (0), `Path`.
-- `Modding.OpenUserData` and `Modding.OpenSaveData`: in-memory stores (`GetValue`/`SetValue`, `Query` gives no
-  rows), empty at the start of every run: user data lives in the user's cache, which a run must not depend on, and
-  save data in the save's embedded database, which the digest leaves out (`savedb`).
+- `Modding.OpenUserData`: an in-memory store (`GetValue`/`SetValue`, `Query` gives no rows), empty at the start of
+  every run: user data lives in the user's cache, which a run must not depend on.
+- `Modding.OpenSaveData`: the game's save data, `<run>\cache\Civ5SavedGameDatabase.db`, which the DLL creates for a
+  new game, embeds in every save and restores from a loaded one (`savedb` in the digest). `GetValue`/`SetValue` use
+  its `SimpleValues` table, `Query` is `DB.Query` on it ([saves.md](saves.md), section 5).
 - `Events`, `LuaEvents`, `GameEvents`, `Game`, `Map`, `Players`, `Teams`, `GameInfo`: the shared ones. Listeners
   are recorded per context (run report `addins.listeners`).
 
@@ -729,7 +735,7 @@ Counts are exact totals per trace (SUM lines). Threads: core = game-core thread,
 | ICvEngineScriptSystem1::FreeLuaThread | 2 | 2 | 2 | 2 | boot,newgame | ui | void | impl | L: free |
 | ICvEngineScriptSystem1::LoadFile | 1 | 1 | 1 | 1 | newgame | ui | `true` | impl | L: VFS lookup + run the chunk; true |
 | ICvEngineScriptSystemArgs1::Push | 22393 | 9448 | 1822 | 1036074 | newgame,turnloop | core,ui | `0`, `1`, `2` +1 | impl | L: append; returns the 0-based index of the pushed value (host returns the 1-based count today) |
-| ICvEngineUtility1::AutoSave | 6 | 3 |  | 101 | turnloop | core | void | stub | N: no file needed; optional: write a checkpoint on turn %% 10 == 0 like the real game |
+| ICvEngineUtility1::AutoSave | 6 | 3 |  | 101 | turnloop | core | void | impl | N: no file unless asked; --autosave, --save-at write the game's .Civ5Save (saves.md) |
 | ICvEngineUtility1::CanAdvanceTurn | 5 | 2 |  | 100 | turnloop | core | `true` | stub | C: true |
 | ICvEngineUtility1::DoMapSetup | 1 | 1 | 1 | 1 | newgame | ui | void | stub | N: no-op (engine allocates its plot visuals; arg = plot count) |
 | ICvEngineUtility1::DoTurn | 5 | 2 |  | 100 | turnloop | core | void | stub | N: no-op (engine-side turn bookkeeping); host may count turns here |
@@ -817,7 +823,7 @@ Counts are exact totals per trace (SUM lines). Threads: core = game-core thread,
 | ICvUserInterface1::GetHeadSelectedUnit | 7355 | 4570 | 3761 | 16497 | newgame,turnloop | core,ui | `null`, `0x36563c08`, `0x719d45e0` +7 | impl | C: null (non-null only for the human after autoplay ended) |
 | ICvUserInterface1::GetLengthSelectionList | 2 | 2 | 1 | 2 | newgame,turnloop | core,ui | `0` | impl | C: 0 |
 | ICvUserInterface1::InsertIntoSelectionList | 2 | 2 | 1 | 1 | newgame,turnloop | ui | void | stub | N: no-op |
-| ICvUserInterface1::IsLoadedGame | 25 | 19 | 19 | 25 | newgame | ui | `false` | impl | C: false |
+| ICvUserInterface1::IsLoadedGame | 25 | 19 | 19 | 25 | newgame | ui | `false` | impl | C: false; true after `loadgame` |
 | ICvUserInterface1::IsOptionNoRewardPopups | 1 | 1 |  | 418 | turnloop | core | `false` | impl | C: false (host answers true today; popups are UI only) |
 | ICvUserInterface1::IsPolicyNotificationSeen | 1 | 1 |  | 1 | turnloop | core | `false` | stub | C: false (human-only path) |
 | ICvUserInterface1::IsSPAutoEndTurnEnabled | 954 | 501 | 6 |  | turnloop,shutdown | ui | `false` | stub | C: false |

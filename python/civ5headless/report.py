@@ -97,6 +97,8 @@ FILES = {
     'setup.json': 'the setup the game reports (players, map, speed) and the A/B fields',
     'spec.json': 'the spec as given', 'spec-resolved.json': 'the resolved spec the host played',
     'spec.resolved.json': "the host's copy of the resolved spec",
+    'save-header.json': 'the header of the save the game was loaded from (c5h run --load)',
+    'saves': 'the saves the game wrote: the last turn (Final_), --save-at (Turn_), --autosave (auto\\)',
     'hh-command.json': 'the host command line, the inputs and their hashes, the DLL and why, the detail level',
     'host-report.json': "the host's run report: inputs, mods, profiles, add-ins, stubbed calls, Lua errors, timings, memory",
     'newgame-report.json': "the host's new-game report", 'host-stdout.txt': "the host's console output",
@@ -184,7 +186,7 @@ def collect(run, light=False):
     m = dict(name=run.name, folder=run)
     m['status'] = _json(run / 'status.json', {}) or {}
     m['setup'] = _json(run / 'setup.json', {}) or {}
-    m['spec'] = _json(run / 'spec-resolved.json', {}) or {}
+    m['spec'] = _json(run / 'spec-resolved.json', {}) or _save_spec(_json(run / 'save-header.json', {}) or {})
     m['command'] = _json(run / 'hh-command.json', {}) or {}
     m['host'] = _json(run / 'host-report.json') or _json(run / 'newgame-report.json', {}) or {}
     m['events'] = _jsonl(run / 'events.jsonl')
@@ -554,6 +556,30 @@ def _card(key, value, sub='', cls=''):
             + (f'<div class="s">{sub}</div>' if sub else '') + '</div>')
 
 
+def _save_spec(header):
+    """For a game loaded from a save (no spec): the spec fields the report shows, from the save's header."""
+    if not header:
+        return {}
+    return dict(map=dict(script=header.get('mapScript')), worldSize=header.get('worldSize'), speed=header.get('speed'),
+                difficulty=header.get('handicap'), era=header.get('startEra'))
+
+
+def _saves_text(st):
+    """The Save row: the save a game was loaded from and the saves it wrote."""
+    parts = []
+    if st.get('loadedFrom'):
+        parts.append(f'Loaded from <span class="mono">{h(Path(st["loadedFrom"]).name)}</span> (turn {h(st.get("startTurn"))})'
+                     + ''.join(f'<div class="muted">{h(w)}</div>' for w in st.get('loadWarnings') or []))
+    saves = st.get('saves') or []
+    if saves:
+        kinds = {}
+        for x in saves:
+            kinds[x.get('kind')] = kinds.get(x.get('kind'), 0) + 1
+        parts.append(f'{len(saves)} written (' + ', '.join(f'{n} {h(k)}' for k, n in kinds.items()) + ')'
+                     + (f' &middot; final <span class="mono">{h(Path(st["finalSave"]).name)}</span>' if st.get('finalSave') else ''))
+    return '<br>'.join(parts) or None
+
+
 def _mb(n):
     return f'{n / 2 ** 20:,.0f} MB' if isinstance(n, (int, float)) and n else None
 
@@ -616,7 +642,8 @@ def _setup_rows(m, ps):
             ('Players', f'{h(n_major)} civilizations, {h(n_minor)} city-states'),
             ('DLL', dll_text), ('Mods', mods_text), ('Host', host_text),
             ('Run', ' &middot; '.join(x for x in (f"detail {h(detail)}" if detail else '', h(', '.join(options))) if x)),
-            ('Spec', f'<span class="mono">{h(Path(st.get("spec") or "").name)}</span>' if st.get('spec') else None)]
+            ('Spec', f'<span class="mono">{h(Path(st.get("spec") or "").name)}</span>' if st.get('spec') else None),
+            ('Saves', _saves_text(st))]
 
 
 def _result(m, ps):

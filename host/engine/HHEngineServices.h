@@ -112,7 +112,8 @@ public:
 	bool IsPlayerConnected(PlayerTypes playerId);
 	void PublishNewGameTurn(int gameTurn);
 	// Autosaves: the engine writes the game only on turn 0 and every 10th turn; every Write side effect
-	// is normalised in the digest, so the host writes nothing (contract 6.5).
+	// is normalised in the digest (contract 6.5). The host writes a save here only for --autosave and
+	// --save-at (setup/HHSaveGame.h); by default nothing.
 	void AutoSave(bool bInitial, bool bPostTurn);
 
 	// Turn slices per second and per minute (Civ4 values). CvGame::getMinutesPlayed divides by

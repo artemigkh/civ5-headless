@@ -136,6 +136,70 @@ namespace
 		return 0;
 	}
 
+	// The save data (Modding.OpenSaveData): one connection for the run, opened on first use, after the DLL has
+	// created the file for a new game (CvGame::init) or restored it from a save (CvGame::readSaveGameDB).
+	Database::Connection* SaveDatabase()
+	{
+		static Database::Connection* s_pDb = NULL;
+		if(!s_pDb)
+		{
+			const std::string path = HHGetPaths().cache + "Civ5SavedGameDatabase.db";
+			Database::Connection* pDb = new Database::Connection();
+			if(!pDb->Open(path.c_str(), Database::OPEN_READWRITE | Database::OPEN_CREATE | Database::OPEN_FULLMUTEX))
+			{
+				HHLogError("Modding.OpenSaveData: cannot open %s", path.c_str());
+				delete pDb;
+				return NULL;
+			}
+			pDb->Execute("CREATE TABLE IF NOT EXISTS SimpleValues(Name TEXT Primary Key, Value VARIANT)");
+			s_pDb = pDb;
+		}
+		return s_pDb;
+	}
+
+	// Query(sql, ...) of the save data: DB.Query on it. Mods call it as a plain function (TableSaverLoader:
+	// local DBQuery = Modding.OpenSaveData().Query) or as a method.
+	int HHLuaSaveDataQuery(lua_State* L)
+	{
+		if(lua_istable(L, 1))
+			lua_remove(L, 1);
+		return HHLuaDBQuery(L);
+	}
+
+	// GetValue(name) / SetValue(name, value) of the save data: the SimpleValues table.
+	int HHLuaSaveDataGetValue(lua_State* L)
+	{
+		Database::Connection* pDb = (Database::Connection*)lua_touserdata(L, lua_upvalueindex(1));
+		const char* szName = luaL_checkstring(L, lua_istable(L, 1) ? 2 : 1);
+		Database::Results r;
+		if(pDb && pDb->Execute(r, "SELECT Value FROM SimpleValues WHERE Name = ?"))
+		{
+			r.Bind(1, szName);
+			if(r.Step())
+			{
+				PushDefineValue(L, r, 0);
+				return 1;
+			}
+		}
+		lua_pushnil(L);
+		return 1;
+	}
+
+	int HHLuaSaveDataSetValue(lua_State* L)
+	{
+		Database::Connection* pDb = (Database::Connection*)lua_touserdata(L, lua_upvalueindex(1));
+		const int iName = lua_istable(L, 1) ? 2 : 1;
+		const char* szName = luaL_checkstring(L, iName);
+		Database::Results r;
+		if(pDb && pDb->Execute(r, "INSERT OR REPLACE INTO SimpleValues(Name, Value) VALUES(?, ?)"))
+		{
+			r.Bind(1, szName);
+			BindLuaValue(L, &r, iName + 1, 2);
+			r.Step();
+		}
+		return 0;
+	}
+
 	int QueryInt(Database::Connection& kDb, const char* szSQL, const char* szBind = NULL)
 	{
 		Database::Results kResults;
@@ -199,6 +263,27 @@ namespace
 			r.bPassed = false;
 		HHLog("  self-test %s %s", bOk ? "ok  " : "FAIL", strText.c_str());
 	}
+}
+
+int HHLuaModdingOpenSaveData(lua_State* L)
+{
+	Database::Connection* pDb = SaveDatabase();
+	if(!pDb)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_createtable(L, 0, 3);
+	lua_pushlightuserdata(L, pDb);
+	lua_pushcclosure(L, HHLuaSaveDataQuery, 1);
+	lua_setfield(L, -2, "Query");
+	lua_pushlightuserdata(L, pDb);
+	lua_pushcclosure(L, HHLuaSaveDataGetValue, 1);
+	lua_setfield(L, -2, "GetValue");
+	lua_pushlightuserdata(L, pDb);
+	lua_pushcclosure(L, HHLuaSaveDataSetValue, 1);
+	lua_setfield(L, -2, "SetValue");
+	return 1;
 }
 
 bool HHLuaRegisterGameData(HHScriptSystem& kScripts, ICvScriptSystemUtility1* pUtility, Database::Connection& kDb)

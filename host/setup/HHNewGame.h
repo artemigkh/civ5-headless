@@ -53,7 +53,8 @@ struct HHNewGameResult
 	std::vector<HHMinorCivSlot> minorCivs;                   // every city-state slot after Init2
 	// Autoplay (M3)
 	bool bAutoplayOk;
-	int iTurnsPlayed, iUpdates;
+	int iStartTurn;                                          // the game turn autoplay started at (a loaded game's turn)
+	int iTurnsPlayed, iUpdates;                              // iTurnsPlayed: the game turn autoplay ended at
 	std::vector<std::pair<int, double> > turnSeconds;        // game turn -> wall seconds spent in it
 	std::vector<std::pair<int, int> > turnUpdates;           // game turn -> Update calls
 	std::vector<std::string> addins;                         // UI add-in Lua files run
@@ -61,7 +62,7 @@ struct HHNewGameResult
 	std::vector<std::string> probeErrors;                    // --lua-probe files that failed
 	std::map<std::string, int> netMessages;                  // send* counts by kind
 	HHNewGameResult() : bPregameOk(false), bStarted(false), bOutputsOk(false), iWidth(0), iHeight(0), uiExeSeed(0),
-		hostChoseCivs(false), hostChoseMinors(false), bAutoplayOk(false), iTurnsPlayed(0), iUpdates(0) {}
+		hostChoseCivs(false), hostChoseMinors(false), bAutoplayOk(false), iStartTurn(0), iTurnsPlayed(0), iUpdates(0) {}
 };
 
 // Pregame from the resolved spec (Task 1). Every engine call is appended to kResult.steps.
@@ -71,6 +72,9 @@ size_t HHDeliverNetMessages(HHNewGameInterfaces& kIf);
 
 // "Start game" (Task 4): close slots, preload a premade map, Init, Init2, game started.
 bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
+// What the engine does once the game exists, before the first Update: LaterInit, InitTacticalAnalysisMap, graphics
+// set-up, DoGameStarted, player options, the first UI frame. bLoaded: after a save was read (setup/HHSaveGame.h).
+void HHGameStartedSteps(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, bool bLoaded);
 // T000 outputs (Task 5): t000-map.json, checkpoints/turn-0000.json, t000-digest.json.
 // The load-screen state (the reference runs' dump-t000 point): pause player and UI Lua side effects.
 bool HHLoadScreen(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
@@ -89,7 +93,8 @@ void HHLoadUIAddinsStep(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 void HHRunLuaProbes(HHNewGameInterfaces& kIf, HHNewGameResult& kResult);
 
 // M3: arms autoplay for nTurns the way the reference runs do (game_probe: ARM, then the load screen's
-// CONTINUE) and drives ICvGame1::Update until autoplay ends at turn nTurns; writes dump-tNNN.
+// CONTINUE) and drives ICvGame1::Update until autoplay ends nTurns turns later; writes dump-tNNN, then the final
+// save (unless --no-save-final).
 bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurns, int nIdleUpdates);
 // Leaves the started game so the DLL can be uninitialised (CvDllGame::Uninit traps while
 // pregame says the game is started).

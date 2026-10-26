@@ -4,6 +4,7 @@
 #include "engine/HHEngineServices.h"
 #include "engine/HHRuntime.h"
 #include "setup/HHVfs.h"
+#include "setup/HHSaveGame.h"
 #include "setup/HHAddins.h"
 #include "setup/HHProfiles.h"
 
@@ -652,11 +653,29 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	}
 	RecordMinorCivs(kIf, kResult, minorPins);
 
-	// 6. After Init2 (trace S1): LaterInit for every player slot, InitTacticalAnalysisMap
-	//    (a no-op in VP), the in-game UI's SetGameOption calls, then DoGameStarted (and
-	//    InitExeStuff: BIN_UNKNOWN for this exe). The exe's SetInitialTime/SetStartTime (wall
-	//    clock) are not called.
+	// 6. After Init2: HHGameStartedSteps.
 	t0 = Now();
+	HHGameStartedSteps(kIf, kResult, false);
+	kResult.timings.push_back(std::make_pair(std::string("game_started"), Now() - t0));
+
+	kResult.iWidth = kIf.pMap->GetGridWidth();
+	kResult.iHeight = kIf.pMap->GetGridHeight();
+	HHLog("game started: map %dx%d (%d plots), turn %d, final initialised %d", kResult.iWidth, kResult.iHeight, kIf.pMap->NumPlots(),
+	      kIf.pGame->GetGameTurn(), kIf.pGame->IsFinalInitialized() ? 1 : 0);
+	kResult.bStarted = true;
+	return true;
+}
+
+void HHGameStartedSteps(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, bool bLoaded)
+{
+	ICvPreGame1* pg = kIf.pPreGame;
+	// After Init2 (trace S1): LaterInit for every player slot, InitTacticalAnalysisMap
+	// (a no-op in VP), the in-game UI's SetGameOption calls, then DoGameStarted (and
+	// InitExeStuff: BIN_UNKNOWN for this exe). The exe's SetInitialTime/SetStartTime (wall
+	// clock) are not called.
+	// ASSUMPTION (no trace of a load yet): after a load the engine makes the same calls, without closing the slots of
+	// city-states (the save's pregame has them) and with the unit cycle instead of the settler selection.
+	// CvPlayer::gameStartInit says it runs "also after reload", and DoGameStarted fills caches the save does not hold.
 	for(int i = 0; i < MAX_PLAYERS; ++i)
 	{
 		ICvPlayer1* pPlayer = kIf.pGame->GetPlayer((PlayerTypes)i);
@@ -671,7 +690,7 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// city-states that did not survive map generation (AssignStartingPlots discards them when no site is
 	// left); the real pregame has SS_CLOSED there. CvGame looks for SS_CLOSED minor slots when it creates
 	// a city-state later in the game.
-	for(int i = kIf.iMaxMajorCivs; i < MAX_CIV_PLAYERS; ++i)
+	for(int i = kIf.iMaxMajorCivs; i < MAX_CIV_PLAYERS && !bLoaded; ++i)
 	{
 		const PlayerTypes p = (PlayerTypes)i;
 		if(pg->slotStatus(p) != SS_COMPUTER)
@@ -733,23 +752,16 @@ bool HHStartNewGame(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResu
 	// the real game has no settler selected at the start dump but the unit nearest to plot (0,0), which is
 	// what UpdateSelectionList picks off turn 0 (CvGame::cycleUnits -> CvMap::findUnit): unit 1004 in
 	// era-medieval. So the first frame is taken to call UpdateSelectionList instead of SelectSettler there.
-	if(kIf.pGame->GetGameTurn() == 0)
+	if(kIf.pGame->GetGameTurn() == 0 && !bLoaded)
 		HH_STEP("Game.SelectSettler()", kIf.pGame->SelectSettler());
 	else
-		HH_STEP(HHFormat("Game.UpdateSelectionList() /* start turn %d: no SelectSettler */", kIf.pGame->GetGameTurn()), kIf.pGame->UpdateSelectionList());
+		HH_STEP(HHFormat("Game.UpdateSelectionList() /* %s turn %d: no SelectSettler */", bLoaded ? "loaded at" : "start", kIf.pGame->GetGameTurn()),
+		        kIf.pGame->UpdateSelectionList());
 	if(ICvPlayer1* pActive = kIf.pGame->GetPlayer(pg->activePlayer()))
 	{
 		HH_STEP(HHFormat("Game.GetPlayer(%d).RebroadcastNotifications()", (int)pg->activePlayer()), pActive->RebroadcastNotifications());
 		pActive->Destroy();
 	}
-	kResult.timings.push_back(std::make_pair(std::string("game_started"), Now() - t0));
-
-	kResult.iWidth = kIf.pMap->GetGridWidth();
-	kResult.iHeight = kIf.pMap->GetGridHeight();
-	HHLog("game started: map %dx%d (%d plots), turn %d, final initialised %d", kResult.iWidth, kResult.iHeight, iPlots,
-	      kIf.pGame->GetGameTurn(), kIf.pGame->IsFinalInitialized() ? 1 : 0);
-	kResult.bStarted = true;
-	return true;
 }
 
 //------------------------------------------------------------------------------
@@ -1006,7 +1018,8 @@ bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult&
 	if(lua_State* L = RunReturning(*kIf.pScripts, "Headless checkpoint", kCheckpointLua))
 	{
 		const std::string json = "{\n \"utc\": \"" + UtcNow() + "\",\n \"data\": " + HHLuaToJson(L, -1, 0) + "\n}\n";
-		bOk &= HHWriteTextFile(run + "checkpoints\\turn-0000.json", json);
+		// A loaded game starts at the save's turn.
+		bOk &= HHWriteTextFile(run + HHFormat("checkpoints\\turn-%04d.json", HHIsLoadedGame() ? kIf.pGame->GetGameTurn() : 0), json);
 		kIf.pScripts->FreeLuaThread(L);
 	}
 	else
@@ -1195,9 +1208,11 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	HH_STEP("Game.SetPausePlayer(-1)", kIf.pGame->SetPausePlayer(NO_PLAYER));
 	HHDeliverNetMessages(kIf);
 
-	// The game core: ICvGame1::Update until the autoplay counter is back to 0 at turn nTurns (the
+	// The game core: ICvGame1::Update until the autoplay counter is back to 0 nTurns turns later (the
 	// engine calls it once per frame from its core thread; one call processes one player).
 	int iTurn = kIf.pGame->GetGameTurn();
+	const int iEndTurn = iTurn + nTurns;
+	kResult.iStartTurn = iTurn;
 	double tTurn = Now();
 	// M6 tooling: turn-times.jsonl as vpbench writes it (seconds since autoplay started, here exact).
 	const double tStart = tTurn;
@@ -1253,7 +1268,7 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 			HHLog("game state %d at turn %d", (int)kIf.pGame->GetGameState(), iNow);
 			break;
 		}
-		if(iIdle < 0 && iNow >= nTurns && LuaInt(kScripts, "return Game.GetAIAutoPlay()", -1) == 0)
+		if(iIdle < 0 && iNow >= iEndTurn && LuaInt(kScripts, "return Game.GetAIAutoPlay()", -1) == 0)
 			iIdle = 0;   // autoplay ended: the human turn; the reference keeps running Updates until its end probe
 		if(iIdle >= 0 && iIdle++ >= nIdleUpdates)
 			break;
@@ -1269,7 +1284,6 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 	kResult.iTurnsPlayed = kIf.pGame->GetGameTurn();
 	kResult.netMessages = kIf.pEngine->GetNetMessageCounts();
 	kResult.timings.push_back(std::make_pair(std::string("autoplay"), Now() - t0));
-
 	// M6 tooling: the final checkpoint (vpbench's turn-NNNN-final.json), after the idle updates.
 	if(!o.checkpointLua.empty())
 		WriteCheckpoint(kScripts, kIf.pGame->GetGameTurn(), "-final", Now() - tStart);
@@ -1280,15 +1294,19 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		kResult.steps.push_back(HHFormat("--lua-before-dump %s -> %s", o.luaBeforeDump.c_str(),
 		                                 json.size() > 200 ? (json.substr(0, 200) + "...").c_str() : json.c_str()));
 	}
+	bool bDumped = true;
 	if(o.noDumps)
-	{
 		kResult.steps.push_back("--no-dumps: no final dump");
-		kResult.bAutoplayOk = kResult.error.empty();
-		return kResult.bAutoplayOk;
+	else
+	{
+		const std::string folder = HHGetPaths().run + HHFormat("dump-t%03d", kResult.iTurnsPlayed);
+		bDumped = !DumpState(kScripts, folder).empty();
+		kResult.steps.push_back("Game.DumpHeadlessState(" + folder + ")");
 	}
-	const std::string folder = HHGetPaths().run + HHFormat("dump-t%03d", kResult.iTurnsPlayed);
-	const std::string line = DumpState(kScripts, folder);
-	kResult.steps.push_back("Game.DumpHeadlessState(" + folder + ")");
-	kResult.bAutoplayOk = kResult.error.empty() && !line.empty();
+	// The final save (unless --no-save-final): the game on its last turn, taken after the final checkpoint, Lua and
+	// dump have read it, so none of them depends on it.
+	if(o.saveFinal)
+		HHSaveFinal();
+	kResult.bAutoplayOk = kResult.error.empty() && bDumped;
 	return kResult.bAutoplayOk;
 }

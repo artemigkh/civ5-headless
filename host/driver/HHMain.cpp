@@ -4,6 +4,11 @@
 //                         --out <run dir> [--strict] [options]
 //   civ5headless.exe newgame --spec <resolved.json> --out <run dir> [--dll <path>]
 //                         [--game-dir <path>] [--mods-dir <path>] [options]
+//   civ5headless.exe loadgame --load <file.Civ5Save> --out <run dir> [options as newgame]
+//
+// "loadgame": boots as newgame does, loads a saved game (the real game's or the host's) and continues it
+// (setup/HHSaveGame.h). Both save the last turn (unless --no-save-final) and, on request, more (--autosave,
+// --save-at), always into <run>\saves.
 //
 // M2 "newgame": boots as "boot" does, applies a resolved game spec to pregame, starts the
 // game as the real game would (map generation by the DLL and the map script) and writes the
@@ -28,6 +33,7 @@
 #include "setup/HHDbBuilder.h"
 #include "setup/HHProfiles.h"
 #include "setup/HHAddins.h"
+#include "setup/HHSaveGame.h"
 #include "engine/HHSha256.h"
 #include <float.h>
 #include <psapi.h>
@@ -45,7 +51,16 @@ namespace
 		"usage: civ5headless.exe boot --game-dir <path> --dll <path> --out <run dir> [options]\n"
 		"       civ5headless.exe newgame --spec <resolved.json> --out <run dir> [--dll <path>] [--game-dir <path>]\n"
 		"                        [--mods-dir <path>] [options]\n"
+		"       civ5headless.exe loadgame --load <file.Civ5Save> --out <run dir> [options as newgame]\n"
 		"  --spec <path>        resolved game spec (python work/headless/gamespec.py resolve SPEC --out FILE)\n"
+		"  --load <path>        loadgame: the saved game to continue (the real game's or the host's .Civ5Save); the activated\n"
+		"                       mods and the DLL must be the save's (c5h run --load sets them up)\n"
+		"  --autosave <mode>    none (default), game (the game's own setting: UserSettings.ini TurnsBetweenAutosave) or n\n"
+		"                       (every n turns): saves at the engine's autosave points, named as the game names them, in\n"
+		"                       <save dir>\\auto; all are kept (as the real game keeps them in autoplay)\n"
+		"  --save-at <turn>     newgame/loadgame: save at the autosave point of this turn (repeatable): Turn_NNNN <date>\n"
+		"  --no-save-final      newgame/loadgame: no save once autoplay has ended (by default the last turn is saved,\n"
+		"                       Final_NNNN <date>). Every save goes to <run>\\saves\n"
 		"  --game-dir <path>    game folder (default: found through the registry: Civ V's Steam uninstall entry, then\n"
 		"                       the Steam libraries)\n"
 		"  --dll <path>         game DLL (newgame default: CvGameCore_Expansion2.dll in MODS\\(1) Community Patch)\n"
@@ -70,7 +85,8 @@ namespace
 		"  --dlc <guid>         valid DLC for IsDLCValid (repeatable; default: every DLC valid)\n"
 		"  --game-logging       ICvGameContext1::SetLogging(true) (the DLL's own logs)\n"
 		"  --no-game-logging    newgame: no DLL logs (default: the reference profile's logging; older DLLs' AI results depend on it)\n"
-		"  --turns <n>          newgame: autoplay n turns after T000 (ARM + CONTINUE as game_probe), then dump-t<n>\n"
+		"  --turns <n>          newgame: autoplay n turns after T000 (ARM + CONTINUE as game_probe), then dump-t<n>;\n"
+		"                       loadgame: n turns after the save's turn\n"
 		"  --idle-updates <k>   newgame: Updates after autoplay ends, in the human turn (default 10)\n"
 		"  --frame-skew <k>     newgame: an extra Update (no UI frame) before every k-th one; results must not change\n"
 		"  --dump-turns <a:b>   newgame: the DLL dumps the state at doTurnBegin of turns a..b (Logs\\HeadlessDumps)\n"
@@ -283,6 +299,29 @@ namespace
 		return std::string();
 	}
 
+	// --autosave none | game | n. game: the game's own setting, UserSettings.ini [AutoSave] TurnsBetweenAutosave
+	// (the game's default 10). Nothing is deleted: in autoplay the real game kept every autosave (seven with
+	// NumAutosavesKept = 5; docs/saves.md).
+	bool ParseAutosave(const std::string& v, HHOptions& o)
+	{
+		if(v == "none")
+			o.autosaveTurns = 0;
+		else if(v == "game")
+		{
+			const std::wstring ini = HHWiden(DocumentsFolder() + "\\My Games\\Sid Meier's Civilization 5\\UserSettings.ini");
+			o.autosaveTurns = (int)GetPrivateProfileIntW(L"AutoSave", L"TurnsBetweenAutosave", 10, ini.c_str());
+		}
+		else
+		{
+			char* end = NULL;
+			const long n = strtol(v.c_str(), &end, 10);
+			if(v.empty() || *end || n <= 0)
+				return false;
+			o.autosaveTurns = (int)n;
+		}
+		return true;
+	}
+
 	bool ParseArgs(int argc, wchar_t** argv, HHOptions& o)
 	{
 		if(argc < 2)
@@ -304,7 +343,20 @@ namespace
 			else if(a == "--no-profiles") o.noProfiles = true;
 			else if(a == "--no-addins") o.noAddins = true;
 			else if(a == "--no-dumps") o.noDumps = true;
+			else if(a == "--save-final") o.saveFinal = true;
+			else if(a == "--no-save-final") o.saveFinal = false;
 			else if(!bHasValue) { fprintf(stderr, "missing value for %s\n", a.c_str()); return false; }
+			else if(a == "--load") { o.loadPath = v; ++i; }
+			else if(a == "--save-at") { o.saveAt.push_back(atoi(v.c_str())); ++i; }
+			else if(a == "--autosave")
+			{
+				if(!ParseAutosave(v, o))
+				{
+					fprintf(stderr, "--autosave takes none, game or a number of turns, not %s\n", v.c_str());
+					return false;
+				}
+				++i;
+			}
 			else if(a == "--profiles") { o.profilesDir = StripSlash(HHFullPath(v)); ++i; }
 			else if(a == "--skip-addin") { o.skipAddins.push_back(v); ++i; }
 			else if(a == "--keep-log") { o.keepLogs.push_back(v); ++i; }
@@ -355,7 +407,7 @@ namespace
 			}
 			else { fprintf(stderr, "unknown option %s\n", a.c_str()); return false; }
 		}
-		if(o.command != "boot" && o.command != "newgame")
+		if(o.command != "boot" && o.command != "newgame" && o.command != "loadgame")
 		{
 			fprintf(stderr, "unknown command %s\n", o.command.c_str());
 			return false;
@@ -363,14 +415,22 @@ namespace
 		const std::string myGames = DocumentsFolder() + "\\My Games\\Sid Meier's Civilization 5\\";
 		if(o.modsDir.empty()) o.modsDir = myGames + "MODS";
 		if(o.modsDbPath.empty()) o.modsDbPath = myGames + "cache\\Civ5ModsDatabase.db";
-		if(o.command == "newgame")
+		if(o.command == "newgame" || o.command == "loadgame")
 		{
-			if(o.specPath.empty())
+			if(o.command == "newgame" && o.specPath.empty())
 			{
 				fprintf(stderr, "newgame needs --spec\n");
 				return false;
 			}
-			o.specPath = HHFullPath(o.specPath);
+			if(o.command == "loadgame" && o.loadPath.empty())
+			{
+				fprintf(stderr, "loadgame needs --load\n");
+				return false;
+			}
+			if(!o.specPath.empty())
+				o.specPath = HHFullPath(o.specPath);
+			if(!o.loadPath.empty())
+				o.loadPath = HHFullPath(o.loadPath);
 			// The reference profile's config.ini has LoggingEnabled, AILog, AIPerfLog, BuilderAILog and
 			// PlayerAndCityAILogSplit on. DLLs before the logging fixes (GetBestSettlePlot, PlotPillageMoves) give
 			// different AI results without AI logging, so newgame logs like the reference by default.
@@ -497,6 +557,39 @@ namespace
 		fclose(f);
 	}
 
+	// The save the run loaded (null: a new game) and the saves it wrote, for the reports.
+	std::string LoadJson()
+	{
+		const HHLoadRecord* pLoad = HHGetLoadRecord();
+		if(!pLoad)
+			return "null";
+		const HHSaveHeader& h = pLoad->header;
+		std::string mods, warnings;
+		for(size_t i = 0; i < h.mods.size(); ++i)
+			mods += std::string(i ? ", " : "") + "{\"id\": \"" + HHJsonEscape(h.mods[i].id) + HHFormat("\", \"version\": %d, \"name\": \"", h.mods[i].version) +
+				HHJsonEscape(h.mods[i].name) + "\"}";
+		for(size_t i = 0; i < pLoad->warnings.size(); ++i)
+			warnings += std::string(i ? ", " : "") + "\"" + HHJsonEscape(pLoad->warnings[i]) + "\"";
+		return "{\"path\": \"" + HHJsonEscape(pLoad->path) + HHFormat("\", \"turn\": %d, \"bodyBytes\": %u, \"seconds\": %.3f, ", h.turn, pLoad->bodyBytes,
+		                                                               pLoad->seconds) +
+			"\"civilization\": \"" + HHJsonEscape(h.civilization) + "\", \"handicap\": \"" + HHJsonEscape(h.handicap) + "\", \"gameSpeed\": \"" +
+			HHJsonEscape(h.gameSpeed) + "\", \"worldSize\": \"" + HHJsonEscape(h.worldSize) + "\", \"mapScript\": \"" + HHJsonEscape(h.mapScript) +
+			"\", \"gameVersion\": \"" + HHJsonEscape(h.gameVersion) + "\", \"dllGuid\": \"" + HHGuidString(h.dllGuid) + "\", \"dllVersion\": \"" +
+			HHJsonEscape(h.dllVersion) + HHFormat("\", \"dlc\": %u, \"mods\": [", (unsigned)h.dlc.size()) + mods + "], \"warnings\": [" + warnings + "]}";
+	}
+
+	std::string SavesJson(const char* szIndent)
+	{
+		const std::vector<HHSaveRecord>& saves = HHGetSaveRecords();
+		std::string out = "[";
+		for(size_t i = 0; i < saves.size(); ++i)
+			out += std::string(i ? "," : "") + "\n" + szIndent + "{\"kind\": \"" + saves[i].kind + "\", \"turn\": " + HHFormat("%d", saves[i].turn) +
+				", \"path\": \"" + HHJsonEscape(saves[i].path) + HHFormat("\", \"bytes\": %u, \"bodyBytes\": %u, \"seconds\": %.3f, \"error\": \"",
+				                                                          saves[i].bytes, saves[i].bodyBytes, saves[i].seconds) +
+				HHJsonEscape(saves[i].error) + "\"}";
+		return out + (saves.empty() ? "]" : "\n" + std::string(szIndent, strlen(szIndent) >= 2 ? strlen(szIndent) - 2 : 0) + "]");
+	}
+
 	// Adds a "newgame" member to the report WriteReport wrote (its last line is "}").
 	void WriteNewGameSection(const HHNewGameResult& ng, int iLuaErrors, const std::string& strPath)
 	{
@@ -517,6 +610,8 @@ namespace
 		const HHOptions& o = HHGetOptions();
 		std::string add = ",\n  \"newgame\": {\n";
 		add += HHFormat("    \"spec\": \"%s\",\n", HHJsonEscape(o.specPath).c_str());
+		add += "    \"load\": " + LoadJson() + ",\n";
+		add += "    \"saves\": " + SavesJson("      ") + ",\n";
 		add += HHFormat("    \"mods_dir\": \"%s\",\n", HHJsonEscape(o.modsDir).c_str());
 		add += HHFormat("    \"pregame_ok\": %s,\n    \"started\": %s,\n    \"outputs_ok\": %s,\n", ng.bPregameOk ? "true" : "false",
 		                ng.bStarted ? "true" : "false", ng.bOutputsOk ? "true" : "false");
@@ -532,8 +627,8 @@ namespace
 		add += "],\n";
 		if(o.turns > 0)
 		{
-			add += HHFormat("    \"autoplay\": {\"ok\": %s, \"turns\": %d, \"updates\": %d, \"turn_seconds\": {", ng.bAutoplayOk ? "true" : "false",
-			                ng.iTurnsPlayed, ng.iUpdates);
+			add += HHFormat("    \"autoplay\": {\"ok\": %s, \"start_turn\": %d, \"turns\": %d, \"updates\": %d, \"turn_seconds\": {", ng.bAutoplayOk ? "true" : "false",
+			                ng.iStartTurn, ng.iTurnsPlayed, ng.iUpdates);
 			for(size_t i = 0; i < ng.turnSeconds.size(); ++i)
 				add += HHFormat("%s\"%d\": %.3f", i ? ", " : "", ng.turnSeconds[i].first, ng.turnSeconds[i].second);
 			add += "}, \"turn_updates\": {";
@@ -695,6 +790,8 @@ namespace
 		r += "  \"database\": {\"game\": " + Q(o.dbPath) + ", \"localization\": " + Q(o.locDbPath) + ", \"modsDb\": " + Q(o.noMods ? std::string() : o.modsDbPath) +
 			", \"modsDir\": " + Q(o.modsDir) + "},\n";
 		r += "  \"spec\": " + Q(o.specPath) + ",\n";
+		r += "  \"load\": " + LoadJson() + ",\n";
+		r += "  \"saves\": " + SavesJson("    ") + ",\n";
 		r += HHFormat("  \"options\": {\"turns\": %d, \"heapPerturb\": %u, \"frameSkew\": %d, \"noUiFrame\": %s, \"gameLogging\": %s, \"gameLogFlags\": %d, "
 		              "\"idleUpdates\": %d, \"noMods\": %s, \"noProfiles\": %s, \"noAddins\": %s, \"skipAddins\": [",
 		              o.turns, o.heapPerturb, o.frameSkew, o.noUiFrame ? "true" : "false", o.gameLogging ? "true" : "false", o.gameLogFlags,
@@ -704,6 +801,10 @@ namespace
 		r += "], \"luaProbes\": [";
 		for(size_t i = 0; i < o.luaProbes.size(); ++i)
 			r += (i ? ", " : "") + Q(o.luaProbes[i]);
+		r += HHFormat("], \"autosaveTurns\": %d, \"saveFinal\": %s, \"saveAt\": [", o.autosaveTurns,
+		              o.saveFinal ? "true" : "false");
+		for(size_t i = 0; i < o.saveAt.size(); ++i)
+			r += HHFormat("%s%d", i ? ", " : "", o.saveAt[i]);
 		r += HHFormat("], \"noDumps\": %s, \"keepLogs\": [", o.noDumps ? "true" : "false");
 		for(size_t i = 0; i < o.keepLogs.size(); ++i)
 			r += (i ? ", " : "") + Q(o.keepLogs[i]);
@@ -815,6 +916,54 @@ namespace
 		HHWriteTextFile(strPath, r);
 	}
 
+	// Options for the game's start (new or loaded), experiments all: --crt-sse2, --fpu-precision, --crt-srand.
+	void ApplyStartOptions(HHScriptSystem& kScripts)
+	{
+		const HHOptions& o = HHGetOptions();
+		// Lua's math.random is the CRT rand() of the calling thread (MSVCR90, per-thread state,
+		// seeded 1); map scripts that use it (Continental_Drift) depend on that state, which in
+		// the real game is whatever the UI thread's earlier rand() calls left.
+		if(o.crtSse2 >= 0)
+		{
+			// Every MSVCR90 instance in the process (the host's and the one lua51_Win32.dll uses can differ)
+			HMODULE mods[512];
+			DWORD cb = 0;
+			EnumProcessModules(GetCurrentProcess(), mods, sizeof(mods), &cb);
+			for(DWORD k = 0; k < cb / sizeof(HMODULE); ++k)
+			{
+				wchar_t name[MAX_PATH];
+				if(!GetModuleFileNameW(mods[k], name, MAX_PATH))
+					continue;
+				typedef int (__cdecl *SetSse2)(int);
+				SetSse2 pfn = (SetSse2)GetProcAddress(mods[k], "_set_SSE2_enable");
+				if(pfn)
+				{
+					const int prev = pfn(o.crtSse2);
+					HHLog("_set_SSE2_enable(%d) in %s: was %d", o.crtSse2, HHNarrow(name).c_str(), prev);
+				}
+			}
+		}
+		if(o.fpuPrecision)
+		{
+			unsigned int cw = 0;
+			const unsigned int pc = o.fpuPrecision == 24 ? _PC_24 : o.fpuPrecision == 64 ? _PC_64 : _PC_53;
+			_controlfp_s(&cw, pc, _MCW_PC);
+			HHLog("x87 precision %d bits for the new game (--fpu-precision): control word %08x", o.fpuPrecision, cw);
+		}
+		if(o.crtSrand >= 0)
+		{
+			// lua51_Win32.dll has its own MSVCR90 instance: seed through Lua itself.
+			const std::string chunk = HHFormat("math.randomseed(%u)", (unsigned int)o.crtSrand);
+			if(lua_State* L = kScripts.CreateLuaThread("Headless randomseed"))
+			{
+				if(luaL_loadbuffer(L, chunk.c_str(), chunk.size(), "randomseed") == 0)
+					kScripts.CallFunction(L, 0, 0);
+				kScripts.FreeLuaThread(L);
+			}
+			HHLog("Lua math.randomseed(%u) (--crt-srand)", (unsigned int)o.crtSrand);
+		}
+	}
+
 	// The listener registrations per context (HHLuaGlobals.cpp __HHContextRecords) as JSON; before Lua shuts down.
 	std::string ContextRecordsJson(HHScriptSystem& kScripts)
 	{
@@ -875,7 +1024,11 @@ namespace
 		HHLogFileMgr::Get().SetFolder(p.logs);
 		HHLogFileMgr::Get().SetKeepPatterns(o.keepLogs);
 		SetCurrentDirectoryW(HHWiden(p.run).c_str());
-		const std::string reportPath = p.run + (o.command == "newgame" ? "newgame-report.json" : "boot-report.json");
+		// newgame and loadgame: newgame-report.json (its "newgame" member is the game's, whichever way it began).
+		const bool bNewGame = o.command == "newgame";
+		const bool bLoadGame = o.command == "loadgame";
+		const bool bGame = bNewGame || bLoadGame;
+		const std::string reportPath = p.run + (bGame ? "newgame-report.json" : "boot-report.json");
 
 		HHLog("civ5headless boot");
 		HHLog("  game dir  %s (%s)", o.gameDir.c_str(), o.gameDirSource.c_str());
@@ -892,9 +1045,21 @@ namespace
 			HHLog("  x87/SSE control word at start: %08x (game-core values come from the M0 trace)", cw);
 		}
 
-		// newgame: the spec first, so a bad spec fails before anything is loaded.
-		const bool bNewGame = o.command == "newgame";
+		// newgame: the spec first, so a bad spec fails before anything is loaded; loadgame: the save's header.
 		HHJson kSpec;
+		if(bLoadGame)
+		{
+			HHSaveHeader kHeader;
+			std::string err;
+			if(!HHReadSaveHeader(o.loadPath, kHeader, err))
+			{
+				s.error = "cannot load " + o.loadPath + ": " + err;
+				HHLogError("%s", s.error.c_str());
+				WriteReport(s, reportPath);
+				return 2;
+			}
+			HHLog("  load      %s (turn %d, %u mod(s))", o.loadPath.c_str(), kHeader.turn, (unsigned)kHeader.mods.size());
+		}
 		if(bNewGame)
 		{
 			std::string err;
@@ -969,7 +1134,7 @@ namespace
 		}
 		HH_TIMING("vfs");
 		// UI emulation profiles (selected once the game has started).
-		if(bNewGame && !o.noProfiles)
+		if(bGame && !o.noProfiles)
 		{
 			if(o.profilesDir.empty())
 				o.profilesDir = HHDefaultProfilesDir();
@@ -1164,7 +1329,7 @@ namespace
 		const bool bEngineGlobals = HHLuaRegisterEngineGlobals(*pScripts, HHGetVfs(), pContext->GetPreGame());
 		if(!bEngineGlobals)
 			HHLogError("engine Lua globals: registration failed");
-		if(bGameData && !bNewGame)
+		if(bGameData && !bGame)
 		{
 			s.bSelfTestRun = true;
 			s.selfTest = HHLuaSelfTest(*pScripts, *dbs.GetGame(), iDllUnits);
@@ -1215,83 +1380,54 @@ namespace
 		pUI->SetGame(nif.pGame);
 		pEngine->SetPreGame(nif.pPreGame);
 		const int iLuaErrorsBefore = pScripts->GetErrorCount();
-		if(bNewGame && s.bPostOk && s.bCacheOk)
+		if(bGame && s.bPostOk && s.bCacheOk)
 		{
-			HHSetPhase("pregame");
-			if(HHApplyPregame(kSpec, nif, ng))
+			bool bStarted = false;
+			if(bLoadGame)
 			{
-				HHSetPhase("start");
-				// Lua's math.random is the CRT rand() of the calling thread (MSVCR90, per-thread state,
-				// seeded 1); map scripts that use it (Continental_Drift) depend on that state, which in
-				// the real game is whatever the UI thread's earlier rand() calls left.
-				if(o.crtSse2 >= 0)
+				HHSetPhase("load-game");
+				ApplyStartOptions(*pScripts);
+				bStarted = HHLoadSavedGame(o.loadPath, nif, ng);
+			}
+			else
+			{
+				HHSetPhase("pregame");
+				if(HHApplyPregame(kSpec, nif, ng))
 				{
-					// Every MSVCR90 instance in the process (the host's and the one lua51_Win32.dll uses can differ)
-					HMODULE mods[512];
-					DWORD cb = 0;
-					EnumProcessModules(GetCurrentProcess(), mods, sizeof(mods), &cb);
-					for(DWORD k = 0; k < cb / sizeof(HMODULE); ++k)
-					{
-						wchar_t name[MAX_PATH];
-						if(!GetModuleFileNameW(mods[k], name, MAX_PATH))
-							continue;
-						typedef int (__cdecl *SetSse2)(int);
-						SetSse2 pfn = (SetSse2)GetProcAddress(mods[k], "_set_SSE2_enable");
-						if(pfn)
-						{
-							const int prev = pfn(o.crtSse2);
-							HHLog("_set_SSE2_enable(%d) in %s: was %d", o.crtSse2, HHNarrow(name).c_str(), prev);
-						}
-					}
+					HHSetPhase("start");
+					ApplyStartOptions(*pScripts);
+					bStarted = HHStartNewGame(kSpec, nif, ng);
 				}
-				if(o.fpuPrecision)
+			}
+			if(bStarted)
+			{
+				// The in-game UI as the game loads it: emulation profiles, the load screen (pause, load-screen
+				// profiles), the InGameUIAddin contexts; then the T000 outputs (the reference dump-t000 point).
+				HHSetSaveGame(&nif);
+				HHSetPhase("ui");
+				HHStartUI(nif, ng);
+				HHSetPhase("t000");
+				HHLoadScreen(nif, ng);
+				HHSetPhase("addins");
+				HHLoadUIAddinsStep(nif, ng);
+				HHSetPhase("t000");
+				HHWriteT000(kSpec, nif, ng);
+				HHSetPhase("probes");
+				HHRunLuaProbes(nif, ng);
+				if(o.turns > 0)
 				{
-					unsigned int cw = 0;
-					const unsigned int pc = o.fpuPrecision == 24 ? _PC_24 : o.fpuPrecision == 64 ? _PC_64 : _PC_53;
-					_controlfp_s(&cw, pc, _MCW_PC);
-					HHLog("x87 precision %d bits for the new game (--fpu-precision): control word %08x", o.fpuPrecision, cw);
-				}
-				if(o.crtSrand >= 0)
-				{
-					// lua51_Win32.dll has its own MSVCR90 instance: seed through Lua itself.
-					const std::string chunk = HHFormat("math.randomseed(%u)", (unsigned int)o.crtSrand);
-					if(lua_State* L = pScripts->CreateLuaThread("Headless randomseed"))
-					{
-						if(luaL_loadbuffer(L, chunk.c_str(), chunk.size(), "randomseed") == 0)
-							pScripts->CallFunction(L, 0, 0);
-						pScripts->FreeLuaThread(L);
-					}
-					HHLog("Lua math.randomseed(%u) (--crt-srand)", (unsigned int)o.crtSrand);
-				}
-				if(HHStartNewGame(kSpec, nif, ng))
-				{
-					// The in-game UI as the game loads it: emulation profiles, the load screen (pause, load-screen
-					// profiles), the InGameUIAddin contexts; then the T000 outputs (the reference dump-t000 point).
-					HHSetPhase("ui");
-					HHStartUI(nif, ng);
-					HHSetPhase("t000");
-					HHLoadScreen(nif, ng);
-					HHSetPhase("addins");
-					HHLoadUIAddinsStep(nif, ng);
-					HHSetPhase("t000");
-					HHWriteT000(kSpec, nif, ng);
-					HHSetPhase("probes");
-					HHRunLuaProbes(nif, ng);
-					if(o.turns > 0)
-					{
-						HHSetPhase("autoplay");
-						HHRunAutoplay(nif, ng, o.turns, o.idleUpdates);
-					}
+					HHSetPhase("autoplay");
+					HHRunAutoplay(nif, ng, o.turns, o.idleUpdates);
 				}
 			}
 			if(!ng.error.empty())
-				HHLogError("newgame: %s", ng.error.c_str());
+				HHLogError("%s: %s", o.command.c_str(), ng.error.c_str());
 			for(size_t i = 0; i < ng.timings.size(); ++i)
 				s.timings.push_back(ng.timings[i]);
 			tPhase = HHSeconds();
 		}
 		const int iLuaErrors = pScripts->GetErrorCount() - iLuaErrorsBefore;
-		const std::string contextRecords = bNewGame ? ContextRecordsJson(*pScripts) : std::string();
+		const std::string contextRecords = bGame ? ContextRecordsJson(*pScripts) : std::string();
 
 		// Shutdown order: Lua first (its __gc metamethods include DLL and database code), then
 		// the game (newgame: pregame's started flag cleared first), the DLL's game data, the
@@ -1300,7 +1436,8 @@ namespace
 		HHSetPhase("shutdown");
 		pScripts->LogIncludeSummary();
 		pScripts->Shutdown();
-		if(bNewGame && ng.bPregameOk)
+		HHSetSaveGame(NULL);
+		if(bGame && ng.bPregameOk)
 			HHEndNewGame(nif, ng);
 		pDbUtil->Destroy();
 		pContext->Uninit();
@@ -1320,18 +1457,23 @@ namespace
 		s.timings.push_back(std::make_pair(std::string("total"), HHSeconds() - t0));
 
 		bool bOk = s.bPostOk && s.bCacheOk && s.bCountsOk && s.selfTest.bPassed;
-		if(bNewGame)
+		if(bGame)
 		{
-			bOk = bOk && ng.bPregameOk && ng.bStarted && ng.bOutputsOk && iLuaErrors == 0;
+			// A save the run was asked for and could not write fails the run.
+			std::string saveError;
+			for(size_t i = 0; i < HHGetSaveRecords().size() && saveError.empty(); ++i)
+				if(!HHGetSaveRecords()[i].error.empty())
+					saveError = "save failed: " + HHGetSaveRecords()[i].error;
+			bOk = bOk && ng.bPregameOk && ng.bStarted && ng.bOutputsOk && iLuaErrors == 0 && saveError.empty();
 			s.status = bOk ? "passed" : "failed";
 			if(s.error.empty())
-				s.error = !ng.error.empty() ? ng.error : (iLuaErrors ? HHFormat("%d Lua error(s); see Logs\\Lua.log", iLuaErrors) : std::string());
+				s.error = !ng.error.empty() ? ng.error : iLuaErrors ? HHFormat("%d Lua error(s); see Logs\\Lua.log", iLuaErrors) : saveError;
 		}
 		else
 			s.status = bOk ? "passed" : "failed";
 		LogCallSummary();
 		WriteReport(s, reportPath);
-		if(bNewGame)
+		if(bGame)
 		{
 			WriteNewGameSection(ng, iLuaErrors, reportPath);
 			WriteHostReport(s, ng, iLuaErrors, contextRecords, pScripts, HHSeconds() - t0, p.run + "host-report.json");

@@ -11,12 +11,16 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   - The kit with bundled Python is remade and checked.
   - Phase E has started with a short real-game pass (the user asked to keep it short).
   - See the log entry "phase E, first real-game runs" for the outcome.
-- **The real game has plain VP 5.4.8 (packaged DLL `262AEE88`) with the 5 VP mods active.** The user asked for it, to
-  play test games. Leave it installed; the source repository's ledger says where the field-map install is archived and
-  how to restore it.
+- **The real game's DLL is now `E8E58D95`**, the Civ5StackMod AI build `v0.3.3-1-g8fbd4fb9f` (no digest additions).
+  Another session deployed it on 2026-10-26 at 16:20, with its mod files at 16:21, over plain VP 5.4.8 (`262AEE88`),
+  which the user had asked for to play test games. Leave the installed files alone; the source repository's ledger
+  says where the installs are archived.
+- **Saved games (2026-10-26, release 0.2.0):** the host reads and writes `.Civ5Save` files. See the log entry
+  "saved games" and [saves.md](saves.md).
 - **Phase E is done (2026-10-26).** The full verify on plain VP 5.4.8 passed with warnings only. The thresholds are
   kept and the durations documented (docs/verification.md, "Calibration" and "Runs on record").
-- **Released:** 0.1.0, from the repository `ruskyandrei/civ5-headless` (private), with the kit attached.
+- **Released:** 0.2.0 (saved games), after 0.1.0, from the repository `ruskyandrei/civ5-headless` (private), each
+  with its kit attached.
 - **Open:**
   1. The PreGame API gaps. The host has no `GetQuickCombat`, `GetQuickMovement` or `GetOverrideScenarioHandicap`
      (the real game answers `false` for all three). The real game answers nothing for `GetClimate`, `GetSeaLevel`,
@@ -24,6 +28,8 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   2. A GitHub Actions release workflow.
   3. A `--turns` default that plays to the speed's last turn.
   4. Longer or larger real games, to see whether the upstream determinism fixes matter there.
+  5. A real-game save loaded in the host and in the real game drifts by 1 gold at the next turn (saves.md section
+     6). Finding it needs a trace of the real game's load, or a field-map build of the installed DLL.
 - **Waiting on the user, not on the game:** making the repository public; opening the upstream VP pull requests (branches
   `vp-det-*` in the source repository, texts in its `docs/headless-upstream-prs.md`).
 - **Open, known limits:** UI popups reach add-in listeners only through profiles (generic routing not evaluated); the
@@ -277,3 +283,34 @@ The host's own history (milestones M0–M6, parity work against the real game) i
     for the push and the release on 2026-10-26.
   - Tag `v0.1.0`; the kit from the tagged commit is attached to the release.
 
+
+### 2026-10-26: saved games
+
+- **What it does:** the host reads and writes the real game's `.Civ5Save` files ([saves.md](saves.md)).
+  - `c5h run SAVE.Civ5Save --turns T` (or `--load SAVE`) continues a save with the save's mod set.
+  - Every run saves its last turn into `<run>\saves\` (`--no-save-final`: not).
+  - Autosaves are off by default: `--autosave none|game|N`. `--save-at T` saves at turn T.
+  - Every save stays in the run folder.
+  - `c5h save FILE` reads a header. The host's `UI.SaveGame` saves too.
+  - The real-game session has `load_game` and `save_game`; the latter moves the game's file into the run.
+- **Checks:**
+  - Saving does not change the game (digests, 12 of 12 turns).
+  - A host save loads in the real game and plays on.
+  - The same host save, loaded in both and played 3 turns: fingerprints identical on 4 of 4 turns. The end saves
+    differ in 67 bytes of 13 MB.
+  - A real save taken after the real game's autoplay ended: 1 gold apart at the next turn (open item 5).
+  - Long game: a Tiny game played in the host to turn 330 (`runs/tiny-330`, 9.4 min). Its final save loaded in the
+    real game at turn 330, with player 0 human (`runs/tiny-330-real`). The game was left open for the user to look at.
+- **Found on the way:**
+  - The real game writes only mods with `AffectsSavedGames` into a save. A save that lists other mods makes it
+    re-activate mods during the load. With VP's front end that rebuild fails ("database table is locked") and the game
+    crashes, so the host writes the same list.
+  - Loading from the vanilla main menu crashes VP's DLL in `CvGame::Read`; the game's own path is the Mods menu.
+  - VP bug: `CvPlayer::Read` → `reset()` fills the espionage AI's per-civ lists (22 entries), and `operator>>` then
+    appends 22 more. Saved values are lost, and the lists grow on every load, in the real game too.
+  - The real game with DLL `E8E58D95` crashed once on `ExitToMainMenu` (in the CvGameDatabase DLL).
+  - The host's first-chance exception at shutdown (`HHCRASH` at `CvGameCore+0x15D6E`, phase shutdown) predates the
+    save code. It happens with VP builds `F7CB6626` and `E8E58D95`.
+  - Test saves the real-game sessions wrote into the game's `ModdedSaves\single` were moved into their run folders
+    (`runs/rt5-real`, `rt7-real-a`, `rt7-real-b`, `rt8-real`, under `game-folder\`). The real game's turn-0
+    autosaves from `rt5-real` had overwritten earlier verify autosaves of the same names.

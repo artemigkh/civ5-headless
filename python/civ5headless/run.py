@@ -1,6 +1,8 @@
-"""One host game: play a new game from a spec in civ5headless.exe and write a vpbench-style run folder.
+"""One host game: play a new game from a spec, or continue a saved one, in civ5headless.exe and write a vpbench-style
+run folder.
 
-  c5h run SPEC.json --turns N [--run NAME | --run-dir DIR] [--seeds MAP SYNC]
+  c5h run (SPEC.json | SAVE.Civ5Save | --load SAVE.Civ5Save) --turns N [--run NAME | --run-dir DIR] [--seeds MAP SYNC]
+          [--autosave none|game|N] [--save-at T]... [--no-save-final]
           [--dll DLL] [--db DB] [--mods-dir MODS] [--mods-db Civ5ModsDatabase.db | --mod ID[:VER]... | --no-mods]
           [--loc-db DB] [--game-dir DIR] [--exe EXE]
           [--profiles DIR | --no-profiles] [--skip-addin NAME]... [--no-addins]
@@ -25,6 +27,19 @@ DLL: --dll, else a dll set in civ5headless.toml, else for --no-mods the game's o
 set that ships one (else the game's own), else the discovered one (the active mods'). events.jsonl and the report say
 which and why (modsdb.choose_dll).
 
+Saves (docs/saves.md): the host writes the real game's .Civ5Save files, which the real game loads, and loads the real
+game's. A .Civ5Save given instead of the spec (or --load SAVE) continues that game: --turns is still the turn to play to
+(after the save's), the mod set is the save's unless --mod, --no-mods or --mods-db says otherwise (the configured
+registry when it activates just those mods, else one generated for them, so the game need not have them activated),
+and the DLL is chosen as above; the host refuses a save whose DLL (its GUID) or mods differ. Seeds do not apply: the
+save carries its random state.
+Every save stays in the run folder, <run>/saves. The host saves the last turn, Final_<turn and date>, unless
+--no-save-final; more only when asked: --autosave none (default: none, as autosaves slow a game down), game (the
+game's own setting, UserSettings.ini TurnsBetweenAutosave) or N (every N turns): as the real game, at turn 0
+(AutoSave_Initial_ and AutoSave_Post_) and then every N-th turn (AutoSave_Post_<turn and date>) in saves/auto, all
+kept; --save-at T saves at turn T (repeatable), Turn_<turn and date>. status.json lists them (saves, finalSave). Saves
+are kept at every detail level.
+
 Detail (--detail, default standard): summary keeps what happened and how fast (no per-turn checkpoints, digests or
 logs but Lua.log), standard adds the per-turn checkpoints and the small logs, full keeps everything the host writes
 (state dumps, the database copies, the DLL's AI logs). The host is told not to write what the level leaves out; the
@@ -46,20 +61,20 @@ Differences from a real-game run (docs/user-guide.md, "Run folders"):
 - checkpoints are taken exactly when the game turn advances (every --checkpoint-every turns), not by a
   30-second poll during the turn; turn-times.jsonl/turn-seen.json are exact, not 5-second polls;
 - status.process comes from the host process (CPU seconds, peak working set, peak private bytes);
-  pollSeconds is 0; there is no final save (finalSave absent) and status.save is a seed key
-  "headless-<spec stem>-m<map seed>-s<sync seed>-<spec hash>" that groups runs of the same game for
-  abcompare.py;
+  pollSeconds is 0; finalSave is the host's save of the last turn (none with --no-save-final); status.save is a seed key
+  "headless-<spec stem>-m<map seed>-s<sync seed>-<spec hash>" that groups runs of the same game for abcompare.py
+  (for --load: "loaded-<save name>-t<turn>-<file hash>", and loadedFrom is the save);
 - the improved-AI mask: --improved-mask needs a DLL with Game.SetStackingAIImprovedMask; for an A/B of
   two DLL builds use --ab-role, which records improvedMask 0 (baseline) or -1 (test: every player runs the
   test DLL) in setup.json.
 """
 from dataclasses import dataclass
 from pathlib import Path
-import argparse, fnmatch, functools, hashlib, json, os, shutil, subprocess, sys, time
+import argparse, fnmatch, functools, hashlib, json, os, re, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from . import config, dbcache, modsdb, probes, winproc
+from . import config, dbcache, modsdb, probes, savegame, winproc
 from . import spec as gamespec
 
 # vpbench.SETUP (the real-game benchmark of the Vox Populi fork this came from), as a function. Keep in sync.
@@ -324,8 +339,42 @@ def prune(run):
 def run_folder(a, cfg):
     if getattr(a, 'run_dir', None):
         return Path(a.run_dir).resolve()
-    name = getattr(a, 'run', None) or f'{Path(a.spec).stem}-{datetime.now():%Y%m%d-%H%M%S}'
+    load = getattr(a, 'load', None)
+    stem = Path(a.spec).stem if a.spec else re.sub(r'[^\w.-]+', '-', Path(load or 'game').stem).strip('-')
+    name = getattr(a, 'run', None) or f'{stem}-{datetime.now():%Y%m%d-%H%M%S}'
     return (cfg.require('runs') / name).resolve()
+
+
+def load_key(header):
+    """status.save for a loaded game: "loaded-<save name>-t<turn>-<file hash>" (runs from the same save group)."""
+    with open(header.path, 'rb') as f:
+        digest = hashlib.sha256(f.read()).hexdigest()[:8]
+    stem = re.sub(r'[^\w.-]+', '-', Path(header.path).stem).strip('-')
+    return f'loaded-{stem}-t{header.turn}-{digest}'
+
+
+def load_mod_set(cfg, header):
+    """The mod set to load a save with when none is given: None (the configured registry) when the configured
+    registry's mods that affect saved games are the save's (it may activate UI mods beside them, as the player's game
+    did; the database is the one new games use), else the save's mods (a generated registry)."""
+    active = modsdb.activated(cfg.mods_db, saved_games_only=True) if cfg is not None and cfg.mods_db else None
+    if active is not None and sorted(active) == sorted(modsdb.parse_mods(header.mod_set)):
+        return None
+    return header.mod_set
+
+
+def save_host_args(a, exe):
+    """The host options for the saves: the host saves the last turn unless told not to (save_final False), and more
+    only when asked. Raises ValueError when more is asked of a host without saves."""
+    autosave = autosave_mode(getattr(a, 'autosave', None))
+    args = [] if autosave == 'none' else ['--autosave', autosave]
+    for t in getattr(a, 'save_at', None) or []:
+        args += ['--save-at', str(int(t))]
+    if (args or getattr(a, 'load', None)) and not host_supports(exe, '--save-at'):
+        raise ValueError(f'{exe} predates saves (no --autosave, --save-at, loadgame); use a newer host')
+    if not getattr(a, 'save_final', True) and host_supports(exe, '--no-save-final'):
+        args += ['--no-save-final']
+    return args
 
 
 def fingerprint_options(a):
@@ -349,6 +398,19 @@ def newgame(a, quiet=False, cfg=None):
         no_mods = bool(getattr(a, 'no_mods', False))
         detail = detail_of(getattr(a, 'detail', None))
         mod_set = [] if no_mods else getattr(a, 'mod', None)
+        # --load: the save's header; its mod set unless one is given
+        save_file = Path(a.load).resolve() if getattr(a, 'load', None) else None
+        header = savegame.read_header(save_file) if save_file else None
+        start_turn = header.turn if header else 0
+        if header:
+            write(run.dir / 'save-header.json', header.as_dict())
+            run.log('load', quiet=quiet, save=str(save_file), turn=header.turn, civilization=header.civilization,
+                    mods=header.mod_set, dllGuid=header.dllGuid)
+            if a.target_turn <= header.turn:
+                raise ValueError(f'the save is at turn {header.turn}: --turns {a.target_turn} must be after it')
+            if mod_set is None and not getattr(a, 'mods_db', None):
+                mod_set = load_mod_set(cfg, header)
+                no_mods = mod_set == []
         # The DLL: --dll, a dll in civ5headless.toml, the explicit mod set's (or the game's own), else discovery's.
         if a.dll and getattr(a, 'dll_reason', None):
             dll, dll_reason = Path(a.dll).resolve(), a.dll_reason
@@ -371,17 +433,21 @@ def newgame(a, quiet=False, cfg=None):
         lua_probes += [Path(p).resolve() for p in getattr(a, 'lua_probe', None) or []]
         db, dbinfo = dbcache.database(cfg, db=a.db, mods_dir=mods_dir, mods_db=mods_db, dll=dll, exe=exe,
                                       log=lambda m: run.log('database_built', quiet=quiet, message=m))
-        resolved = resolve_spec(a.spec, db, getattr(a, 'seeds', None))
-        write(run.dir / 'spec-resolved.json', resolved)
-        seed_key = spec_key(resolved, a.spec)
+        if header:
+            seed_key = load_key(header)
+        else:
+            resolved = resolve_spec(a.spec, db, getattr(a, 'seeds', None))
+            write(run.dir / 'spec-resolved.json', resolved)
+            seed_key = spec_key(resolved, a.spec)
         dll_sha = dbcache.sha256_file(dll)
         mask = a.improved_mask
         (run.dir / 'hh-before-arm.lua').write_text(BEFORE_ARM % dict(setup=SETUP, diagnostics=a.diagnostics,
                                                                        mask='nil' if mask is None else int(mask)), encoding='utf-8')
         (run.dir / 'hh-checkpoint.lua').write_text(CHECKPOINT % dict(strength=STRENGTH), encoding='utf-8')
         (run.dir / 'hh-final.lua').write_text(FINAL, encoding='utf-8')
-        cmd = [str(exe), 'newgame', '--spec', str(run.dir / 'spec-resolved.json'), '--out', str(run.dir.resolve()),
-               '--dll', str(dll), '--db', str(db), '--turns', str(a.target_turn),
+        game = ['loadgame', '--load', str(save_file)] if save_file else ['newgame', '--spec', str(run.dir / 'spec-resolved.json')]
+        cmd = [str(exe)] + game + ['--out', str(run.dir.resolve()),
+               '--dll', str(dll), '--db', str(db), '--turns', str(a.target_turn - start_turn),
                '--lua-before-arm', str(run.dir / 'hh-before-arm.lua'),
                '--checkpoint-lua', str(run.dir / 'hh-checkpoint.lua'), '--checkpoint-every', str(a.checkpoint_every),
                '--lua-before-dump', str(run.dir / 'hh-final.lua')]
@@ -403,6 +469,7 @@ def newgame(a, quiet=False, cfg=None):
             cmd += ['--lua-probe', str(probe)]
         if getattr(a, 'heap_perturb', None): cmd += ['--heap-perturb', str(a.heap_perturb)]
         if getattr(a, 'frame_skew', None): cmd += ['--frame-skew', str(a.frame_skew)]
+        cmd += save_host_args(a, exe)
         cmd += detail_host_args(detail, exe)
         cmd += list(a.host_arg or [])
         write(run.dir / 'hh-command.json', dict(command=cmd, exe=str(exe), exeSHA256=dbcache.sha256_file(exe), dll=str(dll),
@@ -410,7 +477,7 @@ def newgame(a, quiet=False, cfg=None):
                                                 modsDb=str(mods_db) if mods_db else None, noMods=no_mods,
                                                 mods=list(mod_set) if mod_set is not None else None,
                                                 profiles=str(profiles) if profiles else None, fingerprint=fingerprint,
-                                                detail=detail))
+                                                detail=detail, load=str(save_file) if save_file else None, startTurn=start_turn))
         affinity = int(a.affinity, 0) if isinstance(a.affinity, str) else a.affinity
         job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity)
         meter = winproc.LoadMeter().start()  # what else ran (the real game) during this run
@@ -423,7 +490,7 @@ def newgame(a, quiet=False, cfg=None):
                 winproc.set_priority(proc)  # leave the foreground (and a real game) responsive
             run.log('launched', quiet=quiet, pid=proc.pid, affinity=hex(affinity) if affinity else None, memoryLimitMB=a.max_memory_mb,
                     dll=str(dll), dllSHA256=dll_sha, target=a.target_turn)
-            offset = 0; last_turn = 0; last_progress = started; seen = {0: 0.0}; killed = None
+            offset = 0; last_turn = start_turn; last_progress = started; seen = {start_turn: 0.0}; killed = None
             while True:
                 try:
                     code = proc.wait(timeout=a.poll)
@@ -434,7 +501,7 @@ def newgame(a, quiet=False, cfg=None):
                 now = time.monotonic()
                 for r in rows:
                     seen[r['turn']] = round(r['seconds'], 3); last_progress = now
-                    if r['turn'] % 10 == 0 or r['turn'] < 3:
+                    if r['turn'] % 10 == 0 or r['turn'] < start_turn + 3:
                         run.log('checkpoint', quiet=quiet, turn=r['turn'], seconds=round(r['seconds'], 1))
                     last_turn = r['turn']
                 if a.maximum_seconds and now - started > a.maximum_seconds:
@@ -478,16 +545,29 @@ def newgame(a, quiet=False, cfg=None):
         if finals:
             end_turn = max(end_turn, (read(finals[-1]) or {}).get('data', {}).get('turn', end_turn))
         wall = max(seen.values()) if seen else 0.0
+        played = end_turn - start_turn
+        saves = ng.get('saves') or report.get('saves') or []
         prefixes = sorted({p.name.rsplit('-', 1)[0] for p in (run.dir / 'Logs').glob('Stacking-*-r*-*.log')})
         process = dict(pstats, PeakCommit=jstats.get('peakProcessCommit'), HostSeconds=round(host_seconds, 1))
-        status = dict(state='failed', backend='headless', startedUTC=started_utc, startTurn=0, endTurn=end_turn, turns=end_turn,
-                      wallSeconds=round(wall, 1), secondsPerTurn=round(wall / end_turn, 3) if end_turn else None,
+        status = dict(state='failed', backend='headless', startedUTC=started_utc, startTurn=start_turn, endTurn=end_turn, turns=played,
+                      wallSeconds=round(wall, 1), secondsPerTurn=round(wall / played, 3) if played > 0 else None,
                       hostSeconds=round(host_seconds, 1), process=process, pollSeconds=0, dll=str(dll), dllSHA256=dll_sha,
                       dllReason=dll_reason, detail=detail, save=seed_key,
-                      spec=str(Path(a.spec).resolve()), replayMessages=len(final.get('messages') or []), exitCode=code,
+                      spec=str(Path(a.spec).resolve()) if a.spec else None, replayMessages=len(final.get('messages') or []), exitCode=code,
                       hostStatus=report.get('status'), hostError=report.get('error') or ng.get('error'),
                       luaErrors=ng.get('lua_errors'), updates=(ng.get('autoplay') or {}).get('updates'),
                       background=load, diagnosticsLogPrefix=prefixes[-1] if prefixes else None, logsFolder=str((run.dir / 'Logs').resolve()))
+        if save_file:
+            status.update(loadedFrom=str(save_file), loadWarnings=(ng.get('load') or {}).get('warnings') or [])
+        if saves:
+            status['saves'] = [dict(kind=x.get('kind'), turn=x.get('turn'), path=x.get('path'), bytes=x.get('bytes'))
+                               for x in saves if not x.get('error')]
+            final_save = [x['path'] for x in status['saves'] if x['kind'] == 'final']
+            if final_save:
+                status['finalSave'] = final_save[-1]
+            for x in saves:
+                if x.get('error'):
+                    run.log('save_failed', quiet=quiet, kind=x.get('kind'), turn=x.get('turn'), error=x['error'])
         victory = final.get('victory') or {}
         if victory.get('winner', -1) is not None and victory.get('winner', -1) >= 0:
             status.update(endReason='victory', winner=victory['winner'], victory=victory.get('victory'))
@@ -575,11 +655,14 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
          skip_addins=(), no_addins=False, fingerprint=False, lua_probes=(), heap_perturb=None, frame_skew=None,
          diagnostics=0, improved_mask=None, ab_role=None, checkpoint_every=1, max_seconds=21600, stall_seconds=900,
          max_memory_mb=3500, affinity=None, low_priority=False, detail=None, report=True, prune=False, host_args=(),
-         poll=1.0, quiet=True):
+         poll=1.0, quiet=True, load=None, autosave=None, save_at=(), save_final=True):
     """Play one game in civ5headless.exe and return its Result.
 
-    spec: a spec file (resolved or not) or a spec dict (written to the run folder as spec.json); turns: autoplay to
-    this turn; run / run_dir: the run folder (<runs>/run, or run_dir; default <runs>/<spec stem>-<date>-<time>);
+    spec: a spec file (resolved or not) or a spec dict (written to the run folder as spec.json), or a .Civ5Save to
+    continue (or None with load=SAVE; its mod set unless mods, no_mods or mods_db is given); turns: autoplay to this
+    turn; autosave: None or 'none' (default), 'game' or a number of turns; save_at: turns to save at; save_final: save
+    the last turn (default True); the saves go to <run>/saves;
+    run / run_dir: the run folder (<runs>/run, or run_dir; default <runs>/<spec or save stem>-<date>-<time>);
     cfg: a config.Config (default config.load()); seeds: {'map': M, 'sync': S} over the spec's;
     mods: the mod set as 'ID[:VER]' strings (a registry is generated; instead of mods_db); no_mods: play without mods;
     profiles / no_profiles, skip_addins / no_addins: the host's UI emulation profiles and InGameUIAddins;
@@ -591,12 +674,21 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
     FileExistsError when the run folder already holds a game, ValueError for an unknown detail level."""
     detail = detail_of(detail)
     cfg = cfg or config.load()
+    if spec is not None and not isinstance(spec, dict) and savegame.is_save(spec):
+        if load is not None:
+            raise ValueError('play takes a save as spec or as load=, not both')
+        spec, load = None, spec
+    if (spec is None) == (load is None):
+        raise ValueError('play needs a spec or a save to load (load=), not both')
     if isinstance(spec, dict):
         folder = Path(run_dir).resolve() if run_dir else cfg.require('runs') / (run or f'spec-{datetime.now():%Y%m%d-%H%M%S}')
         folder.mkdir(parents=True, exist_ok=True)
         (folder / 'spec.json').write_text(json.dumps(spec, indent=1) + '\n', encoding='utf-8')
         spec, run_dir = folder / 'spec.json', folder
-    a = SimpleNamespace(run=run, run_dir=str(run_dir) if run_dir else None, spec=str(spec), target_turn=int(turns),
+    a = SimpleNamespace(run=run, run_dir=str(run_dir) if run_dir else None, spec=str(spec) if spec else None,
+                        load=str(load) if load else None, autosave=None if autosave is None else str(autosave),
+                        save_at=[int(t) for t in save_at or []], save_final=bool(save_final),
+                        target_turn=int(turns),
                         seeds=dict(seeds) if seeds else None, dll=dll, db=db, mods_dir=mods_dir, mods_db=mods_db,
                         mod=list(mods) if mods is not None else None, no_mods=no_mods, loc_db=loc_db,
                         game_dir=game_dir, exe=exe, profiles=profiles, no_profiles=no_profiles,
@@ -616,8 +708,12 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
 
 def add_arguments(n):
     """The c5h run options (queue.py builds the same namespace from a queue's jobs)."""
-    n.add_argument('spec', help='game spec (spec.py format, resolved or not)')
-    n.add_argument('--turns', '--target-turn', dest='target_turn', type=int, required=True, help='autoplay to this turn')
+    n.add_argument('spec', nargs='?', help='game spec (spec.py format, resolved or not), or a .Civ5Save to continue '
+                   '(as --load)')
+    n.add_argument('--load', metavar='SAVE', help="continue this saved game (.Civ5Save, the real game's or the host's) "
+                   'instead of starting one from a spec')
+    n.add_argument('--turns', '--target-turn', dest='target_turn', type=int, required=True,
+                   help="autoplay to this turn (with --load: a turn after the save's)")
     n.add_argument('--run', help='run name: <runs>/NAME (default <spec stem>-<date>-<time>)')
     n.add_argument('--run-dir', help='run folder (instead of --run)')
     n.add_argument('--seeds', nargs=2, type=int, metavar=('MAP', 'SYNC'), help="map and sync seeds over the spec's")
@@ -658,11 +754,34 @@ def add_arguments(n):
     n.add_argument('--prune', action='store_true', help='the old name of --detail standard')
     n.add_argument('--no-report', dest='report', action='store_false', help='no report.html (c5h report RUN writes it later)')
     n.add_argument('--poll', type=float, default=1.0, help='progress poll interval in seconds')
+    n.add_argument('--autosave', default='none', help="autosaves: none (default), game (the game's own setting, "
+                   'UserSettings.ini) or N (every N turns)')
+    n.add_argument('--save-at', type=int, action='append', metavar='TURN', help='save at this turn (repeatable)')
+    n.add_argument('--no-save-final', dest='save_final', action='store_false',
+                   help='do not save the last turn (by default <run>/saves/Final_<turn and date>.Civ5Save)')
     n.add_argument('--host-arg', action='append', help='extra civ5headless.exe argument (repeatable), e.g. --host-arg=--no-game-logging')
+
+
+def autosave_mode(value):
+    """'none', 'game' or a positive number of turns as text; raises ValueError otherwise."""
+    value = str(value if value is not None else 'none').strip().lower()
+    if value in ('none', 'game') or (value.isdigit() and int(value) > 0):
+        return str(int(value)) if value.isdigit() else value
+    raise ValueError(f'autosave is none, game or a number of turns, not {value!r}')
 
 
 def check_args(a, error):
     if a.target_turn <= 0: error('--turns N (> 0) is required')
+    if a.spec and savegame.is_save(a.spec):
+        if a.load: error('give the save as SPEC or as --load, not both')
+        a.spec, a.load = None, a.spec
+    if bool(a.spec) == bool(a.load): error('give a spec or --load SAVE (one of them)')
+    if a.load and a.seeds: error('--seeds does not apply to --load (the save carries its random state)')
+    try:
+        a.autosave = autosave_mode(a.autosave)
+    except ValueError as e:
+        error(f'--{e}')
+    if any(t <= 0 for t in a.save_at or []): error('--save-at takes turn numbers > 0')
     if a.improved_mask is not None and a.ab_role: error('--improved-mask and --ab-role exclude each other')
     if a.mod and a.no_mods: error('--mod and --no-mods exclude each other')
     if (a.mod or a.no_mods) and a.mods_db: error('--mod and --no-mods exclude --mods-db (the registry is generated)')

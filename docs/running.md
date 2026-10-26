@@ -194,6 +194,44 @@ the game's files. You rarely need to touch this:
 - `c5h snapshot` builds the base-game snapshot on its own; `c5h dbbuild` builds a database step by step with a
   report.
 
+### 3.6 Saved games
+
+The host reads and writes the game's own `.Civ5Save` files: a save from the real game continues in the host, and
+a save the host writes opens in the game's Load menu (with the same mods active). [saves.md](saves.md) has the
+details.
+
+Continue a saved game to turn 120: give the save where the spec goes (or as `--load SAVE`). The save brings its
+mods: the host activates them for the run (the game need not have them active), and picks the DLL as for `--mod`
+(section 3.4).
+
+```
+c5h run "%USERPROFILE%\Documents\My Games\Sid Meier's Civilization 5\ModdedSaves\single\Rome.Civ5Save" --turns 120
+```
+
+`--turns` is still the turn to play to, after the save's. `--seeds` does not apply: the save holds the random state.
+`c5h save FILE...` shows what a save is: turn, civilization, map, DLC, mods and DLL (`--json` for all of it).
+
+Every save a run writes stays in its folder, `<run>\saves\`, never in the game's save folders. By default a run
+saves its last turn, so the game can be opened in the real game or continued with another run; other saves are off
+unless asked for, because each costs time (about 0.1 s on a Tiny map):
+
+| Option | Saves |
+|---|---|
+| (default) | the last turn, once autoplay has ended: `Final_<turn and date>.Civ5Save` |
+| `--no-save-final` | not the last turn |
+| `--autosave none` | no autosaves (the default) |
+| `--autosave game` | the game's own setting (`UserSettings.ini`, `TurnsBetweenAutosave`, 10 unless changed) |
+| `--autosave N` | every N turns |
+| `--save-at T` | at turn T (repeatable): `Turn_<turn and date>.Civ5Save` |
+
+Autosaves follow the real game: `saves\auto\AutoSave_Initial_0000 BC-4000.Civ5Save` and
+`AutoSave_Post_0000 BC-4000.Civ5Save` at turn 0, then `AutoSave_Post_<turn and date>` every N turns (e.g.
+`AutoSave_Post_0050 BC-2000.Civ5Save`); all are kept. To open a host save in the real game, copy it into the game's
+`ModdedSaves\single` (or `Saves\single` for an unmodded game) and load it from the Mods menu with the same mods
+active ([saves.md](saves.md) section 6).
+`status.json` lists the saves (`saves`, `finalSave`), and the report shows them. Queue jobs take a save as `spec`
+or `load`, and `autosave`, `saveAt` and `saveFinal` (section 7).
+
 ## 4. Mod UI: add-ins and profiles
 
 The host has no user interface. Two things stand in for the parts of mod UI code that change the game:
@@ -318,6 +356,8 @@ doesn't write what the level leaves out.
 | `t000-map.json` | the map at turn 0: terrain, features, starting positions |
 | `host-report.json` | the host's view: DLL, mods, add-ins, profiles, Lua errors, engine calls it only stubs |
 | `host-stdout.txt` | the host's console output |
+| `saves\` | the run's saves: the last turn unless `--no-save-final`, and those asked for (section 3.6); kept at every detail level |
+| `save-header.json` | with `--load`: the header of the save the game continued |
 | `Logs\` | `Lua.log` (with fingerprints), `Headless.log`, and `HeadlessDigest.log` for DLLs with the digest additions; the AI logs at `full` |
 
 ## 7. Many games: queues
@@ -341,7 +381,9 @@ c5h queue status my-queue.json
 - Every `c5h run` option can be set in `defaults`, a variant or a job, under its JSON name: `spec`, `turns`, `dll`,
   `db`, `modsDir`, `modsDb`, `mods` (`["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`,
   `noAddins`, `fingerprint` (`true` or `{"every": K, "turns": [...], "split": N}`), `luaProbes`, `seeds`,
-  `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail`, `report`, `lowPriority`, `hostArgs`.
+  `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail`, `report`, `lowPriority`, `hostArgs`,
+  `load` (a save instead of `spec`; a `spec` that is a `.Civ5Save` is loaded too), `autosave`, `saveAt`,
+  `saveFinal` (default `true`).
 - Paths in the file are relative to the file. Run folders go to `"out"` (default `runs\<queue file name>`).
 - The queue is resumable: `QUEUE.state.json` remembers what is done. Stop it with Ctrl-C (running games are killed and
   re-queued at the next start) or by creating `QUEUE.stop` (running games finish, no new ones start). Rerun

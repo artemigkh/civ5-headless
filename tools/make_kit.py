@@ -9,7 +9,8 @@ The kit is dist/civ5-headless-<version>-<commit>.zip with one top folder:
   python/civ5headless/    the c5h package
   profiles/, probes/      the host's UI emulation profiles and Lua probes
   examples/               game specs and queues
-  docs/                   the user guide, verification, profiles, engine contract, database builder, DLL additions
+  docs/                   the user guide, verification, profiles, engine contract, database builder, DLL additions,
+                          saved games
   runtime/                a private Python (python.org's embeddable package), so users need not install one
   c5h.cmd                 the command line (finds runtime\\python.exe, else Python on PATH or the py launcher)
   kit.json                version, commit, hashes; its presence makes config treat the folder as a kit (workspace,
@@ -61,7 +62,7 @@ SIGNERS = ('CN=Python Software Foundation', 'CN=Microsoft')
 # What the kit takes from the repository (files or folders).
 KIT_PATHS = ['python/civ5headless', 'profiles', 'probes', 'examples', 'c5h.cmd', 'civ5headless.example.toml',
              'README.md', 'CHANGELOG.md', 'LICENSE', 'docs/running.md', 'docs/user-guide.md', 'docs/verification.md', 'docs/profiles.md',
-             'docs/engine-contract.md', 'docs/database-builder.md', 'docs/dll-additions.md']
+             'docs/engine-contract.md', 'docs/database-builder.md', 'docs/dll-additions.md', 'docs/saves.md']
 RENAMED = {'sdk/README.md': 'licenses/SDK-NOTICE.md'}
 # What civ5headless.exe is built from (tools/build_host.py).
 HOST_SOURCES = ['host', 'sdk', 'tools/build_host.py', 'tools/toolchain.py']

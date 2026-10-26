@@ -19,10 +19,11 @@ import time
 import unittest
 from unittest import mock
 
-from civ5headless import config, run, spec as specmod
+from civ5headless import config, run, savegame, spec as specmod
 from civ5headless.realgame import dbcapture, launch, mods, probe, seeds, session, tuner
 
 from .fake_tuner import FakeTuner, LuaError, unescape
+from .test_savegame import make_save
 from .test_spec import make_db
 
 
@@ -227,7 +228,9 @@ class LuaTest(unittest.TestCase):
                        ARM=session.ARM.format(turns=3), CONTINUE=session.CONTINUE, TURN=session.TURN,
                        VICTORY=session.VICTORY, HALT=session.HALT, MENU=session.MENU, QUIT=session.QUIT,
                        EXPORT=session.EXPORT % tuner.lua_string('x/y.db'), DISMISS=mods.DISMISS_LEGAL,
-                       ACTIVATE=mods.ACTIVATE, REPLAY_OWNERS=session.REPLAY_OWNERS, REPLAY_PLAYER=session.REPLAY_PLAYER % 3)
+                       ACTIVATE=mods.ACTIVATE, REPLAY_OWNERS=session.REPLAY_OWNERS, REPLAY_PLAYER=session.REPLAY_PLAYER % 3,
+                       LOAD=session.LOAD % tuner.lua_string('saves/Turn_0006 BC-3760.Civ5Save'),
+                       SAVE=session.SAVE % tuner.lua_string('After 6'), DIGEST_ON=session.DIGEST_ON)
         for name, source in sources.items():
             with self.subTest(name=name):
                 self.assertIsNone(compile_(source))
@@ -495,6 +498,24 @@ class FakeGame:
                 log.write(f'HHSEEDS|point=gameInit|source=file|exeMap={self.exe_seeds[0]}|exeSync={self.exe_seeds[1]}\n')
             self.log.append(('start',))
             return ['start requested']
+        if 'Events.PlayerChoseToLoadGame' in source:
+            path = unescape(re.search(r'local path="((?:\\\d{3})*)"', source).group(1)).decode()
+            f.remove('ModsSinglePlayer')
+            f.add('InGame')
+            f.add('LoadScreen')
+            self.turn, self.autoplay, self.running, self.winner = savegame.read_header(path).turn, 0, False, -1
+            self.log.append(('load', context, path))
+            return ['load requested']
+        if source == session.DIGEST_ON:
+            self.log.append(('digest on',))
+            return [True]
+        if 'UI.SaveGame(' in source:
+            name = unescape(re.search(r'UI.SaveGame\("((?:\\\d{3})*)"\)', source).group(1)).decode()
+            folder = self.cfg.user_dir / 'ModdedSaves/single'
+            folder.mkdir(parents=True, exist_ok=True)
+            make_save(folder / f'{name}.Civ5Save', turn=self.turn)
+            self.log.append(('save', name))
+            return ['save requested']
         if source == session.LOADED:
             return [True]
         if source == session.SETUP:
@@ -588,7 +609,7 @@ class SessionCase(unittest.TestCase):
 
     def session(self, **options):
         return session.RealGameSession(self.cfg, Path(self.tmp.name) / 'run', launcher=self.game.launcher, cpu_guard=False,
-                                       poll=0.01, **options)
+                                       poll=0.01, load_settle=0.05, **options)
 
 
 class SessionTest(SessionCase):
@@ -645,6 +666,37 @@ class SessionTest(SessionCase):
         self.assertEqual(events[0], 'launched')
         self.assertEqual(events[-1], 'quit')
         self.assertEqual(s.quit()['exited'], True)  # twice is harmless
+
+    def test_load_and_save(self):
+        s = self.session()
+        with self.assertRaises(session.SessionError):
+            s.load_game(make_save(Path(self.tmp.name) / 'a.Civ5Save'))  # launch() first
+        s.launch(101, 202)
+        save = make_save(Path(self.tmp.name) / 'Turn 4.Civ5Save', turn=4,
+                         mods=[('11111111-2222-3333-4444-555555555555', 7, 'Active')])
+        loaded = s.load_game(save, lua_probes=[self.probe])
+        self.assertEqual((loaded['turn'], loaded['setup']['turn'], loaded['probes'][0]['value']), (4, 4, 'probe ran'))
+        # the save's mods activated (no set_mods given), then the load from the Mods menu's single-player screen
+        self.assertEqual([e for e in self.game.log if e[0] in ('mods', 'load', 'activate', 'launch')],
+                         [('launch', (101, 202)), ('mods', ['11111111-2222-3333-4444-555555555555']), ('activate',),
+                          ('load', 'ModsSinglePlayer', save.as_posix())])
+        self.assertFalse((self.cfg.cache_dir / 'HeadlessSeeds.txt').exists())
+        self.assertIn(('digest on',), self.game.log)
+        played = s.autoplay(2)
+        self.assertEqual((played['startTurn'], played['endTurn']), (4, 6))
+        saved = s.save_game('After 6')
+        # moved from the game's folder into the run folder
+        self.assertEqual(Path(saved['path']), Path(self.tmp.name) / 'run/saves/After 6.Civ5Save')
+        self.assertFalse((self.cfg.user_dir / 'ModdedSaves/single/After 6.Civ5Save').exists())
+        self.assertEqual(savegame.read_header(saved['path']).turn, 6)
+        with self.assertRaises(session.SessionError):
+            s.load_game(save)  # a game is running
+        # after a game the mods are activated again before the next load
+        s.to_main_menu()
+        s.load_game(saved['path'])
+        self.assertEqual([e[0] for e in self.game.log if e[0] in ('load', 'activate', 'launch')][-3:],
+                         ['load', 'activate', 'load'])
+        s.quit()
 
     def test_fingerprint_probe_files(self):
         self.cfg.probes = Path(self.tmp.name) / 'probes'
