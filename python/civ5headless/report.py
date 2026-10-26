@@ -388,7 +388,9 @@ def _thin(points, limit=MAX_POINTS):
 
 
 def series(m, sources, ids):
-    """(source label, {player: [(turn, value)]}) from the first source with data, for the players ids."""
+    """(source label, {player: [(turn, value)]}) from the first source with data over more than one turn, for the
+    players ids; ('last turn only', {}) when the sources only have the last turn (the final checkpoint at summary)."""
+    last_only = False
     for kind, key in sources:
         data = {}
         if kind == 'replay':
@@ -410,10 +412,11 @@ def series(m, sources, ids):
                 for pid, values in row.items():
                     if int(pid) in ids and isinstance(values.get(key), (int, float)):
                         data.setdefault(int(pid), []).append((int(turn), values[key]))
-        if data and any(len(v) > 1 or v[0][1] for v in data.values()):
+        if any(len(v) > 1 for v in data.values()):
             label = {'replay': 'replay data', 'checkpoint': 'checkpoints', 'fingerprint': 'fingerprint'}[kind]
             return f'{label}: {key}', data
-    return None, {}
+        last_only = last_only or bool(data)
+    return ('last turn only' if last_only else None), {}
 
 
 def turn_seconds(m):
@@ -679,11 +682,11 @@ def _charts(m, ps):
     ids = {p['id'] for p in majors(ps)}
     if not ids:
         return '<p class="note">No per-player data.</p>'
-    out, missing, zero = [], [], []
+    out, missing, zero, last = [], [], [], []
     for key, title, sources in CHARTS:
         source, data = series(m, sources, ids)
         if not data:
-            missing.append(title)
+            (last if source else missing).append(title)
             continue
         if not any(v for pts in data.values() for _, v in pts):
             zero.append(title)
@@ -694,7 +697,8 @@ def _charts(m, ps):
                    f'{series_svg(lines, label_width=116, title=title)}</div>')
     note = ('<p class="note">Lines end at their labels (dashed: eliminated). Sources in order: replay data, the per-turn '
             'checkpoints, the fingerprint metrics.' + (f' No data for: {h(", ".join(missing))}.' if missing else '')
-            + (f' Zero all game: {h(", ".join(zero))}.' if zero else '') + '</p>')
+            + (f' Zero all game: {h(", ".join(zero))}.' if zero else '')
+            + (f' Only the last turn kept (detail summary): {h(", ".join(last))}.' if last else '') + '</p>')
     return note + '<div class="charts">' + ''.join(out) + '</div>' if out else '<p class="note">No per-player series: no replay data, checkpoints or fingerprint metrics.</p>'
 
 
