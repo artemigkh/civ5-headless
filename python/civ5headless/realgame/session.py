@@ -270,8 +270,10 @@ class RealGameSession:
             if not result.get('ok'):
                 raise SessionError(f"the enabled mods could not be made the requested set: {result.get('error') or result}")
         self.call('ModsBrowser', modsmod.ACTIVATE, 'activate-mods')
-        self.wait_for(lambda n: 'ModsSinglePlayer' in n and self.check('ModsSinglePlayer', SHOWN), self.menu_timeout,
-                      'mod activation')
+        # The real game shows ModsMenu once the mods are active; ModsSinglePlayer exists all along, hidden, and the
+        # pregame setup and the start run in it as they are (as the user's click on Single Player would show it).
+        self.wait_for(lambda n: 'ModsSinglePlayer' in n and any(c in n and self.check(c, SHOWN) for c in ('ModsMenu', 'ModsSinglePlayer')),
+                      self.menu_timeout, 'mod activation')
         self.activated = True
         out = dict(before=as_list(result.get('before')), after=as_list(result.get('after')),
                    disabled=result.get('disabled', 0), enabled=result.get('enabled', 0))

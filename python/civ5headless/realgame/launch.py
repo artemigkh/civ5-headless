@@ -97,7 +97,9 @@ def launch_game(game_dir, exe_name=EXE_NAMES[0], args=('-DX11',), port=TUNER_POR
         raise LaunchError('start Steam and sign in first')
     t = time.monotonic()
     with steam_appid(game_dir):
+        # The game writes noise to its console ("number - table" per tuner call): never into the caller's streams.
         popen = subprocess.Popen([str(exe), *args], cwd=str(game_dir), stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                  creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
         try:
             wait_for_port(popen, port, timeout)

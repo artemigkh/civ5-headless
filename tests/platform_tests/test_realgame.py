@@ -442,7 +442,9 @@ class FakeGame:
         self.exe_seeds = (values['MapRandSeed'], values['SyncRandSeed'])
         if self.fake:
             self.fake.close()
-        self.fake = FakeTuner(self.handle, ('MainMenu', 'LegalScreen', 'ModsBrowser'))
+        # As in the real game, the mods screens exist from the start, hidden; activation shows ModsMenu.
+        self.fake = FakeTuner(self.handle, ('MainMenu', 'LegalScreen', 'ModsBrowser', 'ModsMenu', 'ModsSinglePlayer'))
+        self.shown = {'MainMenu'}
         self.turn, self.autoplay, self.running, self.winner = 0, 0, False, -1
         (self.cfg.user_dir / 'Logs/Lua.log').write_text('started\n', encoding='utf-8')
         self.write_debug_db([(1,)])
@@ -465,6 +467,7 @@ class FakeGame:
                          disabled=len(before), enabled=len(self.enabled))]
         if source == mods.ACTIVATE:
             f.add('ModsSinglePlayer')
+            self.shown = {'ModsMenu'}
             self.log.append(('activate',))
             self.write_debug_db([(1,), (2,)])
             return ['activated']
@@ -477,7 +480,7 @@ class FakeGame:
             con.close()
             return [dict(tables=1, failed={}, activated={})]
         if source == session.SHOWN:
-            return [True]
+            return [context in self.shown]
         if 'PreGame.SetMapScript' in source:
             self.log.append(('pregame', context))
             return [{'map': 'Assets\\Maps\\Continents.lua'}]
@@ -529,6 +532,7 @@ class FakeGame:
             for name in ('InGame', 'LoadScreen'):
                 f.remove(name)
             self.running = False
+            self.shown = {'MainMenu'}
             self.log.append(('menu',))
             return ['menu requested']
         if source == session.QUIT:
