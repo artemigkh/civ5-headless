@@ -152,15 +152,15 @@ local function rgb(t) local c=t and GameInfo.Colors[t];if c then return string.f
 local wonders={};for b in GameInfo.Buildings() do local c=GameInfo.BuildingClasses[b.BuildingClass];if c and c.MaxGlobalInstances==1 then wonders[#wonders+1]=b.ID end end
 local players={}
 for owner=0,63 do local p=Players[owner]
- if p and p:IsEverAlive() and not p:IsObserver() then
+ if p and p:IsEverAlive() and not p:IsObserver() and not p:IsBarbarian() then
   local civ=GameInfo.Civilizations[p:GetCivilizationType()];local leader=GameInfo.Leaders[p:GetLeaderType()];local pc=GameInfo.PlayerColors[p:GetPlayerColor()]
-  local e={owner=owner,team=p:GetTeam(),minor=p:IsMinorCiv(),barbarian=p:IsBarbarian(),alive=p:IsAlive(),civilization=civ and civ.Type or '',
+  local e={owner=owner,team=p:GetTeam(),minor=p:IsMinorCiv(),alive=p:IsAlive(),civilization=civ and civ.Type or '',
    leader=leader and leader.Type or '',name=v(p.GetCivilizationShortDescription,p),leaderName=v(p.GetName,p),
-   colors={pc and rgb(pc.PrimaryColor) or '',pc and rgb(pc.SecondaryColor) or ''},score=v(p.GetScore,p),cities=p:GetNumCities(),
+   colors={pc and rgb(pc.PrimaryColor) or '',pc and rgb(pc.SecondaryColor) or ''},score=not p:IsMinorCiv() and v(p.GetScore,p) or nil,cities=p:GetNumCities(),
    population=v(p.GetTotalPopulation,p),techs=v(function() return Teams[p:GetTeam()]:GetTeamTechs():GetNumTechsKnown() end),
    policies=v(p.GetNumPolicies,p),era=v(p.GetCurrentEra,p),wonders=v(p.GetNumWorldWonders,p)}
   if e.era then local r=GameInfo.Eras[e.era];e.eraType=r and r.Type end
-  if e.wonders==nil and not p:IsBarbarian() then local n=0;for c in p:Cities() do for _,id in ipairs(wonders) do if c:IsHasBuilding(id) then n=n+1 end end end;e.wonders=n end
+  if e.wonders==nil then local n=0;for c in p:Cities() do for _,id in ipairs(wonders) do if c:IsHasBuilding(id) then n=n+1 end end end;e.wonders=n end
   local rel=v(p.GetReligionCreatedByPlayer,p);if rel and rel>0 then local r=GameInfo.Religions[rel];local n=v(Game.GetReligionName,rel) or (r and r.Description);e.religion=n and Locale and v(Locale.ConvertTextKey,n) or n end
   players[#players+1]=e
  end

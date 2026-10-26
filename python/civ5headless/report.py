@@ -592,6 +592,8 @@ def _setup_rows(m, ps):
         options.append(f"diagnostics {s['diagnosticsLevel']}")
     if s.get('abRole'):
         options.append(f"A/B {s['abRole']}")
+    # older runs record no detail level; one with its database copies kept everything
+    detail = st.get('detail') or cmd.get('detail') or ('full' if (Path(m['folder']) / 'db').is_dir() else None)
     return [('Map', f'{h(Path(str(script).replace(chr(92), "/")).stem)} &middot; {h(pretty(world, "WORLDSIZE_"))}'
              + (f' &middot; {h(m["map0"]["width"])}x{h(m["map0"]["height"])}' if m.get('map0') else '')),
             ('Game', ' &middot; '.join(x for x in (h(pretty(speed, 'GAMESPEED_')), h(pretty(diff, 'HANDICAP_')),
@@ -599,8 +601,7 @@ def _setup_rows(m, ps):
             ('Seeds', f"map {h(seeds.get('map'))}, sync {h(seeds.get('sync'))}" if seeds else None),
             ('Players', f'{h(n_major)} civilizations, {h(n_minor)} city-states'),
             ('DLL', dll_text), ('Mods', mods_text), ('Host', host_text),
-            ('Run', ' &middot; '.join(x for x in (f"detail {h(st.get('detail') or cmd.get('detail') or 'full')}",
-                                                  h(', '.join(options))) if x)),
+            ('Run', ' &middot; '.join(x for x in (f"detail {h(detail)}" if detail else '', h(', '.join(options))) if x)),
             ('Spec', f'<span class="mono">{h(Path(st.get("spec") or "").name)}</span>' if st.get('spec') else None)]
 
 
