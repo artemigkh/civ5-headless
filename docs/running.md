@@ -44,8 +44,9 @@ c5h run examples\specs\continents-tiny.json --turns 50
 ```
 
 This plays a Tiny Continents game with your active mods and DLL until turn 50 and prints progress as JSON lines.
-The run folder is `runs\continents-tiny-<date>-<time>\` (section 6). The first run with a mod set also builds and
-caches the game database (a few seconds); later runs reuse it.
+The run folder is `runs\continents-tiny-<date>-<time>\`. Its `report.html` shows the game: setup, result, charts,
+map, timeline and health (section 6). The first run with a mod set also builds and caches the game database, which
+takes a few seconds; later runs reuse it.
 
 ## 3. Describing a game: specs
 
@@ -232,21 +233,76 @@ findstr "GOLD|" runs\NAME\Logs\Lua.log
 ## 6. What a run leaves behind
 
 Every game gets a run folder: `runs\NAME\`, with `--run NAME` choosing the name (default `<spec>-<date>-<time>`) and
-`--run-dir DIR` any folder.
+`--run-dir DIR` any folder. Open `report.html` in it first.
+
+### The report
+
+`report.html` is one self-contained page, written when the game ends. It has light and dark themes, and opens from the
+folder with no server and no internet connection.
+
+- **Setup and result:**
+  - the map, size, speed, difficulty, seeds and civilizations;
+  - the DLL and why it was chosen, the mods, the host version and the detail level;
+  - the winner and victory type, or the turn the game stopped at;
+  - autoplay time, seconds per turn, CPU and peak memory.
+- **Players:** civilization, leader, team, alive, score, cities, population, techs, policies, era, wonders and
+  religion, plus the city-states and which of them survived.
+- **Over the game:** a chart per measure for every civilization, from the game's replay data: score, cities,
+  population, techs, policies, culture, science, gold, military, land, happiness, tourism, faith and wonders.
+- **Map:** the map at turn 0 with the starting positions, and the final territories with the cities.
+- **Timeline:** cities founded and captured, wars and peace, pacts, wonders, religions, eras, golden ages,
+  eliminations and the victory. It has a strip over the turns and a table you can filter by kind and player.
+- **Performance:** the host's seconds per turn.
+- **Health:** Lua errors with file and line, engine calls the host only stubs, UI profiles and add-ins, and unknown UI
+  files.
+- **Files:** what the folder holds, with sizes and links.
+
+When a part has no data, the report says so instead of showing it: the stock DLL has no digests, and a crashed game
+has no final state.
+
+```
+c5h report runs\NAME                         # rebuild a run's report.html (after an upgrade, or after --no-report)
+c5h report runs\A runs\B runs\C              # their reports, plus summary.html: the games side by side
+c5h report runs\my-queue --summary ab.html   # every run in a folder; the summary page where you want it
+c5h queue report my-queue.json               # a queue's summary page (queue run also writes it at the end)
+```
+
+### Detail levels
+
+`--detail` (queue key `detail`) decides what the run folder keeps. Every level plays the same game; the host just
+doesn't write what the level leaves out.
+
+| Level | Keeps | Tiny, 30 turns | Standard, 100 turns |
+|---|---|---:|---:|
+| `summary` | results, setup, timings, replay, the final checkpoint and state, `Lua.log`, the report | about 1 MB | |
+| `standard` (default) | also a checkpoint every turn and the small logs, including `HeadlessDigest.log` | about 1.4 MB | 4.5 MB |
+| `full` | everything: state dumps (`dump-t000\`, `dump-tN\`), the game database copy (`db\`), all of the DLL's logs (including its AI logs) | 60 to 250 MB | 437 MB |
+
+- `standard` is enough for the report, `c5h compare`, `c5h queue compare` and the verification suite, which need the
+  digests. `c5h fingerprint compare` works at any level.
+- Use `full` when you need the DLL's AI logs, or the state dumps for `c5h dumps`.
+- The levels save disk, not time. The Standard game above took 66.6 s at `standard` and 69.3 s at `full`.
+- Logs you ask for are kept at every level: `Stacking-*.log` with `--diagnostics`, and `RandCalls.csv` with
+  `--host-arg=--rand-log`.
+- `--prune` is the old name of `--detail standard`.
+
+### The files
 
 | File | Contents |
 |---|---|
-| `status.json` | the outcome: completed, stopped or failed, turns played, wall time, CPU, peak memory |
-| `events.jsonl` | what the runner did, one JSON line per event (database build, launch, turns, end) |
-| `setup.json`, `spec-resolved.json` | the game as set up: map, civs, seeds (enough to play it again) |
+| `report.html` | the report above (none with `--no-report`) |
+| `status.json` | the outcome (completed, stopped or failed), turns played, wall time, CPU, peak memory, winner |
+| `events.jsonl` | what the runner did, one JSON line per event (DLL choice, database build, launch, turns, end) |
+| `setup.json`, `spec-resolved.json` | the game as set up: map, civs and seeds, enough to play it again |
+| `hh-command.json` | the host command line, the inputs' hashes, the DLL and why it was chosen, the detail level |
 | `turn-times.jsonl` | seconds per turn |
-| `checkpoints\turn-NNNN.json` | a snapshot of the game each turn (players, cities, units, scores) |
+| `checkpoints\turn-NNNN.json` | the players, cities and wars at each turn (only the last turn at `summary`) |
+| `final-state.json` | every player at the end, and the owners and cities on the final map |
 | `replay-data.json`, `replay-messages.json` | the game's replay: per-player series and the event log |
+| `t000-map.json` | the map at turn 0: terrain, features, starting positions |
 | `host-report.json` | the host's view: DLL, mods, add-ins, profiles, Lua errors, engine calls it only stubs |
 | `host-stdout.txt` | the host's console output |
-| `Logs\` | the DLL's own logs: `Lua.log` (with fingerprints), AI logs, and `HeadlessDigest.log` for DLLs with the digest additions |
-
-`--prune` deletes the bulky parts afterwards (the database copy, state dumps and AI logs).
+| `Logs\` | `Lua.log` (with fingerprints), `Headless.log`, and `HeadlessDigest.log` for DLLs with the digest additions; the AI logs at `full` |
 
 ## 7. Many games: queues
 
@@ -269,7 +325,7 @@ c5h queue status my-queue.json
 - Every `c5h run` option can be set in `defaults`, a variant or a job, under its JSON name: `spec`, `turns`, `dll`,
   `db`, `modsDir`, `modsDb`, `mods` (`["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`,
   `noAddins`, `fingerprint` (`true` or `{"every": K, "turns": [...], "split": N}`), `luaProbes`, `seeds`,
-  `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `prune`, `lowPriority`, `hostArgs`.
+  `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail`, `report`, `lowPriority`, `hostArgs`.
 - Paths in the file are relative to the file. Run folders go to `"out"` (default `runs\<queue file name>`).
 - The queue is resumable: `QUEUE.state.json` remembers what is done. Stop it with Ctrl-C (running games are killed and
   re-queued at the next start) or by creating `QUEUE.stop` (running games finish, no new ones start). Rerun
@@ -281,7 +337,7 @@ An A/B test of two DLL builds over four seeds (`examples\queues\example-ab.json`
 
 ```json
 {"workers": 8,
- "defaults": {"spec": "../specs/continents-standard.json", "turns": 150, "maxSeconds": 3600, "prune": true},
+ "defaults": {"spec": "../specs/continents-standard.json", "turns": 150, "maxSeconds": 3600},
  "variants": {"A": {"dll": "path/to/baseline/CvGameCore_Expansion2.dll"},
               "B": {"dll": "path/to/test/CvGameCore_Expansion2.dll"}},
  "seeds": [[1001, 2002], [3101, 3202], [4101, 4202], [5101, 5202]]}
