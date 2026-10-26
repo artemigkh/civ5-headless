@@ -5,50 +5,24 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 
 ## Resume here
 
-- **Paused (2026-10-26, user: "pause when possible"):** the run-outputs work on `c5h-platform`
-  (`../civ5-headless-wt/platform`, not yet merged into main). Its work order:
-  1. DLL choice for `--no-mods` and `--mod` (the game's own DLL, or the first mod in the set that ships one).
-  2. `--detail summary|standard|full`.
-  3. A `report.html` per run, `c5h report RUN...` and a queue summary page, built on shared HTML/SVG helpers.
-  4. A final ownership map.
-  5. User-guide updates.
-
-  Committed so far:
-  - `a4a9efa`: host `--no-dumps` and `--keep-log GLOB`. These change the host sources, so rebuild the host before
-    the next kit.
-  - `b752a0b`: detail levels, `report.html` and summary pages, and the DLL-choice rule.
-  - `0286f96`, `e6ce8d5`, `349623a`: end-of-game Lua (final dump unchanged) and report layout.
-  - `6722475`: WIP, the report timeline's message classes. Only `test_report` has run since this commit.
-
-  Left to do:
-  - Fix the user guide's "Detail levels" speed claim. Standard is 66.6 s and full is 69.3 s for 100 Standard turns,
-    so the saving is about 4%. The sizes are 4.5 MB against 437 MB.
-  - Optionally, a test that a conquest message suppresses the extra "is eliminated" entry.
-  - Rebuild the `std300` report and look at it.
-  - Run the full suite, and optionally `verify --host-only`.
-  - Write the final report.
-
-  The checkpoint is `RESUME.md` in that worktree (excluded from git). To resume:
-  1. Relaunch an agent with the work order and the checkpoint.
-  2. Merge main into the branch first, because main has the bundled-Python kit and `docs/running.md`.
-  3. When it is done, review and merge it.
-  4. Update section 6 of `docs/running.md` ("What a run leaves behind") with the detail levels and the report.
-  5. Remake the kit (`python tools/make_kit.py --smoke`) and try a run plus its report from the unpacked kit.
-- **State (2026-10-25):** phases A–D done as far as they go without the real game, all merged into main (188
-  tests). The three workstream branches (`c5h-platform`, `c5h-anydll`, `c5h-verify`, worktrees in
-  `../civ5-headless-wt/`) are fully merged and idle; their `runs/` folders hold the host-only evidence.
-- **Stopped here: everything next needs the real game** (the user's rule: do all that needs no game, stop before
-  it). Phase E, calibration, about 2 hours of real game, in this order:
-  1. Preconditions: the real game free (no other autoplay or A/B queue), `c5h doctor` clean on the real-game group
-     (`EnableTuner = 1`, `LoggingEnabled = 1` in config.ini), the DLL under test deployed with its mods.
-  2. Live smoke of `RealGameSession`, never run live so far: launch, set_mods, start_game (Tiny, fingerprint), 5 turns
-     of autoplay, collect_logs, replay_data, quit; config.ini restored. About 5 minutes. Fix what breaks first.
-  3. `c5h verify --quick` with this fork's digest DLL and mods (exact match expected for the whole horizon).
-  4. `c5h verify --quick` with plain VP (upstream build plus its mod files deployed; back up and restore MODS) and with
-     the stock DLL and no mods (city-states learned from the real game's turn 0).
-  5. `c5h verify --full` once, then set the thresholds, ensemble sizes, budgets and the planner's real/host ratio
-     (docs/verification.md, "Calibration"); C.6's database and turn-0 coverage comes from the same runs.
-  6. Afterwards restore the real game to what it had before (the source repository's AI program DLL and mods).
+- **State (2026-10-26):**
+  - The run-outputs work is merged into main: detail levels, the per-run report, summary pages, and the DLL choice
+    for explicit mod sets.
+  - The kit with bundled Python is remade and checked.
+  - Phase E has started with a short real-game pass (the user asked to keep it short).
+  - See the log entry "phase E, first real-game runs" for the outcome.
+- **The real game keeps this fork's field-map DLL (`CB6B0BED`) with the VP mods.** The user is playing test games
+  with it, so don't restore the source repository's AI program DLL unless asked; its ledger has the steps.
+- **Phase E, what is left (real game; keep runs short):**
+  1. `c5h verify --quick` with the stock DLL and no mods. City-states are learned from the real game's turn 0. In the
+     host, the stock DLL leaves the human slot eliminated at turn 1 of autoplay; check that the real game does the same.
+  2. Plain VP: an upstream build plus its mod files deployed; back up and restore MODS.
+  3. `c5h verify --full` once, then set the thresholds, ensemble sizes, budgets and the planner's real/host ratio
+     (docs/verification.md, "Calibration").
+  4. The PreGame API gaps: the host has no `GetQuickCombat`, `GetQuickMovement` or `GetOverrideScenarioHandicap` (the
+     real game answers `false` for all three). The real game answers nothing for `GetClimate`, `GetSeaLevel`,
+     `IsHuman`, `IsMinorCiv` and `GetMinorCivType` after the start. Add the three getters to the host, and find out
+     why the real game answers nothing.
 - **Waiting on the user, not on the game:** creating the GitHub repository `ruskyandrei/civ5-headless` (private) and
   pushing; phase F (README quickstart, release with binaries); opening the upstream VP pull requests (branches
   `vp-det-*` in the source repository, texts in its `docs/headless-upstream-prs.md`).
@@ -194,3 +168,46 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   kit's QUICKSTART. Its section 6 waits on the run-outputs work.
 - Found while writing it: `--no-mods` and `--mod` still played the active mods' DLL. The fix is part of the
   run-outputs work on `c5h-platform`, paused (see "Resume here").
+
+### 2026-10-26: run outputs merged; phase E, first real-game runs
+
+- Run outputs (`c5h-platform`, resumed and finished here):
+  - detail levels, a report per run, summary pages, `final-state.json`, and the host's `--no-dumps`/`--keep-log`;
+  - the DLL choice for `--no-mods`/`--mod`;
+  - the report test for the game's own conquest messages;
+  - the user guide's timing claim corrected (the levels save disk, not time);
+  - single-turn series listed in a note instead of charted.
+
+  Merged into main with 200 tests passing. `docs/running.md` section 6 covers the report, the levels and the files.
+  `c5h run` now prints its every-10-turns progress on the console; the user asked, because a run printed nothing
+  between `launched` and the end.
+- Kit `0.1.0-20e984722`, with bundled Python. The smoke test passes, and games run from an unpacked kit, with the
+  report. `--no-mods` plays the game's own DLL ("no mods: the game's own DLL").
+- Real game, this fork's field-map DLL `CB6B0BED` with the VP mods; the user asked to keep it short:
+  - **First live run of `RealGameSession`.** Mod activation shows `ModsMenu`; `ModsSinglePlayer` exists all along,
+    hidden, and the setup runs in it as it is. The session waited for `ModsSinglePlayer` to be shown and timed out;
+    now it waits for either. The fake game models it.
+  - The game's console output ("number - table" per tuner call) went into the caller's streams; it now goes to null.
+  - Smoke: launch 31 s, mods 16 s, start 7 s, 5 turns 10.6 s. Seeds verified, fingerprint probe ran, logs and
+    replay data collected, quit 2 s, `config.ini` restored.
+  - The session now asks DLLs with the digest additions for per-turn digests (`HeadlessSeeds.txt` `digest=1`
+    `normalise=1` before the start, removed once loaded). `game_probe` writes its own file and opts out.
+  - **`verify --quick` #1: fail, but no game difference.** The trajectory matched for 148 of 148 turns by digest.
+    - `health.stubs`: VP calls `sendMoveGreatWorks`, which also carries its own net messages (CvDllNetMessageExt),
+      and `sendDoTask`. The host only stubbed them, dropping game actions. Now both are delivered back
+      (`ResponseMoveGreatWorks`, `ResponseCityDoTask`), as the other net messages are. Replaying the ensemble game
+      that called them: identical to turn 130, then different (the move is applied).
+    - `setup.database`: the local `civ5headless.toml` pinned an older reference database. The builder's database
+      from the current mod files is identical to the game's export (data only), so the `db` line is gone.
+    - `setup.pregame`: all 651 common values equal in 5 games. Getters only one side answers now warn instead of
+      failing (see "Resume here" item 4).
+  - **`verify --quick` #2 (`runs/verify-quick-20261026-114314`): warn, exit 0, in 11.1 min.**
+    - Turn 0: 4 of 4 setups identical.
+    - Real trajectory: identical for 148 of 148 turns, by digest. A/A, frame skew, heap perturbation and probe off
+      give 150 of 150.
+    - Database identical; no Lua errors; no unknown stubs; the civ choice matches.
+    - Envelope 97.2%; no bias flagged.
+    - Host 0.36 s/turn against the real game's 2.52 (6.9x), peak working set 350 MB against 1759 MB.
+    - One setup (Archipelago Small) was compared by fingerprint rather than digest: look at why.
+- The real game was left with the field-map DLL and the VP mods enabled, for the user's own test games.
+
