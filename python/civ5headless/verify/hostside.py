@@ -159,10 +159,12 @@ class HostSide:
     """Runs the phases on threads; thread-safe counters for the load timeline."""
 
     def __init__(self, cfg, settings, phases, out_dir, deadline, t0, db, cost=None, play=None, log=print, between=None,
-                 pins=None, pin_spec=None):
+                 pins=None, pin_spec=None, loc_db=None):
         """between(phase) is called after each phase (the suite adjusts later jobs there); a job with a pin waits for
-        that real game's city-states in pins (pins.Pins) and plays pin_spec(spec, minor civ types) instead."""
+        that real game's city-states in pins (pins.Pins) and plays pin_spec(spec, minor civ types) instead. loc_db:
+        the localization database for every game (None: the configured one)."""
         self.cfg, self.settings, self.phases = cfg, settings, phases
+        self.loc_db = str(loc_db) if loc_db else None
         self.between = between
         self.pins, self.pin_spec = pins, pin_spec
         self.out_dir = Path(out_dir)
@@ -248,7 +250,7 @@ class HostSide:
         try:
             s = self.settings
             r = self.play(spec, job.turns, run_dir=job.run_dir, cfg=self.cfg, seeds=dict(map=job.seeds[0], sync=job.seeds[1]) if job.seeds else None,
-                          dll=s.dll, db=self.db, mods=None if s.no_mods else s.mods, no_mods=bool(s.no_mods),
+                          dll=s.dll, db=self.db, mods=None if s.no_mods else s.mods, no_mods=bool(s.no_mods), loc_db=self.loc_db,
                           fingerprint=job.fingerprint or False, lua_probes=[str(p) for p in job.probes],
                           heap_perturb=job.heap_perturb, frame_skew=job.frame_skew, max_seconds=int(max(left, 10)),
                           stall_seconds=300, max_memory_mb=self.settings.max_memory_mb, affinity=affinity,

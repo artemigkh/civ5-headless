@@ -6,6 +6,7 @@ The run folder (<runs>/verify-<mode>-<date>-<time>, or --out) holds:
   probes/          the Lua probes injected on both sides
   host/<job>/      one host run folder per job (detail standard: logs, turn times, replay data, digests)
   real/            the real-game session: real.json, one folder per game with its log segments and replay data
+  loc/             with the real game: the localization database the host games read, copied before it starts
   execution.json   what ran: job states and timings, phases, the load timeline, the cost model
   verify.json      the result: checks, verdict, comparisons, statistics, performance
   report.html      the same as one self-contained page
@@ -15,6 +16,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import shutil
 import sqlite3
 import threading
 import time
@@ -77,6 +79,14 @@ class Suite:
         if frozen is not None:
             s.mods = frozen
             self.log(f'mod set: the {len(frozen)} active mod(s), fixed for the whole run')
+        # Likewise the game rebuilds Localization-Merged.db when it activates mods: with the real game, the host games
+        # read a copy taken before it starts.
+        self.loc_db = None
+        if s.real and cfg.loc_db and Path(cfg.loc_db).is_file():
+            self.loc_db = self.out / 'loc' / Path(cfg.loc_db).name
+            self.loc_db.parent.mkdir(exist_ok=True)
+            shutil.copy2(cfg.loc_db, self.loc_db)
+            self.log(f'localization: {cfg.loc_db} copied before the real game starts')
         # The DLL as run.play chooses it (modsdb.choose_dll): the host games get the same one from s.dll and the mods.
         self.dll, why = modsdb.choose_dll(cfg, s.dll, [] if s.no_mods else s.mods)
         self.log(f'DLL {self.dll} ({why})')
@@ -399,7 +409,8 @@ class Suite:
         real_state = {'phase': None}
         self.pins = pins.Pins() if self.pinning else None
         host = hostside.HostSide(self.cfg, s, self.phases, self.out, self.deadline, self.t0, str(self.db), self.cost,
-                                 play=self.play, log=self.log, between=self.between, pins=self.pins, pin_spec=self.pin_spec)
+                                 play=self.play, log=self.log, between=self.between, pins=self.pins, pin_spec=self.pin_spec,
+                                 loc_db=self.loc_db)
         timeline = perf.LoadTimeline(self.t0, hosts=host.sample, real_state=real_state).start()
         real = None
         try:

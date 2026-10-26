@@ -139,6 +139,11 @@ class FlowTest(unittest.TestCase):
         self.assertNotIn('<script', html)
         self.assertNotIn('http', html.split('</style>')[0])
         self.assertEqual(json.loads((out / 'verify.json').read_text(encoding='utf-8'))['verdict'], 'pass')
+        # the host games read a copy of the localization database taken before the real game started (it rebuilds it)
+        copy = out / 'loc' / 'loc.db'
+        self.assertTrue(copy.is_file())
+        command = json.loads(next((out / 'host').glob('*/hh-command.json')).read_text(encoding='utf-8'))['command']
+        self.assertEqual(command[command.index('--loc-db') + 1], str(copy.resolve()))
         # the real side: one session, segments per game, the probes injected
         s = FakeRealGameSession.instances[0]
         self.assertEqual(s.calls.count('launch'), 1)
