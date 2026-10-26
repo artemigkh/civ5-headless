@@ -4,7 +4,7 @@ The run folder (<runs>/verify-<mode>-<date>-<time>, or --out) holds:
   plan.json        settings, capabilities, inputs (DLL, mods, database, host exe), specs, phases and jobs
   specs/           the resolved specs the games use
   probes/          the Lua probes injected on both sides
-  host/<job>/      one host run folder per job (pruned: logs, turn times, replay data, digests)
+  host/<job>/      one host run folder per job (detail standard: logs, turn times, replay data, digests)
   real/            the real-game session: real.json, one folder per game with its log segments and replay data
   execution.json   what ran: job states and timings, phases, the load timeline, the cost model
   verify.json      the result: checks, verdict, comparisons, statistics, performance
@@ -21,7 +21,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .. import dbcache
+from .. import dbcache, modsdb
 from .. import run as host_run
 from .. import spec as gamespec
 from ..probes import fingerprint_options
@@ -63,7 +63,9 @@ class Suite:
         self.log(f'verify {s.mode}: budget {s.budget_minutes:g} min, out {self.out}')
         for k, why in self.caps.notes.items():
             self.log(f'  not available: {k}: {why}')
-        self.dll = Path(s.dll or cfg.require('dll', 'pass --dll')).resolve()
+        # The DLL as run.play chooses it (modsdb.choose_dll): the host games get the same one from s.dll and the mods.
+        self.dll, why = modsdb.choose_dll(cfg, s.dll, [] if s.no_mods else s.mods)
+        self.log(f'DLL {self.dll} ({why})')
         db, info = dbcache.database(cfg, db=s.db, dll=self.dll, exe=self.exe, log=self.log,
                                     mods=[] if s.no_mods else s.mods)
         self.db = Path(db)

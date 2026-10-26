@@ -144,6 +144,11 @@ class PlayTest(unittest.TestCase):
             self.assertIn('--no-ui-frame', argv)
             self.assertFalse({'--no-mods', '--no-profiles', '--no-addins', '--skip-addin'} & set(argv))
             self.assertEqual(r.report['format'], 'civ5headless-host-report/1')  # host-report.json before newgame-report.json
+            # the default detail (standard) and the report; a host without --no-dumps/--keep-log gets neither
+            self.assertEqual((r.status['detail'], r.status['dllReason']), ('standard', 'configured'))
+            self.assertFalse({'--no-dumps', '--keep-log'} & set(argv))
+            self.assertTrue((r.dir / 'report.html').is_file())
+            self.assertIn('"action": "report"', (r.dir / 'events.jsonl').read_text(encoding='utf-8'))
             resolved = json.loads((r.dir / 'spec-resolved.json').read_text(encoding='utf-8'))
             self.assertEqual(resolved['seeds'], {'map': 1, 'sync': 3})
             self.assertEqual(json.loads((r.dir / 'spec.json').read_text(encoding='utf-8')), spec)
@@ -157,6 +162,9 @@ class PlayTest(unittest.TestCase):
             db = tmp / 'game.db'
             make_db(db)
             (tmp / 'game.dll').write_bytes(b'x')
+            own = tmp / 'Assets/DLC/Expansion2/CvGameCore_Expansion2.dll'  # the game's own DLL
+            own.parent.mkdir(parents=True)
+            own.write_bytes(b'x')
             (tmp / 'probes').mkdir()
             (tmp / 'probes/fingerprint.lua').write_text('-- fingerprint\n', encoding='utf-8')
             probe = tmp / 'probe.lua'
@@ -166,14 +174,27 @@ class PlayTest(unittest.TestCase):
                                 exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs', db_cache=tmp / 'cache',
                                 probes=tmp / 'probes')
             spec = {'map': {'script': 'Continents.lua', 'size': 'WORLDSIZE_TINY'}, 'seeds': {'map': 1, 'sync': 2}}
-            r = run.play(spec, 2, run='m', cfg=cfg, mods=[ADDON_ID, BASE_ID], no_profiles=True,
-                         skip_addins=['Panel.lua', 'Other.xml'], no_addins=True, fingerprint=dict(every=5, turns=[3]),
-                         lua_probes=[probe])
+            with mock.patch.object(run, 'host_supports', return_value=True):
+                r = run.play(spec, 2, run='m', cfg=cfg, mods=[ADDON_ID, BASE_ID], no_profiles=True,
+                             skip_addins=['Panel.lua', 'Other.xml'], no_addins=True, fingerprint=dict(every=5, turns=[3]),
+                             lua_probes=[probe], detail='summary', report=False)
             self.assertTrue(r.ok, r.status.get('error'))
             argv = json.loads((r.dir / 'argv.json').read_text(encoding='utf-8'))[1:]
 
             def value(opt):
                 return [argv[i + 1] for i, a in enumerate(argv) if a == opt]
+
+            # an explicit mod set whose mods ship no DLL plays the game's own; events.jsonl says why
+            self.assertEqual(value('--dll'), [str(own.resolve())])
+            dll_event = [json.loads(l) for l in (r.dir / 'events.jsonl').read_text(encoding='utf-8').splitlines()
+                         if '"action": "dll"' in l][0]
+            self.assertEqual(dll_event['reason'], "no mod of the set ships the DLL: the game's own")
+            # summary detail: the host is told to write no dumps and only these logs; the rest is tidied away
+            self.assertIn('--no-dumps', argv)
+            self.assertEqual(value('--keep-log')[:2], ['Lua.log', 'Headless.log'])
+            self.assertFalse((r.dir / 'Logs/HeadlessDigest.log').exists())
+            self.assertFalse((r.dir / 'report.html').exists())
+            self.assertEqual(json.loads((r.dir / 'hh-command.json').read_text(encoding='utf-8'))['detail'], 'summary')
 
             registry = Path(value('--mods-db')[0])
             self.assertEqual(registry.parent.parent, tmp / 'cache/modsdb')
@@ -194,6 +215,9 @@ class PlayTest(unittest.TestCase):
             self.assertTrue(r.ok, r.status.get('error'))
             argv = json.loads((r.dir / 'argv.json').read_text(encoding='utf-8'))[1:]
             self.assertIn('--no-mods', argv)
+            self.assertEqual((value('--dll'), r.status['dllReason']), ([str(own.resolve())], "no mods: the game's own DLL"))
+            r2 = run.play(spec, 2, run='n2', cfg=cfg, no_mods=True, dll=tmp / 'game.dll')  # --dll wins
+            self.assertEqual(r2.status['dllReason'], '--dll given')
             self.assertFalse({'--mods-db', '--mods-dir', '--no-profiles'} & set(argv))
             self.assertEqual(value('--lua-probe'), [str(tmp / 'probes/fingerprint.lua')])
             self.assertEqual(value('--profiles'), [str((tmp / 'probes').resolve())])
@@ -257,10 +281,19 @@ class QueueTest(unittest.TestCase):
                           {'name': 'game', 'noAddins': True}]}
             jobs = {j['name']: j for j in queue.expand(q, qpath)}
             self.assertEqual(Path(jobs['set']['profiles']), (tmp / 'profiles').resolve())
-            cfg = config.Config(mods_dir=mods_dir, mods_db=tmp / 'game.db', db=tmp / 'built.db', db_cache=tmp / 'cache')
+            own = tmp / 'game/Assets/DLC/Expansion2/CvGameCore_Expansion2.dll'
+            own.parent.mkdir(parents=True)
+            own.write_bytes(b'x')
+            cfg = config.Config(mods_dir=mods_dir, mods_db=tmp / 'game.db', db=tmp / 'built.db', db_cache=tmp / 'cache',
+                                game_dir=tmp / 'game', dll=tmp / 'active.dll')
             logs = []
             q = SimpleNamespace(cfg=cfg, log=logs.append)
             inputs = queue.databases(q, list(jobs.values()))
+            # the DLL: the game's own for noMods and for a mod set without one, the configured one otherwise
+            self.assertEqual((inputs['none']['dll'], inputs['set']['dll']), (str(own.resolve()), str(own.resolve())))
+            self.assertEqual(inputs['game']['dll'], str((tmp / 'active.dll').resolve()))
+            self.assertEqual(queue.job_args(jobs['none'], tmp / 'runs/none', inputs['none'], None).dll_reason,
+                             "no mods: the game's own DLL")
             self.assertEqual(inputs['set']['db'], str((tmp / 'built.db').resolve()))
             self.assertEqual(Path(inputs['set']['modsDb']).name, 'Civ5ModsDatabase.db')
             self.assertEqual(Path(inputs['set']['modsDir']), mods_dir.resolve())

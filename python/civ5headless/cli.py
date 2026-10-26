@@ -19,7 +19,8 @@ from . import __version__, config
 COMMANDS = [
     ('doctor', 'civ5headless.doctor', 'main', 'check the setup: configuration and where it came from, game, host'),
     ('run', 'civ5headless.run', 'main', 'play one game in the host from a spec'),
-    ('queue', 'civ5headless.queue', 'main', 'play many games in parallel: run, status, compare'),
+    ('queue', 'civ5headless.queue', 'main', 'play many games in parallel: run, status, compare, report'),
+    ('report', 'civ5headless.report', 'main', "rebuild runs' report.html, and a summary page over several runs"),
     ('compare', 'civ5headless.compare.digest', 'compare_main', "compare two runs' per-turn state digests"),
     ('verify', 'civ5headless.verify', 'main', 'the verification suite (when installed)'),
     ('spec', 'civ5headless.spec', 'main', 'resolve a game spec, or print its pregame Lua'),

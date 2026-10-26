@@ -338,7 +338,7 @@ Host-only mode, Tiny Continents, 150 turns, 8 host processes at most, on the dev
 |---|---|
 | `plan.json` | settings, capabilities, inputs (DLL, mods, database, host, with hashes), phases and jobs, estimate |
 | `specs/`, `probes/` | the resolved specs and the Lua probes both sides used |
-| `host/<game>/` | host run folders (pruned: logs, digests, turn times, checkpoints, replay data) |
+| `host/<game>/` | host run folders (detail standard: small logs, digests, turn times, checkpoints, replay data) |
 | `real/` | the real-game session: `real.json`, one folder per game with its log segments and replay data |
 | `execution.json` | job states and timings, phases, the load samples, the cost model |
 | `verify.json`, `report.html`, `verify.log` | the result, the report, the progress lines |

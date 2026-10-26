@@ -1,6 +1,6 @@
 {"comment": "A/B of two DLL builds on 4 seeds; replace the two dll paths. Mods, databases and the host come from the configuration (c5h doctor); runs go to <runs>/example-ab.",
  "workers": 8, "affinity": "p-first",
- "defaults": {"spec": "../specs/continents-standard.json", "turns": 150, "maxSeconds": 3600, "prune": true},
+ "defaults": {"spec": "../specs/continents-standard.json", "turns": 150, "maxSeconds": 3600, "detail": "standard"},
  "variants": {"A": {"dll": "path/to/baseline/CvGameCore_Expansion2.dll", "abRole": "baseline"},
               "B": {"dll": "path/to/test/CvGameCore_Expansion2.dll", "abRole": "test"}},
  "seeds": [[1001, 2002], [3101, 3202], [4101, 4202], [5101, 5202]]}

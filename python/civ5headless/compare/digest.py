@@ -141,7 +141,13 @@ def log_path(run):
     for candidate in (p / 'Logs/HeadlessDigest.log', p / 'HeadlessDigest.log'):
         if candidate.is_file():
             return candidate
-    raise FileNotFoundError(f'no HeadlessDigest.log in {p}')
+    try:
+        detail = json.loads((p / 'status.json').read_text(encoding='utf-8')).get('detail')
+    except (OSError, ValueError, AttributeError):
+        detail = None
+    raise FileNotFoundError(f'no HeadlessDigest.log in {p}' + (
+        ' (a summary-detail run keeps no digests: play it with --detail standard or full)' if detail == 'summary' else
+        ' (a DLL without the digest additions; c5h fingerprint compare works with any DLL)' if detail else ''))
 
 
 def differing_sections(fa, oa, fb, ob):

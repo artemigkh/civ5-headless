@@ -293,6 +293,37 @@ def resolve(cfg, mods=None, mods_dir=None, mods_db=None, log=print):
     return Path(info['modsDir']), path
 
 
+def game_dll(cfg):
+    """The game's own DLL (Assets/DLC/Expansion2), or None."""
+    p = cfg.game_dir / 'Assets/DLC/Expansion2' / config.DLL_NAME if cfg.game_dir else None
+    return p if p and p.is_file() else None
+
+
+def choose_dll(cfg, dll=None, mods=None, mods_dir=None, given_as='--dll'):
+    """(DLL, why) for a game. The DLL given wins, then a dll set in civ5headless.toml. For an explicit mod set (mods:
+    'ID[:VER]' strings, [] for none) it is the first mod of the set, in activation order, that ships
+    CvGameCore_Expansion2.dll, else the game's own DLL. Otherwise it is the configured one (discovery: the active
+    mods'). Raises ConfigError (ModsDbError for a bad mod set) when there is none."""
+    if dll:
+        return Path(dll).resolve(), f'{given_as} given'
+    if cfg.dll and cfg.sources.get('dll', config.Source('unset')).kind == 'file':
+        return Path(cfg.dll).resolve(), f'dll in {cfg.file.name if cfg.file else config.FILE_NAME}'
+    if mods is not None:
+        if parse_mods(mods):
+            for m in select(mods_dir or cfg.require('mods_dir', 'pass --mods-dir'), mods):
+                if (m.folder / config.DLL_NAME).is_file():
+                    return (m.folder / config.DLL_NAME).resolve(), f'the mod set: {m.name or m.id} ships the DLL'
+        own = game_dll(cfg)
+        if own is None:
+            raise config.ConfigError("the game's own DLL (Assets/DLC/Expansion2) is not there; pass --dll")
+        return own.resolve(), ("no mods: the game's own DLL" if not parse_mods(mods) else
+                               "no mod of the set ships the DLL: the game's own")
+    dll = cfg.require('dll', 'pass --dll')
+    source = cfg.sources.get('dll', config.Source('unset'))
+    return Path(dll).resolve(), (f'{source.kind}: {source.note}' if source.note else
+                                 'configured' if source.kind == 'unset' else source.kind)
+
+
 def _rows(con, table, cols, mid, ver):
     return [tuple(r) for r in con.execute(f'SELECT {", ".join(cols)} FROM {table} WHERE lower(ModID) = ? AND Version = ? '
                                           'ORDER BY rowid', (mid, ver))]

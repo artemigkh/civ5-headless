@@ -8,7 +8,7 @@
           [--lua-probe FILE]... [--heap-perturb N] [--frame-skew K]
           [--diagnostics 1] [--improved-mask N | --ab-role baseline|test] [--checkpoint-every 1]
           [--maximum-seconds S] [--stall-seconds S] [--max-memory-mb MB] [--affinity MASK] [--low-priority]
-          [--prune] [--host-arg ARG]...
+          [--detail summary|standard|full] [--no-report] [--host-arg ARG]...
 
 From Python: run.play(spec, turns, ...) -> Result (see play).
 
@@ -21,6 +21,16 @@ Mods: the activated mods are those of the mods database (--mods-db, default the 
 mod set instead: a registry is generated from the .modinfo files (modsdb.py), so the game need not have activated
 them. --no-mods plays without mods (the database is the DLC snapshot post-processed by the DLL).
 
+DLL: --dll, else a dll set in civ5headless.toml, else for --no-mods the game's own and for --mod the first mod of the
+set that ships one (else the game's own), else the discovered one (the active mods'). events.jsonl and the report say
+which and why (modsdb.choose_dll).
+
+Detail (--detail, default standard): summary keeps what happened and how fast (no per-turn checkpoints, digests or
+logs but Lua.log), standard adds the per-turn checkpoints and the small logs, full keeps everything the host writes
+(state dumps, the database copies, the DLL's AI logs). The host is told not to write what the level leaves out; the
+database copies it needs while it runs are deleted afterwards. report.html is written at the end (--no-report: not;
+c5h report RUN rebuilds it).
+
 UI: the host runs the activated mods' InGameUIAddins (--skip-addin NAME leaves one out, --no-addins all) and the UI
 emulation profiles from --profiles (default: config profiles; --no-profiles: none). --fingerprint runs the Lua
 fingerprint probe (probes/fingerprint.lua; c5h fingerprint compares two runs), every turn or every K-th
@@ -28,9 +38,9 @@ fingerprint probe (probes/fingerprint.lua; c5h fingerprint compares two runs), e
 
 The run folder has the files vpbench writes and its readers use (compare.py, abcompare.py, samerun.py):
 events.jsonl, setup.json, spec-resolved.json, status.json, turn-times.jsonl, turn-seen.json,
-checkpoints/turn-NNNN.json (+ turn-NNNN-final.json), replay-messages.json, replay-data.json; plus the host's
-own outputs (host-report.json, newgame-report.json, Logs/ with HeadlessDigest.log and Lua.log, t000-*.json,
-dump-t000/, dump-tN/).
+checkpoints/turn-NNNN.json (+ turn-NNNN-final.json), replay-messages.json, replay-data.json; plus final-state.json
+(players and the final map), report.html and the host's own outputs (host-report.json, newgame-report.json, Logs/
+with HeadlessDigest.log and Lua.log, t000-*.json; with --detail full dump-t000/, dump-tN/ and db/).
 
 Differences from a real-game run (docs/user-guide.md, "Run folders"):
 - checkpoints are taken exactly when the game turn advances (every --checkpoint-every turns), not by a
@@ -45,7 +55,7 @@ Differences from a real-game run (docs/user-guide.md, "Run folders"):
 """
 from dataclasses import dataclass
 from pathlib import Path
-import argparse, hashlib, json, os, shutil, subprocess, sys, time
+import argparse, fnmatch, functools, hashlib, json, os, shutil, subprocess, sys, time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -119,7 +129,9 @@ STRENGTH = r'''-- Strength metrics for A/B comparison (abcompare.py); nil when a
    e.wonders=v(p.GetNumWorldWonders,p);e.influentialOn=v(p.GetNumCivsInfluentialOn,p);e.spaceshipParts=ss
    e.votes=league and v(league.CalculateStartingVotesForMember,league,owner) or nil'''
 
-# After autoplay: victory, replay messages (vpbench: Type ~= 2, Plots dropped) and per-major replay data.
+# After autoplay: victory, replay messages (vpbench: Type ~= 2, Plots dropped) and per-major replay data; then the
+# players (names, colours, final standing) and the final map (plot owners, cities) for the run report, through plain
+# getters (pcall-guarded where some DLLs lack them). It runs after the last turn's digest and checkpoint.
 FINAL = r'''
 local out={}
 local vic=Game.GetVictory();local info=vic and vic>=0 and GameInfo.Victories[vic]
@@ -135,10 +147,51 @@ for owner=0,63 do local p=Players[owner]
  end
 end
 out.replayData=series
+local function v(f,...) if f then local ok,r=pcall(f,...);if ok then return r end end;return nil end
+local function rgb(t) local c=t and GameInfo.Colors[t];if c then return string.format('#%02x%02x%02x',math.floor(c.Red*255+0.5),math.floor(c.Green*255+0.5),math.floor(c.Blue*255+0.5)) end end
+local wonders={};for b in GameInfo.Buildings() do local c=GameInfo.BuildingClasses[b.BuildingClass];if c and c.MaxGlobalInstances==1 then wonders[#wonders+1]=b.ID end end
+local players={}
+for owner=0,63 do local p=Players[owner]
+ if p and p:IsEverAlive() and not p:IsObserver() and not p:IsBarbarian() then
+  local civ=GameInfo.Civilizations[p:GetCivilizationType()];local leader=GameInfo.Leaders[p:GetLeaderType()];local pc=GameInfo.PlayerColors[p:GetPlayerColor()]
+  local e={owner=owner,team=p:GetTeam(),minor=p:IsMinorCiv(),alive=p:IsAlive(),civilization=civ and civ.Type or '',
+   leader=leader and leader.Type or '',name=v(p.GetCivilizationShortDescription,p),leaderName=v(p.GetName,p),
+   colors={pc and rgb(pc.PrimaryColor) or '',pc and rgb(pc.SecondaryColor) or ''},score=not p:IsMinorCiv() and v(p.GetScore,p) or nil,cities=p:GetNumCities(),
+   population=v(p.GetTotalPopulation,p),techs=v(function() return Teams[p:GetTeam()]:GetTeamTechs():GetNumTechsKnown() end),
+   policies=v(p.GetNumPolicies,p),era=v(p.GetCurrentEra,p),wonders=v(p.GetNumWorldWonders,p)}
+  if e.era then local r=GameInfo.Eras[e.era];e.eraType=r and r.Type end
+  if e.wonders==nil then local n=0;for c in p:Cities() do for _,id in ipairs(wonders) do if c:IsHasBuilding(id) then n=n+1 end end end;e.wonders=n end
+  local rel=v(p.GetReligionCreatedByPlayer,p);if rel and rel>0 then local r=GameInfo.Religions[rel];local n=v(Game.GetReligionName,rel) or (r and r.Description);e.religion=n and Locale and v(Locale.ConvertTextKey,n) or n end
+  players[#players+1]=e
+ end
+end
+out.players=players
+local w,h=Map.GetGridSize();local own={}
+for i=0,Map.GetNumPlots()-1 do own[i+1]=Map.GetPlotByIndex(i):GetOwner() end
+local cities={}
+for owner=0,63 do local p=Players[owner]
+ if p and p:IsAlive() then for c in p:Cities() do cities[#cities+1]={plot=c:Plot():GetPlotIndex(),owner=owner,name=c:GetName(),population=c:GetPopulation(),capital=c:IsCapital(),originalOwner=c:GetOriginalOwner()} end end
+end
+out.map={width=w,height=h,owners=table.concat(own,','),cities=cities}
 return out
 '''
 
-ESSENTIAL_LOGS = ('Headless*.log', 'Lua.log', 'Database.log', 'Stacking-*.log', 'vfs-index.log', 'CvAssert*.log', 'RandCalls.csv')
+# Detail levels: what a run folder keeps (docs/user-guide.md, "Run folders").
+# - summary: what happened and how fast: status, events, setup, spec, host report, turn times, replay data and
+#   messages, the final checkpoint and state, the turn-0 map, Lua.log and Headless.log, report.html;
+# - standard (default): also the per-turn checkpoints and the small logs (the digests, Database.log, CustomMods.log, ...);
+# - full: everything the host writes: the state dumps (dump-t000, dump-tN), the database copies (db/) and every log of
+#   the DLL (its AI logs).
+# The host is told not to write the dumps (--no-dumps) and the logs a level leaves out (--keep-log; the DLL still logs,
+# so results do not change). What it must write anyway (the database copies the DLL opens) is deleted afterwards.
+DETAILS = ('summary', 'standard', 'full')
+DEFAULT_DETAIL = 'standard'
+DETAIL_LOGS = {'summary': ('Lua.log', 'Headless.log'),
+               'standard': ('Lua.log', 'Headless*.log', 'Database.log', 'Localization.log', 'CustomMods.log',
+                            'include-resolution.log', 'vfs-index.log', 'xml*.log', 'stopwatch.log', 'net_message_debug.log',
+                            'CvAssert*.log')}
+REQUESTED_LOGS = ('Stacking-*.log', 'RandCalls.csv', 'HeadlessDumps')  # asked for by an option: kept at every level
+ESSENTIAL_LOGS = DETAIL_LOGS['standard'] + REQUESTED_LOGS  # what --prune kept (now --detail standard)
 
 
 def utc(): return datetime.now(timezone.utc).isoformat()
@@ -204,16 +257,68 @@ def turn_lines(path, offset):
     return rows, offset + end
 
 
-def prune(run):
-    """Drop the bulky per-run copies: database copies, state dumps, the DLL's AI logs (keeps ESSENTIAL_LOGS)."""
-    for name in ('db', 'dump-t000') + tuple(p.name for p in run.glob('dump-t*')):
-        shutil.rmtree(run / name, ignore_errors=True)
+def detail_of(detail=None):
+    """The detail level: detail if given, else standard (also what the old prune option asks for)."""
+    detail = detail or DEFAULT_DETAIL
+    if detail not in DETAILS:
+        raise ValueError(f'detail must be one of {", ".join(DETAILS)}, not {detail!r}')
+    return detail
+
+
+@functools.lru_cache(maxsize=16)
+def _exe_text(path, stamp):
+    try:
+        return Path(path).read_bytes()
+    except OSError:
+        return b''
+
+
+def host_supports(exe, option):
+    """Whether civ5headless.exe knows option (its usage text names it); older hosts do not know --no-dumps and
+    --keep-log, and their runs are tidied afterwards instead."""
+    try:
+        st = Path(exe).stat()
+    except OSError:
+        return False
+    return option.encode('ascii') in _exe_text(str(exe), (st.st_size, st.st_mtime_ns))
+
+
+def detail_host_args(detail, exe):
+    """The host options that keep it from writing what the detail level leaves out (none for full)."""
+    if detail == 'full':
+        return []
+    args = ['--no-dumps'] if host_supports(exe, '--no-dumps') else []
+    if host_supports(exe, '--keep-log'):
+        for pattern in DETAIL_LOGS[detail] + REQUESTED_LOGS:
+            args += ['--keep-log', pattern]
+    return args
+
+
+def tidy(run, detail):
+    """Delete what the detail level leaves out (full: nothing): the database copies (db/, which the DLL needs while it
+    runs), dumps and logs an older host wrote anyway, and for summary the per-turn checkpoints and the raw final Lua
+    result (its parts are in replay-data.json, replay-messages.json and final-state.json)."""
+    run = Path(run)
+    if detail == 'full':
+        return
+    for p in [run / 'db'] + [p for p in run.glob('dump-t*') if p.is_dir()]:
+        shutil.rmtree(p, ignore_errors=True)
     logs = run / 'Logs'
     if logs.is_dir():
-        keep = {p for pattern in ESSENTIAL_LOGS for p in logs.glob(pattern)}
+        keep = [s.lower() for s in DETAIL_LOGS[detail] + REQUESTED_LOGS]
         for p in logs.iterdir():
-            if p not in keep:
+            if not any(fnmatch.fnmatchcase(p.name.lower(), k) for k in keep):
                 shutil.rmtree(p, ignore_errors=True) if p.is_dir() else p.unlink(missing_ok=True)
+    if detail == 'summary':
+        for p in (run / 'checkpoints').glob('turn-*.json'):
+            if not p.name.endswith('-final.json'):
+                p.unlink(missing_ok=True)
+        (run / 'lua-before-dump.json').unlink(missing_ok=True)
+
+
+def prune(run):
+    """The old --prune: tidy(run, 'standard')."""
+    tidy(run, 'standard')
 
 
 def run_folder(a, cfg):
@@ -242,12 +347,18 @@ def newgame(a, quiet=False, cfg=None):
     job = None
     try:
         no_mods = bool(getattr(a, 'no_mods', False))
-        mods_dir, mods_db = modsdb.resolve(cfg, [] if no_mods else getattr(a, 'mod', None), getattr(a, 'mods_dir', None),
-                                           getattr(a, 'mods_db', None),
+        detail = detail_of(getattr(a, 'detail', None))
+        mod_set = [] if no_mods else getattr(a, 'mod', None)
+        # The DLL: --dll, a dll in civ5headless.toml, the explicit mod set's (or the game's own), else discovery's.
+        if a.dll and getattr(a, 'dll_reason', None):
+            dll, dll_reason = Path(a.dll).resolve(), a.dll_reason
+        else:
+            dll, dll_reason = modsdb.choose_dll(cfg, a.dll, mod_set, getattr(a, 'mods_dir', None))
+        run.log('dll', quiet=quiet, dll=str(dll), reason=dll_reason)
+        mods_dir, mods_db = modsdb.resolve(cfg, mod_set, getattr(a, 'mods_dir', None), getattr(a, 'mods_db', None),
                                            log=lambda m: run.log('mods_registry', quiet=quiet, message=m))
         loc_db = getattr(a, 'loc_db', None) or cfg.loc_db
         game_dir = getattr(a, 'game_dir', None) or cfg.require('game_dir', 'pass --game-dir')
-        dll = Path(a.dll or cfg.require('dll', 'pass --dll')).resolve()
         exe = dbcache.find_exe(a.exe, cfg)
         no_profiles = bool(getattr(a, 'no_profiles', False))
         profiles = None if no_profiles else getattr(a, 'profiles', None) or cfg.profiles
@@ -292,11 +403,14 @@ def newgame(a, quiet=False, cfg=None):
             cmd += ['--lua-probe', str(probe)]
         if getattr(a, 'heap_perturb', None): cmd += ['--heap-perturb', str(a.heap_perturb)]
         if getattr(a, 'frame_skew', None): cmd += ['--frame-skew', str(a.frame_skew)]
+        cmd += detail_host_args(detail, exe)
         cmd += list(a.host_arg or [])
         write(run.dir / 'hh-command.json', dict(command=cmd, exe=str(exe), exeSHA256=dbcache.sha256_file(exe), dll=str(dll),
-                                                dllSHA256=dll_sha, database=dbinfo, modsDb=str(mods_db) if mods_db else None,
-                                                noMods=no_mods, profiles=str(profiles) if profiles else None,
-                                                fingerprint=fingerprint))
+                                                dllSHA256=dll_sha, dllReason=dll_reason, database=dbinfo,
+                                                modsDb=str(mods_db) if mods_db else None, noMods=no_mods,
+                                                mods=list(mod_set) if mod_set is not None else None,
+                                                profiles=str(profiles) if profiles else None, fingerprint=fingerprint,
+                                                detail=detail))
         affinity = int(a.affinity, 0) if isinstance(a.affinity, str) else a.affinity
         job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity)
         meter = winproc.LoadMeter().start()  # what else ran (the real game) during this run
@@ -356,6 +470,9 @@ def newgame(a, quiet=False, cfg=None):
         write(run.dir / 'turn-seen.json', {str(k): seen[k] for k in sorted(seen)})
         write(run.dir / 'replay-messages.json', final.get('messages') or [])
         write(run.dir / 'replay-data.json', final.get('replayData') or {})
+        if final.get('players') or final.get('map'):
+            write(run.dir / 'final-state.json', dict(turn=(final.get('victory') or {}).get('turn'), players=final.get('players') or [],
+                                                     map=final.get('map')))
         finals = sorted((run.dir / 'checkpoints').glob('turn-*-final.json'))
         end_turn = max(seen) if seen else 0
         if finals:
@@ -365,7 +482,8 @@ def newgame(a, quiet=False, cfg=None):
         process = dict(pstats, PeakCommit=jstats.get('peakProcessCommit'), HostSeconds=round(host_seconds, 1))
         status = dict(state='failed', backend='headless', startedUTC=started_utc, startTurn=0, endTurn=end_turn, turns=end_turn,
                       wallSeconds=round(wall, 1), secondsPerTurn=round(wall / end_turn, 3) if end_turn else None,
-                      hostSeconds=round(host_seconds, 1), process=process, pollSeconds=0, dllSHA256=dll_sha, save=seed_key,
+                      hostSeconds=round(host_seconds, 1), process=process, pollSeconds=0, dll=str(dll), dllSHA256=dll_sha,
+                      dllReason=dll_reason, detail=detail, save=seed_key,
                       spec=str(Path(a.spec).resolve()), replayMessages=len(final.get('messages') or []), exitCode=code,
                       hostStatus=report.get('status'), hostError=report.get('error') or ng.get('error'),
                       luaErrors=ng.get('lua_errors'), updates=(ng.get('autoplay') or {}).get('updates'),
@@ -391,24 +509,44 @@ def newgame(a, quiet=False, cfg=None):
         if status['state'] == 'completed' and status['endReason'] == 'target_turn':
             run.log('target_reached', quiet=quiet, turn=end_turn, seconds=round(wall, 1))
         write(run.dir / 'status.json', status)
-        if a.prune:
-            prune(run.dir)
         if status['state'] == 'completed':
             run.log('completed', quiet=quiet, turns=status['turns'], wallSeconds=status['wallSeconds'], secondsPerTurn=status['secondsPerTurn'],
                     hostSeconds=status['hostSeconds'], peakWorkingSetMB=round((process.get('PeakWorkingSet') or 0) / 2 ** 20))
-            return 0
-        run.log('failed', quiet=quiet, error=status.get('error'))
-        return 1
+        else:
+            run.log('failed', quiet=quiet, error=status.get('error'))
+        finish(run, detail, getattr(a, 'report', True), quiet)
+        return 0 if status['state'] == 'completed' else 1
     except BaseException as error:  # noqa: BLE001 (KeyboardInterrupt included: the job kills the host)
         status.update(error=f'{type(error).__name__}: {error}', utc=utc())
         write(run.dir / 'status.json', status)
         run.log('failed', quiet=quiet, error=status['error'])
         if isinstance(error, KeyboardInterrupt):
             raise
+        finish(run, None, getattr(a, 'report', True), quiet)
         return 1
     finally:
         if job:
             job.close()
+
+
+def finish(run, detail, report=True, quiet=True):
+    """After a game: the run report (report.html, from what the folder holds before tidying) and the detail level's
+    tidying (detail None: none). A report that fails is logged in events.jsonl, never fatal."""
+    model = None
+    if report:
+        try:
+            from . import report as run_report
+            model = run_report.collect(run.dir)
+        except Exception as error:  # noqa: BLE001
+            run.log('report_failed', quiet=quiet, error=f'{type(error).__name__}: {error}')
+    if detail:
+        tidy(run.dir, detail)
+    if model is not None:
+        try:
+            path = run_report.write(run.dir, model)
+            run.log('report', quiet=quiet, path=str(path), bytes=path.stat().st_size)
+        except Exception as error:  # noqa: BLE001
+            run.log('report_failed', quiet=quiet, error=f'{type(error).__name__}: {error}')
 
 
 @dataclass
@@ -436,7 +574,8 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
          mods_db=None, mods=None, no_mods=False, loc_db=None, game_dir=None, exe=None, profiles=None, no_profiles=False,
          skip_addins=(), no_addins=False, fingerprint=False, lua_probes=(), heap_perturb=None, frame_skew=None,
          diagnostics=0, improved_mask=None, ab_role=None, checkpoint_every=1, max_seconds=21600, stall_seconds=900,
-         max_memory_mb=3500, affinity=None, low_priority=False, prune=False, host_args=(), poll=1.0, quiet=True):
+         max_memory_mb=3500, affinity=None, low_priority=False, detail=None, report=True, prune=False, host_args=(),
+         poll=1.0, quiet=True):
     """Play one game in civ5headless.exe and return its Result.
 
     spec: a spec file (resolved or not) or a spec dict (written to the run folder as spec.json); turns: autoplay to
@@ -446,8 +585,11 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
     profiles / no_profiles, skip_addins / no_addins: the host's UI emulation profiles and InGameUIAddins;
     fingerprint: True, or dict(every=K, turns=[...], split=N), runs the Lua fingerprint probe before lua_probes;
     lua_probes: files for the host's --lua-probe; heap_perturb, frame_skew: the host options of the same name;
-    host_args: further host arguments. The other keywords are the c5h run options of the same name; anything left
-    None comes from the configuration. Raises FileExistsError when the run folder already holds a game."""
+    detail: 'summary', 'standard' (default) or 'full', what the run folder keeps (prune=True, the old option, is
+    'standard'); report: write report.html; host_args: further host arguments. The other keywords are the c5h run
+    options of the same name; anything left None comes from the configuration (the DLL: modsdb.choose_dll). Raises
+    FileExistsError when the run folder already holds a game, ValueError for an unknown detail level."""
+    detail = detail_of(detail)
     cfg = cfg or config.load()
     if isinstance(spec, dict):
         folder = Path(run_dir).resolve() if run_dir else cfg.require('runs') / (run or f'spec-{datetime.now():%Y%m%d-%H%M%S}')
@@ -463,8 +605,8 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
                         heap_perturb=heap_perturb, frame_skew=frame_skew, diagnostics=int(diagnostics or 0),
                         improved_mask=improved_mask, ab_role=ab_role, checkpoint_every=int(checkpoint_every or 1),
                         maximum_seconds=max_seconds, stall_seconds=stall_seconds, max_memory_mb=max_memory_mb or None,
-                        affinity=affinity, low_priority=low_priority, prune=prune, host_arg=list(host_args or []),
-                        poll=poll)
+                        affinity=affinity, low_priority=low_priority, detail=detail, report=bool(report),
+                        host_arg=list(host_args or []), poll=poll)
     folder = run_folder(a, cfg)
     a.run_dir = str(folder)
     code = newgame(a, quiet=quiet, cfg=cfg)
@@ -510,7 +652,11 @@ def add_arguments(n):
     n.add_argument('--max-memory-mb', type=int, default=3500, help='per-process commit limit (job object); 0 = none')
     n.add_argument('--affinity', default=None, help='CPU affinity mask for the host (e.g. 0x3)')
     n.add_argument('--low-priority', action='store_true', help='run the host below normal priority')
-    n.add_argument('--prune', action='store_true', help='delete the database copy, state dumps and AI logs afterwards')
+    n.add_argument('--detail', choices=DETAILS, help='what the run folder keeps: summary (results, timings, Lua.log, the '
+                   'report), standard (default: also per-turn checkpoints, digests and the small logs) or full (also state '
+                   'dumps, the database copies and the DLL\'s AI logs)')
+    n.add_argument('--prune', action='store_true', help='the old name of --detail standard')
+    n.add_argument('--no-report', dest='report', action='store_false', help='no report.html (c5h report RUN writes it later)')
     n.add_argument('--poll', type=float, default=1.0, help='progress poll interval in seconds')
     n.add_argument('--host-arg', action='append', help='extra civ5headless.exe argument (repeatable), e.g. --host-arg=--no-game-logging')
 
@@ -521,6 +667,8 @@ def check_args(a, error):
     if a.mod and a.no_mods: error('--mod and --no-mods exclude each other')
     if (a.mod or a.no_mods) and a.mods_db: error('--mod and --no-mods exclude --mods-db (the registry is generated)')
     if a.profiles and a.no_profiles: error('--profiles and --no-profiles exclude each other')
+    if a.prune and a.detail not in (None, 'standard'): error('--prune is --detail standard; it excludes --detail ' + a.detail)
+    a.detail = detail_of(a.detail)
     try:
         fingerprint_options(a)
     except ValueError:
