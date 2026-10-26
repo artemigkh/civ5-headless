@@ -14,12 +14,10 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 - **The real game keeps this fork's field-map DLL (`CB6B0BED`) with the VP mods.** The user is playing test games
   with it, so don't restore the source repository's AI program DLL unless asked; its ledger has the steps.
 - **Phase E, what is left (real game; keep runs short):**
-  1. `c5h verify --quick` with the stock DLL and no mods. City-states are learned from the real game's turn 0. In the
-     host, the stock DLL leaves the human slot eliminated at turn 1 of autoplay; check that the real game does the same.
-  2. Plain VP: an upstream build plus its mod files deployed; back up and restore MODS.
-  3. `c5h verify --full` once, then set the thresholds, ensemble sizes, budgets and the planner's real/host ratio
+  1. Plain VP: an upstream build plus its mod files deployed; back up and restore MODS.
+  2. `c5h verify --full` once, then set the thresholds, ensemble sizes, budgets and the planner's real/host ratio
      (docs/verification.md, "Calibration").
-  4. The PreGame API gaps: the host has no `GetQuickCombat`, `GetQuickMovement` or `GetOverrideScenarioHandicap` (the
+  3. The PreGame API gaps: the host has no `GetQuickCombat`, `GetQuickMovement` or `GetOverrideScenarioHandicap` (the
      real game answers `false` for all three). The real game answers nothing for `GetClimate`, `GetSeaLevel`,
      `IsHuman`, `IsMinorCiv` and `GetMinorCivType` after the start. Add the three getters to the host, and find out
      why the real game answers nothing.
@@ -210,4 +208,19 @@ The host's own history (milestones M0–M6, parity work against the real game) i
     - Host 0.36 s/turn against the real game's 2.52 (6.9x), peak working set 350 MB against 1759 MB.
     - One setup (Archipelago Small) was compared by fingerprint rather than digest: look at why.
 - The real game was left with the field-map DLL and the VP mods enabled, for the user's own test games.
+- **Stock DLL, no mods (`runs/verify-quick-20261026-120737`): warn, exit 0, 5.2 min.**
+  - Config: an empty config (everything discovered), `--no-mods --dll <game>/Assets/DLC/Expansion2/CvGameCore_Expansion2.dll`.
+  - The real game activated the empty mod set (0.5 s).
+  - Turn 0: 4 of 4 setups identical. Real trajectory: 150 of 150 turns identical, by fingerprint (no digests in this
+    DLL). A/A, frame skew and heap perturbation give 150 of 150; probe-neutral agrees at 7 sparse turns.
+  - Database identical; no Lua errors; no unknown stubs; the 13 compared games were pinned to the real game's
+    city-states.
+  - Envelope 96.2%; no bias flagged.
+  - Host 0.06 s/turn against the real game's 1.38 (22.3x), 115 MB against 1184 MB.
+  - Warnings: the PreGame API getters, and the UI hazards: 37 reachable state-changing UI calls without a profile in
+    the stock UI, as in the host-only runs.
+  - The 1-turn setup games end in GAMESTATE_OVER with no winner, in both the real game and the DLL:
+    `CvGame::update` ends the game once autoplay is off and the active player is dead, and the stock DLL's autoplay
+    kills the human slot. The 150-turn game keeps autoplay on and plays through.
+  - Afterwards the VP mod set was enabled and activated again (the same 5 mods; the session leaves the mods it set).
 
