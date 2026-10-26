@@ -225,9 +225,15 @@ class ExampleSpecsTest(unittest.TestCase):
             with self.subTest(spec=p.name):
                 s = json.loads(p.read_text(encoding='utf-8'))
                 self.assertIn('map', s)
-                self.assertEqual(set(s['seeds']), {'map', 'sync'})
                 self.assertFalse(set(s) - {'map', 'speed', 'era', 'difficulty', 'majors', 'cityStates', 'slots', 'gameOptions',
                                            'victories', 'maxTurns', 'seeds'})
+                if p.stem.endswith('-fixed-seed'):
+                    self.assertEqual(set(s['seeds']), {'map', 'sync'})
+                else:
+                    # NAME.json draws new seeds every run; NAME-fixed-seed.json is the same game with its seeds pinned.
+                    self.assertNotIn('seeds', s)
+                    twin = json.loads(p.with_name(p.stem + '-fixed-seed.json').read_text(encoding='utf-8'))
+                    self.assertEqual(s, {k: v for k, v in twin.items() if k != 'seeds'})
 
 
 if __name__ == '__main__':

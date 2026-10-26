@@ -149,6 +149,9 @@ A spec is JSON mirroring the single-player setup screens; omitted fields behave 
   pregame Lua has no call for it), so a comparison with the real game fills the field with the game's own choice.
 - The two seeds fix the whole game (map, civs, city-states, every AI decision): the same spec, DLL and database give
   the same game, on every run and in the real game.
+- A spec without seeds draws new ones on every run, recorded in the run's `spec-resolved.json`. Each example
+  comes twice: `NAME.json` without seeds (a new game each run), `NAME-fixed-seed.json` with them (the same game
+  each run).
 - `c5h spec resolve SPEC.json --out RESOLVED.json` checks the names against the game database and writes the
   explicit form the host reads; `c5h run` resolves for you and also takes a resolved spec. `c5h spec lua SPEC.json`
   prints the front-end Lua that sets the same pregame state in the real game.

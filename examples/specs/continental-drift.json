@@ -1,4 +1,3 @@
 {"map": {"script": "Continental_Drift.lua", "size": "WORLDSIZE_STANDARD",
          "options": {"TXT_KEY_MAP_OPTION_PLATES": 4, "TXT_KEY_MAP_OPTION_COASTAL_START": 2}},
- "speed": "GAMESPEED_EPIC", "era": "ERA_ANCIENT", "difficulty": "HANDICAP_IMMORTAL",
- "seeds": {"map": 5005, "sync": 6006}}
+ "speed": "GAMESPEED_EPIC", "era": "ERA_ANCIENT", "difficulty": "HANDICAP_IMMORTAL"}

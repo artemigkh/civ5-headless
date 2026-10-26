@@ -22,7 +22,7 @@ class HostChecksTest(unittest.TestCase):
         if not (cfg.game_dir and cfg.dll and cfg.exe and (cfg.db or cfg.snapshot or cfg.cache_dir)):
             self.skipTest('needs game_dir, dll, exe and a game database (db, snapshot or the game cache)')
         with tempfile.TemporaryDirectory() as tmp:
-            r = run.play(REPO / 'examples/specs/continents-tiny.json', 1, run_dir=Path(tmp) / 'checks', cfg=cfg,
+            r = run.play(REPO / 'examples/specs/continents-tiny-fixed-seed.json', 1, run_dir=Path(tmp) / 'checks', cfg=cfg,
                          skip_addins=['NoSuchAddin.lua'])
             self.assertTrue(r.ok, r.status.get('error'))
             boot = json.loads((r.dir / 'newgame-report.json').read_text(encoding='utf-8'))

@@ -76,9 +76,19 @@ Not needed: a compiler. civ5headless.exe uses the Visual C++ 2008 runtime that C
 
   c5h doctor                                    what was found (game, My Games, mods, DLL, host) and what is missing
   c5h run examples\\specs\\continents-tiny.json --turns 30
-                                                one game with your active mods and DLL; the run goes to runs\\
+                                                a short game with your active mods and DLL; the run goes to runs\\
   c5h verify --host-only                        the host-only part of the verification suite (about 5 minutes)
   c5h verify                                    host against the real game (needs the game and FireTuner on)
+
+A full game: Continental Drift, Standard size, Epic speed, Immortal, on a new random map each time. Epic's last
+turn is 750; the game stops at the first victory before that (a Vox Populi test game ended in a cultural victory
+at turn 404 after 31 minutes). Progress is printed every 10 turns; open runs\\continental-drift-<date>-<time>\\report.html
+at the end:
+
+  c5h run examples\\specs\\continental-drift.json --turns 750
+
+Specs come in two kinds: NAME.json draws new seeds for every run (a new map and game each time; the seeds are kept
+in the run folder's spec-resolved.json), NAME-fixed-seed.json replays the same map and game every time.
 
 Run c5h.cmd from this folder (or put the folder on PATH). Settings go in civ5headless.toml next to it; see
 civ5headless.example.toml. docs\\running.md shows every option with examples, docs\\user-guide.md explains how it

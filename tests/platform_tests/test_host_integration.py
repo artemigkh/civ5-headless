@@ -22,7 +22,7 @@ class HostGameTest(unittest.TestCase):
         if not (cfg.game_dir and cfg.dll and cfg.exe and (cfg.db or cfg.snapshot or cfg.cache_dir)):
             self.skipTest('needs game_dir, dll, exe and a game database (db, snapshot or the game cache)')
         with tempfile.TemporaryDirectory() as tmp:
-            results = [run.play(REPO / 'examples/specs/continents-tiny.json', 3, run_dir=Path(tmp) / f'aa-{k}', cfg=cfg)
+            results = [run.play(REPO / 'examples/specs/continents-tiny-fixed-seed.json', 3, run_dir=Path(tmp) / f'aa-{k}', cfg=cfg)
                        for k in (1, 2)]
             for r in results:
                 self.assertTrue(r.ok, r.status.get('error'))

@@ -48,6 +48,14 @@ The run folder is `runs\continents-tiny-<date>-<time>\`. Its `report.html` shows
 map, timeline and health (section 6). The first run with a mod set also builds and caches the game database, which
 takes a few seconds; later runs reuse it.
 
+A full game, on a new random map: Continental Drift at Standard size, Epic speed, Immortal. The game stops at the
+first victory, or at turn 750, Epic's last. A Vox Populi test game ended in a cultural victory at turn 404 after 31
+minutes.
+
+```
+c5h run examples\specs\continental-drift.json --turns 750
+```
+
 ## 3. Describing a game: specs
 
 A spec is a JSON file that mirrors the single-player setup screens. Anything left out behaves like an untouched
@@ -119,8 +127,10 @@ prints the Lua that sets up the same game in the real game's setup screen.
 The map seed and the sync seed fix the whole game: the map, the civilizations, the city-states and every AI decision.
 The same spec, seeds, DLL, mods and database give the same game on every run, and the same game the real game plays.
 
-- A spec without seeds gets fresh random ones; they are recorded in the run folder (`spec-resolved.json`), so the
-  game can be played again.
+- A spec without seeds gets fresh random ones. They are recorded in the run folder (`spec-resolved.json`), and
+  `c5h run runs\NAME\spec-resolved.json --turns N` plays that game again.
+- Each example comes twice: `examples\specs\NAME.json` has no seeds (a new map and game on every run), and
+  `NAME-fixed-seed.json` pins them (the same game every run, for comparisons and A/B tests).
 - `--seeds MAP SYNC` overrides the spec's seeds: `c5h run my.json --turns 100 --seeds 1001 2002`.
 - To get different games from one spec, vary the seeds. Some DLLs (Vox Populi) draw almost everything from the map
   seed, so vary that one; the stock DLL uses both.
@@ -128,8 +138,14 @@ The same spec, seeds, DLL, mods and database give the same game on every run, an
 ### 3.3 How long
 
 `--turns N` plays until game turn N. A game also ends earlier on a victory, which the run records (winner, victory
-type, turn). For a game to victory, give a high `--turns` (e.g. 500) and, if you want a hard stop, `maxTurns` in the
-spec. A Standard game to victory takes about 10–15 minutes in the host; a Tiny game of 100 turns well under a minute.
+type, turn). For a whole game, give the speed's last turn: Quick 330, Standard 500, Epic 750, Marathon 1500.
+
+How long a game takes in the host, with Vox Populi:
+- Tiny, 100 turns: well under a minute.
+- Standard size and speed, to a cultural victory at turn 281: 9 minutes.
+- Standard size, Epic speed, to turn 404: 31 minutes.
+
+The stock DLL is several times faster.
 
 ### 3.4 DLL and mods
 

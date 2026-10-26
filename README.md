@@ -21,9 +21,20 @@ the probes, examples and the user docs. Runs and caches go into the kit's folder
 
 ```
 c5h doctor                                               # what was found and what is missing
-c5h run examples\specs\continents-tiny.json --turns 30   # one game with your active mods and DLL
+c5h run examples\specs\continents-tiny.json --turns 30   # a short game with your active mods and DLL
 c5h verify --host-only                                   # the host-only part of the verification suite
 ```
+
+A full game: Continental Drift (Standard size, Epic speed, Immortal) on a new random map. The game stops at the
+first victory, or at turn 750, Epic's last. A Vox Populi test game ended in a cultural victory at turn 404 after 31
+minutes. Progress is printed every 10 turns, and the run folder's `report.html` shows the game.
+
+```
+c5h run examples\specs\continental-drift.json --turns 750
+```
+
+Each example spec comes twice: `NAME.json` draws new seeds for every run (a new map and game each time),
+`NAME-fixed-seed.json` replays the same game every time.
 
 [docs/running.md](docs/running.md) shows every option with examples: game specs, seeds, DLLs and mod sets, UI
 profiles, fingerprints, run outputs, queues, comparisons, the verification suite and the configuration file.

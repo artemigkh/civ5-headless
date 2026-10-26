@@ -1,3 +1,2 @@
 {"map": {"civ5map": "Assets/Maps/Earth_Small.Civ5Map"},
- "speed": "GAMESPEED_QUICK", "era": "ERA_ANCIENT", "difficulty": "HANDICAP_EMPEROR",
- "seeds": {"map": 3003, "sync": 4004}}
+ "speed": "GAMESPEED_QUICK", "era": "ERA_ANCIENT", "difficulty": "HANDICAP_EMPEROR"}

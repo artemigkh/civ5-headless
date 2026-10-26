@@ -3,5 +3,4 @@
  "majors": 6, "cityStates": 10,
  "gameOptions": {"GAMEOPTION_RAGING_BARBARIANS": true},
  "victories": ["VICTORY_DOMINATION", "VICTORY_TIME"], "maxTurns": 200,
- "slots": [{"slot": 1, "civ": "CIVILIZATION_GREECE", "team": 1}],
- "seeds": {"map": 7, "sync": 8}}
+ "slots": [{"slot": 1, "civ": "CIVILIZATION_GREECE", "team": 1}]}
