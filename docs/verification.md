@@ -111,7 +111,7 @@ or host-only mode; the reason is given) or **skipped** (no data: the budget or a
 | Check | What | Pass |
 |---|---|---|
 | `setup.turn0` | the game state at turn 0 for each seeded setup, real against host (state digests, or the Lua fingerprint), and the host against itself | every setup identical |
-| `setup.pregame` | every `PreGame` value the stock Lua API can read, printed by a probe on both sides once the game has started | every value equal (the nickname is ignored) |
+| `setup.pregame` | every `PreGame` value the stock Lua API can read, printed by a probe on both sides once the game has started | every value both sides report equal (the nickname is ignored); a getter only one side answers is a difference of the Lua API, not of the game, and only warns |
 | `setup.database` | the host's game database against the game's own after the mods loaded, table by table, rows as multisets; when the session exports the database (`CREATE TABLE AS` copies, which carry no schema, indexes or triggers), the data only | identical |
 | `setup.civ-choice` | from `host-report.json` (`dll.hostChoseCivs`, `minorCivs`) of the compared host games (host-only: every host game): who chose the civilizations and city-states (the DLL, the spec's names, or a draw by the host), and whether they match the real game's | pass when nothing was drawn by the host and, in real mode, a compared game's city-states match the real game's (`minorCivs.allMatch`); fail otherwise (host-only: warn on a draw) |
 

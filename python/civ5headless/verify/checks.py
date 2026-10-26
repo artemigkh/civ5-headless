@@ -270,7 +270,7 @@ def pregame_check(ctx, names):
     title = 'PreGame values after setup'
     if not ctx.real_mode:
         return check('setup.pregame', title, 'n/a', ctx.no_real_reason)
-    rows, compared, failed = [], 0, False
+    rows, compared, failed, api = [], 0, False, {'real': set(), 'host': set()}
     pairs = [(f'setup-{n}', f'setup-{n}-a') for n in names] + [('trajectory', 'base')]
     for real_name, role in pairs:
         rd, hd = ctx.real_dir(real_name), ctx.job_dir(role)
@@ -281,15 +281,22 @@ def pregame_check(ctx, names):
             continue
         compared += 1
         diff, only_real, only_host = exact.compare_values(a, b, ctx.settings.pregame_ignore)
-        failed |= bool(diff or only_real or only_host)
+        failed |= bool(diff)
+        api['real'].update(k.split('.')[0] for k in only_real)
+        api['host'].update(k.split('.')[0] for k in only_host)
         rows.append(dict(game=real_name, values=len(a), differing=[dict(key=k, real=x, host=y) for k, x, y in diff[:40]],
                          onlyReal=only_real[:40], onlyHost=only_host[:40]))
     if not compared:
         why = ('the host has no --lua-probe, so the PreGame probe cannot run in it' if not ctx.caps.get('luaProbe')
                else 'no game has the PreGame probe lines on both sides')
         return check('setup.pregame', title, 'n/a', why)
-    return check('setup.pregame', title, 'fail' if failed else 'pass',
-                 f"{sum(1 for r in rows if not (r['differing'] or r['onlyReal'] or r['onlyHost']))} of {compared} games: every PreGame value equal",
+    # A getter only one side answers (missing, or nil) is a difference of the PreGame API, not of the game set up:
+    # a warning that names them. A value both sides report that differs fails.
+    summary = f"{sum(1 for r in rows if not r['differing'])} of {compared} games: every PreGame value both sides report equal"
+    if api['real'] or api['host']:
+        summary += ('; getters answered only by the real game: ' + (', '.join(sorted(api['real'])) or 'none')
+                    + '; only by the host: ' + (', '.join(sorted(api['host'])) or 'none'))
+    return check('setup.pregame', title, 'fail' if failed else 'warn' if api['real'] or api['host'] else 'pass', summary,
                  games=rows)
 
 
