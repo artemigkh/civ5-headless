@@ -60,7 +60,8 @@ Python (pinned version and hash) in `runtime\`.
 ## Building
 
 Only needed to change the host. The host must be built with MSVC 2008 SP1 (VC9), the game DLL's compiler, because
-C++ objects cross the engine interfaces. `tools/get_toolchain.py` makes a portable copy in `toolchain/` from Microsoft's Windows SDK 7.0 ISO
+C++ objects cross the engine interfaces, and as a 32-bit program ([docs/why-32-bit.md](docs/why-32-bit.md) explains
+why). `tools/get_toolchain.py` makes a portable copy in `toolchain/` from Microsoft's Windows SDK 7.0 ISO
 (downloaded, or `--iso`), without installing anything:
 
 ```
