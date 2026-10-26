@@ -589,7 +589,7 @@ def _setup_rows(m, ps):
     for k in ('heapPerturb', 'frameSkew'):
         if host_opts.get(k):
             options.append(f'{k} {host_opts[k]}')
-    if s.get('diagnosticsLevel'):
+    if isinstance(s.get('diagnosticsLevel'), int) and s['diagnosticsLevel'] > 0:
         options.append(f"diagnostics {s['diagnosticsLevel']}")
     if s.get('abRole'):
         options.append(f"A/B {s['abRole']}")
@@ -669,18 +669,22 @@ def _charts(m, ps):
     ids = {p['id'] for p in majors(ps)}
     if not ids:
         return '<p class="note">No per-player data.</p>'
-    out, missing = [], []
+    out, missing, zero = [], [], []
     for key, title, sources in CHARTS:
         source, data = series(m, sources, ids)
         if not data:
             missing.append(title)
+            continue
+        if not any(v for pts in data.values() for _, v in pts):
+            zero.append(title)
             continue
         lines = [(label(ps[pid]['name']), f'var(--p{pid})', _thin(pts), ps[pid].get('alive') is False)
                  for pid, pts in sorted(data.items())]
         out.append(f'<div class="chart"><div class="t"><b>{h(title)}</b><span class="muted">{h(source)}</span></div>'
                    f'{series_svg(lines, label_width=116, title=title)}</div>')
     note = ('<p class="note">Lines end at their labels (dashed: eliminated). Sources in order: replay data, the per-turn '
-            'checkpoints, the fingerprint metrics.' + (f' No data for: {h(", ".join(missing))}.' if missing else '') + '</p>')
+            'checkpoints, the fingerprint metrics.' + (f' No data for: {h(", ".join(missing))}.' if missing else '')
+            + (f' Zero all game: {h(", ".join(zero))}.' if zero else '') + '</p>')
     return note + '<div class="charts">' + ''.join(out) + '</div>' if out else '<p class="note">No per-player series: no replay data, checkpoints or fingerprint metrics.</p>'
 
 

@@ -203,7 +203,7 @@ def series_svg(series, width=560, height=210, label_width=96, zero=True, title='
     X = scale(x0, x1 if x1 > x0 else x0 + 1, left, right)
     Y = scale(y0, y1, bottom, top)
     out = [f'<svg viewBox="0 0 {width} {height}" role="img" aria-label="{h(title)}">']
-    for v in ticks(y0, y1, integer=whole and y1 - y0 >= 2):
+    for v in ticks(y0, y1, integer=whole):
         out.append(f'<line x1="{left}" x2="{right}" y1="{Y(v):.1f}" y2="{Y(v):.1f}" stroke="var(--line)" stroke-width="0.5"/>'
                    f'<text x="{left - 4}" y="{Y(v) + 3:.1f}" text-anchor="end" font-size="10" fill="var(--muted)">{value(v)}</text>')
     for t in ticks(x0, x1, 5, integer=True) if x1 > x0 else [x0]:
