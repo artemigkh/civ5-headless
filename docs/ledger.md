@@ -301,6 +301,9 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   - A real save taken after the real game's autoplay ended: 1 gold apart at the next turn (open item 5).
   - Long game: a Tiny game played in the host to turn 330 (`runs/tiny-330`, 9.4 min). Its final save loaded in the
     real game at turn 330, with player 0 human (`runs/tiny-330-real`). The game was left open for the user to look at.
+  - `verify --host-only` with the installed DLL (`runs/verify-host-only-20261026-213525`): warn, 3.3 min, the 3 known
+    reachable UI hazards only; A/A, frame skew and heap perturbation 150 of 150 turns.
+- **Release 0.2.0:** the user asked for the push and a new kit and release with saves (2026-10-26).
 - **Found on the way:**
   - The real game writes only mods with `AffectsSavedGames` into a save. A save that lists other mods makes it
     re-activate mods during the load. With VP's front end that rebuild fails ("database table is locked") and the game
