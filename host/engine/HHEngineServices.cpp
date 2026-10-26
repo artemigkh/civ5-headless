@@ -209,11 +209,12 @@ PlayerTypes HHEngineUtility::ActivePlayer() const
 	return m_pPreGame ? m_pPreGame->activePlayer() : (PlayerTypes)0;
 }
 
-void HHEngineUtility::Queue(HHNetMessage::Kind eKind, const char* szName, int a0, int a1, int a2, int a3, int a4, int a5)
+void HHEngineUtility::Queue(HHNetMessage::Kind eKind, const char* szName, int a0, int a1, int a2, int a3, int a4, int a5,
+                            int a6, int a7)
 {
 	HHNetMessage m;
 	m.eKind = eKind;
-	m.a[0] = a0; m.a[1] = a1; m.a[2] = a2; m.a[3] = a3; m.a[4] = a4; m.a[5] = a5;
+	m.a[0] = a0; m.a[1] = a1; m.a[2] = a2; m.a[3] = a3; m.a[4] = a4; m.a[5] = a5; m.a[6] = a6; m.a[7] = a7;
 	m_pendingNet.push_back(m);
 	++m_netCounts[szName];
 }
@@ -244,6 +245,8 @@ size_t HHEngineUtility::DeliverNetMessages(ICvNetMessageHandler1* pHandler)
 		case HHNetMessage::MAYA_BONUS_CHOICE: if(pHandler2) pHandler2->ResponseMayaBonusChoice((PlayerTypes)a[0], (UnitTypes)a[1]); break;
 		case HHNetMessage::FAITH_GREAT_PERSON_CHOICE: if(pHandler2) pHandler2->ResponseFaithGreatPersonChoice((PlayerTypes)a[0], (UnitTypes)a[1]); break;
 		case HHNetMessage::GOODY_CHOICE: if(pHandler3) pHandler3->ResponseGoodyChoice((PlayerTypes)a[0], a[1], a[2], (GoodyTypes)a[3], a[4]); break;
+		case HHNetMessage::CITY_DO_TASK: pHandler->ResponseCityDoTask((PlayerTypes)a[0], a[1], (TaskTypes)a[2], a[3], a[4], (a[5] & 1) != 0, (a[5] & 2) != 0, (a[5] & 4) != 0, (a[5] & 8) != 0); break;
+		case HHNetMessage::MOVE_GREAT_WORKS: if(pHandler3) pHandler3->ResponseMoveGreatWorks((PlayerTypes)a[0], a[1], a[2], a[3], a[4], a[5], a[6]); break;
 		}
 	}
 	m_pendingNet.clear();
@@ -275,6 +278,15 @@ void HHEngineUtility::sendFaithGreatPersonChoice(PlayerTypes ePlayer, UnitTypes 
 { HH_IMPL_CALL("ICvEngineUtility1::sendFaithGreatPersonChoice"); Queue(HHNetMessage::FAITH_GREAT_PERSON_CHOICE, "FaithGreatPersonChoice", ePlayer, eUnit); }
 void HHEngineUtility::sendGoodyChoice(PlayerTypes ePlayerID, int iPlotX, int iPlotY, GoodyTypes eGoody, int iUnitID)
 { HH_IMPL_CALL("ICvEngineUtility1::sendGoodyChoice"); Queue(HHNetMessage::GOODY_CHOICE, "GoodyChoice", ePlayerID, iPlotX, iPlotY, eGoody, iUnitID); }
+// The selected-cities task message (CvGame::selectedCitiesGameNetMessage); the modifier keys travel as bits 0..3.
+void HHEngineUtility::sendDoTask(int iCity, TaskTypes eTask, int iData1, int iData2, bool bOption, bool bAlt, bool bShift, bool bCtrl)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendDoTask"); Queue(HHNetMessage::CITY_DO_TASK, "CityDoTask", ActivePlayer(), iCity, eTask, iData1, iData2,
+                                                     (bOption ? 1 : 0) | (bAlt ? 2 : 0) | (bShift ? 4 : 0) | (bCtrl ? 8 : 0)); }
+// Vox Populi also carries its own messages in this one (CvDllNetMessageExt: events, city-state and vassal actions,
+// told apart by iWorkIndex2 >= 999), so dropping it would drop game actions.
+void HHEngineUtility::sendMoveGreatWorks(PlayerTypes ePlayer, int iCity1, int iBuildingClass1, int iWorkIndex1, int iCity2, int iBuildingClass2, int iWorkIndex2)
+{ HH_IMPL_CALL("ICvEngineUtility1::sendMoveGreatWorks"); Queue(HHNetMessage::MOVE_GREAT_WORKS, "MoveGreatWorks", ePlayer, iCity1, iBuildingClass1, iWorkIndex1,
+                                                             iCity2, iBuildingClass2, iWorkIndex2); }
 
 // Turn gates (contract 6.3). CanAdvanceTurn: true (single player, nobody to wait for).
 bool HHEngineUtility::CanAdvanceTurn() { HH_IMPL_CALL("ICvEngineUtility1::CanAdvanceTurn"); return true; }

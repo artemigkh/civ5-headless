@@ -12,10 +12,10 @@ struct HHNetMessage
 	{
 		PLAYER_OPTION, PLEDGE_MINOR_PROTECTION, MINOR_BULLY_GOLD, MINOR_BULLY_UNIT, MINOR_GIFT_GOLD,
 		MINOR_GIFT_TILE_IMPROVEMENT, MINOR_BUYOUT, GREAT_PERSON_CHOICE, MAYA_BONUS_CHOICE,
-		FAITH_GREAT_PERSON_CHOICE, GOODY_CHOICE
+		FAITH_GREAT_PERSON_CHOICE, GOODY_CHOICE, CITY_DO_TASK, MOVE_GREAT_WORKS
 	};
 	Kind eKind;
-	int a[6];
+	int a[8];
 };
 
 struct HHPlayerOption
@@ -131,6 +131,8 @@ public:
 	void sendMayaBonusChoice(PlayerTypes ePlayer, UnitTypes eUnit);
 	void sendFaithGreatPersonChoice(PlayerTypes ePlayer, UnitTypes eUnit);
 	void sendGoodyChoice(PlayerTypes ePlayerID, int iPlotX, int iPlotY, GoodyTypes eGoody, int iUnitID);
+	void sendDoTask(int iCity, TaskTypes eTask, int iData1, int iData2, bool bOption, bool bAlt, bool bShift, bool bCtrl);
+	void sendMoveGreatWorks(PlayerTypes ePlayer, int iCity1, int iBuildingClass1, int iWorkIndex1, int iCity2, int iBuildingClass2, int iWorkIndex2);
 
 	// Network (single player: no-ops)
 	void sendPlayerInfo(PlayerTypes eActivePlayer);
@@ -147,7 +149,8 @@ private:
 	ICvPreGame1* m_pPreGame;
 	mutable bool m_bAICivsProcessed;                         // allAICivsProcessedThisTurn
 	mutable bool m_bAICivsProcessedPending;                  // set by SendAICivsProcessed, visible after the Update
-	void Queue(HHNetMessage::Kind eKind, const char* szName, int a0 = 0, int a1 = 0, int a2 = 0, int a3 = 0, int a4 = 0, int a5 = 0);
+	void Queue(HHNetMessage::Kind eKind, const char* szName, int a0 = 0, int a1 = 0, int a2 = 0, int a3 = 0, int a4 = 0, int a5 = 0,
+	           int a6 = 0, int a7 = 0);
 	PlayerTypes ActivePlayer() const;
 	int m_iLockDepth;
 	bool m_bInGameCoreUpdate;

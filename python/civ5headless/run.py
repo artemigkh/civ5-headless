@@ -435,7 +435,7 @@ def newgame(a, quiet=False, cfg=None):
                 for r in rows:
                     seen[r['turn']] = round(r['seconds'], 3); last_progress = now
                     if r['turn'] % 10 == 0 or r['turn'] < 3:
-                        run.log('checkpoint', quiet=True, turn=r['turn'], seconds=round(r['seconds'], 1))
+                        run.log('checkpoint', quiet=quiet, turn=r['turn'], seconds=round(r['seconds'], 1))
                     last_turn = r['turn']
                 if a.maximum_seconds and now - started > a.maximum_seconds:
                     killed = f'maximum run time ({a.maximum_seconds} s) reached at turn {last_turn}'
