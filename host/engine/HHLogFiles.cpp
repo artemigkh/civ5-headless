@@ -2,8 +2,9 @@
 #include "engine/HHRuntime.h"
 
 //------------------------------------------------------------------------------
-HHLogFile::HHLogFile(const std::wstring& wstrPath, const std::wstring& wstrName, uint uiFlags)
-	: m_wstrPath(wstrPath), m_wstrName(wstrName), m_uiFlags(uiFlags), m_hFile(INVALID_HANDLE_VALUE), m_bOpenedOnce(false)
+HHLogFile::HHLogFile(const std::wstring& wstrPath, const std::wstring& wstrName, uint uiFlags, bool bDiscard)
+	: m_wstrPath(wstrPath), m_wstrName(wstrName), m_uiFlags(uiFlags), m_hFile(INVALID_HANDLE_VALUE), m_bOpenedOnce(false),
+	m_bDiscard(bDiscard)
 {
 	InitializeCriticalSection(&m_cs);
 	Open();
@@ -17,6 +18,8 @@ HHLogFile::~HHLogFile()
 
 void HHLogFile::Open(void)
 {
+	if(m_bDiscard)
+		return;
 	EnterCriticalSection(&m_cs);
 	if(m_hFile == INVALID_HANDLE_VALUE)
 	{
@@ -66,7 +69,7 @@ static void AppendText(std::string& out, const char* sz)
 
 void HHLogFile::Write(const char* szPrefix, const TCHAR* format, va_list args)
 {
-	if(!HHLogFileMgr::Get().IsLoggingEnabled() || !format)
+	if(m_bDiscard || !HHLogFileMgr::Get().IsLoggingEnabled() || !format)
 		return;
 	std::string strText = HHFormatV(format, args);
 	EnterCriticalSection(&m_cs);
@@ -126,9 +129,61 @@ LPCWSTR HHLogFile::GetFileName() const { return m_wstrPath.c_str(); }
 void HHLogFile::Archive(LPCWSTR) {}
 
 //------------------------------------------------------------------------------
-HHLogFileMgr::HHLogFileMgr() : m_bEnabled(true)
+HHLogFileMgr::HHLogFileMgr() : m_nDiscarded(0), m_bEnabled(true)
 {
 	InitializeCriticalSection(&m_cs);
+}
+
+namespace
+{
+	// Wildcard match (* any run, ? one character) of lower-case strings.
+	bool WildMatch(const wchar_t* p, const wchar_t* s)
+	{
+		const wchar_t* star = NULL;
+		const wchar_t* back = NULL;
+		while(*s)
+		{
+			if(*p == L'?' || *p == *s) { ++p; ++s; }
+			else if(*p == L'*') { star = p++; back = s; }
+			else if(star) { p = star + 1; s = ++back; }
+			else return false;
+		}
+		while(*p == L'*')
+			++p;
+		return *p == 0;
+	}
+}
+
+void HHLogFileMgr::SetKeepPatterns(const std::vector<std::string>& patterns)
+{
+	m_keep.clear();
+	for(size_t i = 0; i < patterns.size(); ++i)
+	{
+		std::wstring w = HHWiden(patterns[i]);
+		for(size_t k = 0; k < w.size(); ++k)
+			w[k] = (wchar_t)towlower(w[k] == L'/' ? L'\\' : w[k]);
+		m_keep.push_back(w);
+	}
+}
+
+bool HHLogFileMgr::Keep(const std::wstring& strKey) const
+{
+	if(m_keep.empty())
+		return true;
+	const size_t slash = strKey.find_last_of(L'\\');
+	const std::wstring base = slash == std::wstring::npos ? strKey : strKey.substr(slash + 1);
+	for(size_t i = 0; i < m_keep.size(); ++i)
+		if(WildMatch(m_keep[i].c_str(), strKey.c_str()) || WildMatch(m_keep[i].c_str(), base.c_str()))
+			return true;
+	return false;
+}
+
+size_t HHLogFileMgr::GetDiscardedCount()
+{
+	EnterCriticalSection(&m_cs);
+	size_t n = m_nDiscarded;
+	LeaveCriticalSection(&m_cs);
+	return n;
 }
 
 HHLogFileMgr::~HHLogFileMgr()
@@ -175,11 +230,15 @@ FILogFile* HHLogFileMgr::GetLog(LPCWSTR wszFileName, uint uiFlags, const TCHAR* 
 	else
 	{
 		std::wstring path = m_wstrFolder + name;
+		const bool bKeep = Keep(key);
 		size_t slash = path.find_last_of(L'\\');
-		if(slash != std::wstring::npos)
+		if(slash != std::wstring::npos && bKeep)
 			HHEnsureDirectory(HHNarrow(path.substr(0, slash)));
-		pLog = new HHLogFile(path, name, uiFlags);
+		// A discarded log still has its full path: the DLL finds the Logs folder from a log's file name.
+		pLog = new HHLogFile(path, name, uiFlags, !bKeep);
 		m_logs[key] = pLog;
+		if(!bKeep)
+			++m_nDiscarded;
 		if(szTitleString && *szTitleString)
 			pLog->Msg("%s", szTitleString);
 	}

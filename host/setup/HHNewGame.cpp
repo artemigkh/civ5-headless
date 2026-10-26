@@ -979,7 +979,9 @@ bool HHWriteT000(const HHJson& kSpec, HHNewGameInterfaces& kIf, HHNewGameResult&
 		kIf.pScripts->FreeLuaThread(L);
 	}
 	// Raw section bytes (<run>\dump-t000\<section>.bin + digest.txt), the same layout as the
-	// real-game probe dumps, for byte-level comparison (tools/headless/hhdigest.py).
+	// real-game probe dumps, for byte-level comparison (tools/headless/hhdigest.py). --no-dumps: none (the dump
+	// computes the digest sections and only reads the game).
+	if(!HHGetOptions().noDumps)
 	{
 		std::string folder = run + "dump-t000";
 		std::string chunk = "if Game.DumpHeadlessState == nil then return nil end\nreturn Game.DumpHeadlessState([==[" + folder + "]==])\n";
@@ -1277,6 +1279,12 @@ bool HHRunAutoplay(HHNewGameInterfaces& kIf, HHNewGameResult& kResult, int nTurn
 		HHWriteTextFile(HHGetPaths().run + "lua-before-dump.json", (json.empty() ? std::string("null") : json) + "\n");
 		kResult.steps.push_back(HHFormat("--lua-before-dump %s -> %s", o.luaBeforeDump.c_str(),
 		                                 json.size() > 200 ? (json.substr(0, 200) + "...").c_str() : json.c_str()));
+	}
+	if(o.noDumps)
+	{
+		kResult.steps.push_back("--no-dumps: no final dump");
+		kResult.bAutoplayOk = kResult.error.empty();
+		return kResult.bAutoplayOk;
 	}
 	const std::string folder = HHGetPaths().run + HHFormat("dump-t%03d", kResult.iTurnsPlayed);
 	const std::string line = DumpState(kScripts, folder);

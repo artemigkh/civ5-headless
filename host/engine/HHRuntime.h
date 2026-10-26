@@ -57,9 +57,12 @@ struct HHOptions
 	bool noAddins;                        // no InGameUIAddin at all
 	std::vector<std::string> luaProbes;   // Lua files run in an InGame context before autoplay (fingerprint probe)
 	std::string gameDirSource;            // where gameDir came from (option, registry, ...)
+	bool noDumps;                         // newgame: no Game.DumpHeadlessState dumps (dump-t000, dump-tN)
+	std::vector<std::string> keepLogs;    // log names (wildcards) the log manager writes; empty: all. The DLL logs
+	                                      // as before (same calls, same results); the other logs are discarded.
 	HHOptions() : language("en_US"), strict(false), verbose(false), gameLogging(false), noGameLogging(false), freeLibrary(true),
 		noMods(false), luaDebugLibrary(true), exeSeed(-1), crtSrand(-1), fpuPrecision(0), crtSse2(-1), turns(0), noUiFrame(false), randLog(0), gameLogFlags(15), heapPerturb(0), pregameTurnTimer(-1), idleUpdates(10), frameSkew(0), checkpointEvery(1), dumpFrom(-1), dumpTo(-1),
-		noProfiles(false), noAddins(false) {}
+		noProfiles(false), noAddins(false), noDumps(false) {}
 };
 
 struct HHPaths

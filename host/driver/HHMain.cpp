@@ -74,6 +74,10 @@ namespace
 		"  --idle-updates <k>   newgame: Updates after autoplay ends, in the human turn (default 10)\n"
 		"  --frame-skew <k>     newgame: an extra Update (no UI frame) before every k-th one; results must not change\n"
 		"  --dump-turns <a:b>   newgame: the DLL dumps the state at doTurnBegin of turns a..b (Logs\\HeadlessDumps)\n"
+		"  --no-dumps           newgame: no state dumps (dump-t000, dump-t<n>); digests are unaffected\n"
+		"  --keep-log <glob>    write only the logs whose names match (* and ?, any case; repeatable): the DLL logs as\n"
+		"                       before, the other logs are discarded unwritten (the logs the DLL writes itself, such as\n"
+		"                       HeadlessDigest.log, are not affected)\n"
 		"  --no-ui-frame        newgame: no UI frame emulation after each Update (civ ribbon, notification aging,\n"
 		"                       popups, human-turn unit cycle)\n"
 		"  --lua-before-dump <file>  newgame: run a Lua file after autoplay, before the final dump; its result goes to\n"
@@ -299,9 +303,11 @@ namespace
 			else if(a == "--no-lua-debug") o.luaDebugLibrary = false;
 			else if(a == "--no-profiles") o.noProfiles = true;
 			else if(a == "--no-addins") o.noAddins = true;
+			else if(a == "--no-dumps") o.noDumps = true;
 			else if(!bHasValue) { fprintf(stderr, "missing value for %s\n", a.c_str()); return false; }
 			else if(a == "--profiles") { o.profilesDir = StripSlash(HHFullPath(v)); ++i; }
 			else if(a == "--skip-addin") { o.skipAddins.push_back(v); ++i; }
+			else if(a == "--keep-log") { o.keepLogs.push_back(v); ++i; }
 			else if(a == "--lua-probe") { o.luaProbes.push_back(HHFullPath(v)); ++i; }
 			else if(a == "--game-dir") { o.gameDir = StripSlash(v); ++i; }
 			else if(a == "--dll") { o.dllPath = v; ++i; }
@@ -698,7 +704,10 @@ namespace
 		r += "], \"luaProbes\": [";
 		for(size_t i = 0; i < o.luaProbes.size(); ++i)
 			r += (i ? ", " : "") + Q(o.luaProbes[i]);
-		r += "]},\n";
+		r += HHFormat("], \"noDumps\": %s, \"keepLogs\": [", o.noDumps ? "true" : "false");
+		for(size_t i = 0; i < o.keepLogs.size(); ++i)
+			r += (i ? ", " : "") + Q(o.keepLogs[i]);
+		r += HHFormat("], \"logsDiscarded\": %u},\n", (unsigned)HHLogFileMgr::Get().GetDiscardedCount());
 		// Mods
 		r += "  \"mods\": [";
 		for(size_t i = 0; i < HHGetVfs().GetMods().size(); ++i)
@@ -864,6 +873,7 @@ namespace
 			fclose(pMarker);
 		HHLogOpen(p.logs);
 		HHLogFileMgr::Get().SetFolder(p.logs);
+		HHLogFileMgr::Get().SetKeepPatterns(o.keepLogs);
 		SetCurrentDirectoryW(HHWiden(p.run).c_str());
 		const std::string reportPath = p.run + (o.command == "newgame" ? "newgame-report.json" : "boot-report.json");
 
