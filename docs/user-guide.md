@@ -257,8 +257,8 @@ Logs asked for by an option (`Stacking-*.log` with `--diagnostics`, `RandCalls.c
 `Logs/HeadlessDumps` with `--host-arg=--dump-turns`) are kept at every level. What reads what: `c5h compare`, `queue
 compare` and the verification suite need the digests (`standard`; the suite asks for it); `c5h fingerprint compare`
 reads `Lua.log` (any level); `c5h dumps` needs the dumps (`full`; `c5h parity`, `host-first` and `skew` run the host
-themselves and keep everything). Not writing the DLL's AI logs also makes games faster: a Standard game's first 100
-turns took 66.6 s against about 82 s with every log written.
+themselves and keep everything). Leaving out the DLL's AI logs saves disk rather than time: a Standard game's first
+100 turns took 66.6 s and left 4.5 MB at `standard`, and took 69.3 s and left 437 MB at `full`.
 
 #### The run report
 

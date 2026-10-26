@@ -241,6 +241,19 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(dark, '#ffffff')
         self.assertEqual(report.theme_colours('#000000')[1] != '#000000', True)
 
+    def test_game_messages_win_over_synthesized_events(self):
+        folder = make_run(self.dir / 'msg')
+        messages = json.loads((folder / 'replay-messages.json').read_text(encoding='utf-8'))
+        messages += [dict(Turn=15, Type=0, Player=1, Text='The Roman Empire has been conquered!!!'),
+                     dict(Turn=12, Type=3, Player=0, Text=''),             # said by the text message of turn 12
+                     dict(Turn=13, Type=3, Player=0, Text='')]             # said by nothing else: kept
+        write(folder, 'replay-messages.json', messages)
+        m = report.collect(folder)
+        evs = report.events(m, report.players(m))
+        gone = [e for e in evs if e['kind'] == 'elimination']
+        self.assertEqual([(e['turn'], e['player'], e['text']) for e in gone], [(15, 1, 'The Roman Empire has been conquered!!!')])
+        self.assertEqual([e['turn'] for e in evs if e['kind'] == 'capture'], [12, 13])
+
     def test_labels_never_overlap(self):
         ys = html.spread([50, 50.5, 51, 49, 120, 121], 11, 8, 190)
         order = sorted(ys)
