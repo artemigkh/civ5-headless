@@ -97,11 +97,12 @@ def database(cfg, db=None, mods_dir=None, mods_db=None, dll=None, exe=None, log=
         p = Path(db or cfg.db).resolve()
         return p, dict(db=str(p))
     exe = find_exe(exe, cfg)
+    dll = dll or modsdb.choose_dll(cfg, None, mods, mods_dir)[0]  # the rule run.py follows (modsdb.choose_dll)
     if mods is not None:
         mods_dir, mods_db = modsdb.resolve(cfg, mods, mods_dir, mods_db, log=log)
     path, inputs, key = get_db(mods_dir or cfg.require('mods_dir', 'pass --mods-dir'),
                                mods_db or cfg.require('mods_db', 'pass --mods-db'),
-                               dll or cfg.require('dll', 'pass --dll'),
+                               dll,
                                exe, snapshot.resolve(cfg, exe=exe, log=log), cfg.require('db_cache'),
                                cfg.require('game_dir'), log=log, config_file=cfg.file)
     return path, dict(inputs, db=str(path), cacheKey=key)
@@ -114,7 +115,8 @@ def main(argv=None, cfg=None):
     a.add_argument('--mods-db', default=None, help='mods database (default: config mods_db)')
     a.add_argument('--mod', action='append', help='activated mod GUID[:version] (repeatable; a generated registry)')
     a.add_argument('--no-mods', action='store_true', help='the database without mods')
-    a.add_argument('--dll', default=cfg.dll)
+    a.add_argument('--dll', help='game DLL (default: as c5h run chooses it: the configured one, or for --mod/--no-mods '
+                   "the set's or the game's own)")
     a.add_argument('--exe', default=cfg.exe)
     a.add_argument('--snapshot', default=cfg.snapshot)
     a.add_argument('--cache', default=cfg.db_cache)
@@ -123,7 +125,10 @@ def main(argv=None, cfg=None):
         a.error('--mod and --no-mods exclude --mods-db')
     log = lambda m: print(m, file=sys.stderr)
     try:
-        args.mods_dir, args.mods_db = modsdb.resolve(cfg, [] if args.no_mods else args.mod, args.mods_dir, args.mods_db, log=log)
+        mods = [] if args.no_mods else args.mod
+        args.dll, why = modsdb.choose_dll(cfg, args.dll, mods, args.mods_dir)
+        log(f'DLL {args.dll} ({why})')
+        args.mods_dir, args.mods_db = modsdb.resolve(cfg, mods, args.mods_dir, args.mods_db, log=log)
     except config.ConfigError as error:
         print(f'c5h dbcache: {error}', file=sys.stderr)
         return 1

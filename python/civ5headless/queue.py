@@ -2,6 +2,8 @@
 
   c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
   c5h queue status QUEUE.json        # job table and totals (also written as QUEUE.summary.json)
+  c5h queue report QUEUE.json        # the summary page over the queue's games: <out>/summary.html (queue run writes
+                                     # it at the end too); each game has its own report.html
   c5h queue compare QUEUE.json       # digests of each seed's variants against each other; --vpbench DIR adds
                                      # samerun per seed pair, abcompare over the batch and compare (Vox Populi tools)
 
@@ -12,7 +14,7 @@ QUEUE.json (relative paths are relative to the queue file's folder):
    "defaults": {"spec": "../specs/continents-standard.json", "turns": 100,
                 "modsDir": "...MODS", "modsDb": "...Civ5ModsDatabase.db", "dll": "...CvGameCore_Expansion2.dll",
                 "diagnostics": 0, "checkpointEvery": 1, "maxSeconds": 7200, "stallSeconds": 900,
-                "maxMemoryMB": 3500, "prune": true, "hostArgs": []},
+                "maxMemoryMB": 3500, "detail": "standard", "hostArgs": []},
    "variants": {"A": {"dll": "a.dll", "abRole": "baseline"}, "B": {"dll": "b.dll", "abRole": "test"}},
    "seeds": [[1001, 2002], [1003, 2004]],   # [map, sync]; jobs = seeds x variants, named <variant>-m<map>-s<sync>
    "jobs": [{"name": "extra", "turns": 250}]}  # optional explicit jobs (defaults apply)
@@ -21,9 +23,11 @@ Job keys: spec, turns, dll, db (a built database; otherwise built once per (mods
 modsDir, modsDb, mods (the mod set as ["ID[:VER]", ...]: a generated registry instead of modsDb), noMods, locDb,
 exe, gameDir, profiles, noProfiles, skipAddins, noAddins, fingerprint (true, or {"every": K, "turns": [...],
 "split": N}), seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery, maxSeconds, stallSeconds,
-maxMemoryMB, prune, hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true); they are the c5h run
-options of the same name. Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the
-configuration (c5h doctor).
+maxMemoryMB, detail (summary, standard (default) or full; the old prune: false is full), report (default true),
+hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true); they are the c5h run options of the same
+name. Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
+doctor); the DLL is chosen as c5h run chooses it (a mod set's own, or the game's for noMods, unless dll is given or
+set in civ5headless.toml).
 
 State: QUEUE.state.json (next to the queue). A restart skips completed runs (status.json completed), re-queues
 interrupted ones (their folder is kept as <name>-rN) and leaves failed ones failed unless --retry-failed.
@@ -42,7 +46,7 @@ from . import run as host_run
 from .compare import digest
 
 DEFAULTS = dict(turns=100, diagnostics=0, checkpointEvery=1, maxSeconds=7200, stallSeconds=900, maxMemoryMB=3500,
-                prune=True, hostArgs=[])
+                hostArgs=[])
 PATH_KEYS = ('spec', 'dll', 'db', 'modsDir', 'modsDb', 'locDb', 'exe', 'gameDir', 'profiles')
 
 
@@ -78,6 +82,8 @@ def expand(queue, qpath):
             raise SystemExit(f"job {j['name']}: spec is required")
         if (j.get('mods') is not None or j.get('noMods')) and j.get('modsDb'):
             raise SystemExit(f"job {j['name']}: mods and noMods exclude modsDb (the registry is generated)")
+        if j.get('detail') and j['detail'] not in host_run.DETAILS:
+            raise SystemExit(f"job {j['name']}: detail is one of {', '.join(host_run.DETAILS)}, not {j['detail']!r}")
     return jobs
 
 
@@ -115,9 +121,17 @@ class Queue:
         return host_run.read(self.run_dir(job) / 'status.json') or {}
 
 
+def job_detail(job):
+    """A job's detail level: its detail, else standard; prune: false (the old key) keeps everything (full)."""
+    if job.get('detail'):
+        return host_run.detail_of(job['detail'])
+    return 'full' if job.get('prune') is False else host_run.DEFAULT_DETAIL
+
+
 def job_args(job, folder, inputs, affinity):
-    """run.py's namespace for a job; inputs: its database and mods (databases())."""
-    return SimpleNamespace(run=None, run_dir=str(folder), spec=job['spec'], target_turn=int(job['turns']), dll=job.get('dll'),
+    """run.py's namespace for a job; inputs: its database, mods and DLL (databases())."""
+    return SimpleNamespace(run=None, run_dir=str(folder), spec=job['spec'], target_turn=int(job['turns']),
+                           dll=inputs.get('dll') or job.get('dll'), dll_reason=inputs.get('dllReason'),
                            db=inputs['db'], mods_dir=inputs['modsDir'], mods_db=inputs['modsDb'], mod=None,
                            no_mods=bool(job.get('noMods')), loc_db=job.get('locDb'), exe=job.get('exe'),
                            game_dir=job.get('gameDir'), profiles=job.get('profiles'), no_profiles=bool(job.get('noProfiles')),
@@ -126,7 +140,8 @@ def job_args(job, folder, inputs, affinity):
                            frame_skew=job.get('frameSkew'),
                            diagnostics=int(job.get('diagnostics') or 0), improved_mask=job.get('improvedMask'), ab_role=job.get('abRole'),
                            checkpoint_every=int(job.get('checkpointEvery') or 1), stall_seconds=job.get('stallSeconds'),
-                           max_memory_mb=job.get('maxMemoryMB') or None, affinity=affinity, prune=bool(job.get('prune')),
+                           max_memory_mb=job.get('maxMemoryMB') or None, affinity=affinity, detail=job_detail(job),
+                           report=bool(job.get('report', True)),
                            poll=1.0, host_arg=list(job.get('hostArgs') or []), maximum_seconds=job.get('maxSeconds'),
                            seeds=job.get('seeds'), low_priority=bool(job.get('lowPriority', True)))
 
@@ -158,20 +173,22 @@ def prepare(q, retry_failed):
 
 
 def databases(q, jobs):
-    """{job name: dict(db, modsDir, modsDb)}: every job's database, built (or found) once per (mods input, DLL) through
-    dbcache, and its mods input (a mod set's generated registry, also once per mod set)."""
+    """{job name: dict(db, modsDir, modsDb, dll, dllReason)}: every job's database, built (or found) once per (mods
+    input, DLL) through dbcache, its mods input (a mod set's generated registry, also once per mod set) and its DLL
+    (modsdb.choose_dll: the job's dll, a dll in civ5headless.toml, the mod set's, else the configured one)."""
     out, built = {}, {}
     cfg = q.cfg
     for job in jobs:
         mods = [] if job.get('noMods') else job.get('mods')
+        dll, why = modsdb.choose_dll(cfg, job.get('dll'), mods, job.get('modsDir'), given_as="the job's dll")
         mods_dir, mods_db = modsdb.resolve(cfg, mods, job.get('modsDir'), job.get('modsDb'), log=q.log)
-        inputs = dict(modsDir=str(mods_dir) if mods_dir else None, modsDb=str(mods_db) if mods_db else None)
+        inputs = dict(modsDir=str(mods_dir) if mods_dir else None, modsDb=str(mods_db) if mods_db else None,
+                      dll=str(dll), dllReason=why)
         if job.get('noMods'):
             inputs.update(modsDir=None, modsDb=None)  # run.py passes --no-mods to the host
         if job.get('db') or cfg.db:
             out[job['name']] = dict(inputs, db=str(Path(job.get('db') or cfg.db).resolve()))
             continue
-        dll = job.get('dll') or cfg.require('dll')
         key = (str(mods_dir), str(mods_db), str(dll), job.get('exe'))
         if key not in built:
             t = time.monotonic()
@@ -210,7 +227,7 @@ def run(args, cfg):
                 st.update(state='running', worker=slot, started=utc(), attempts=st.get('attempts', 0) + 1,
                           affinity=hex(masks[slot]) if masks[slot] else None)
                 q.save()
-            q.log(f"[w{slot}] start {job['name']} ({job['turns']} turns, {Path(job.get('dll') or cfg.dll or '?').parent.name})")
+            q.log(f"[w{slot}] start {job['name']} ({job['turns']} turns, {Path(dbs[job['name']]['dll']).parent.name})")
             t = time.monotonic()
             try:
                 code = host_run.newgame(job_args(job, q.run_dir(job), dbs[job['name']], masks[slot]), quiet=True, cfg=cfg)
@@ -254,7 +271,24 @@ def run(args, cfg):
             q.state['queue'].update(state='stopped' if (q.stop_path.exists() or stopping.is_set()) else 'finished', finished=utc(),
                                     seconds=round(previous + time.monotonic() - started, 1))
             q.save()
-    return summary(q)
+    code = summary(q)
+    report_page(q)
+    return code
+
+
+def report_page(q):
+    """<out>/summary.html: the queue's games side by side (report.write_summary); a failure is logged, never fatal."""
+    from . import report
+    folders = [q.run_dir(j) for j in q.jobs if (q.run_dir(j) / 'status.json').is_file()]
+    if not folders:
+        return None
+    try:
+        path = report.write_summary(folders, q.out / 'summary.html', title=f'c5h queue {q.qpath.stem}')
+        q.log(f'summary page: {path}')
+        return path
+    except Exception as error:  # noqa: BLE001
+        q.log(f'summary page failed: {type(error).__name__}: {error}')
+        return None
 
 
 def summary(q, batch_seconds=None):
@@ -307,7 +341,7 @@ def compare(args, cfg):
         for other in js[1:]:
             a, b = q.run_dir(js[0]) / 'Logs/HeadlessDigest.log', q.run_dir(other) / 'Logs/HeadlessDigest.log'
             if not (a.is_file() and b.is_file()):
-                print(f"{js[0]['name']} / {other['name']}: no digest (a DLL without the digest additions)")
+                print(f"{js[0]['name']} / {other['name']}: no digest (a DLL without the digest additions, or detail summary)")
                 continue
             r = digest.compare(a, b, heal_turns=args.heal_turns)
             same &= r['identical']
@@ -340,6 +374,7 @@ def main(argv=None, cfg=None):
     r.add_argument('--workers', type=int); r.add_argument('--affinity', choices=['p-first', 'none'])
     r.add_argument('--retry-failed', action='store_true')
     s = sub.add_parser('status'); s.add_argument('queue')
+    rp = sub.add_parser('report'); rp.add_argument('queue')
     c = sub.add_parser('compare'); c.add_argument('queue')
     c.add_argument('--heal-turns', type=int, default=2, help='differences that heal within this many turns are transients')
     c.add_argument('--vpbench', help="folder with Vox Populi's samerun.py, abcompare.py and compare.py")
@@ -350,6 +385,8 @@ def main(argv=None, cfg=None):
         return run(a, cfg)
     if a.command == 'status':
         return summary(Queue(a.queue, cfg))
+    if a.command == 'report':
+        return 0 if report_page(Queue(a.queue, cfg)) else 1
     return compare(a, cfg)
 
 

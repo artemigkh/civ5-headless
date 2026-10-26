@@ -47,7 +47,8 @@ groups: host games (exit code 1 when one fails), the real game, and building the
 |---|---|
 | `c5h doctor` | configuration and checks |
 | `c5h run` | one host game from a spec |
-| `c5h queue run\|status\|compare` | many games in parallel |
+| `c5h queue run\|status\|compare\|report` | many games in parallel |
+| `c5h report RUN...` | rebuild runs' `report.html`, and a summary page over several runs |
 | `c5h compare A B` | per-turn digests of two runs (folders or logs) |
 | `c5h spec resolve\|lua` | resolve a spec, or print the front-end Lua that sets it up in the game |
 | `c5h snapshot` | the DLC snapshot, built from the game's files |
@@ -98,7 +99,9 @@ the mods database, the DLL, the DLC snapshot and the host, so a mod edit gives a
   copy of the database taken in a modded session) keeps an input stable. Both are only read.
 - **Mod sets:** `--mod ID[:VER]` (repeatable; `c5h run`, `c5h dbcache`, the queue's `mods`) gives the activated mods
   instead of a mods database, so any mods in a MODS folder can be played without the game having activated them; see
-  below. `--no-mods` plays without mods: the database is then the DLC snapshot post-processed by the DLL.
+  below. `--no-mods` plays without mods: the database is then the DLC snapshot post-processed by the DLL. With an
+  explicit mod set the DLL is the set's (or, with `--no-mods`, the game's own) unless `--dll` or `civ5headless.toml`
+  names one ([section 5](#the-dll)).
 - `c5h dbbuild --mods-dir MODS --mods-db DB --out built.db [--oracle GAME.db]` builds one database directly;
   `c5h dbdiff A B` compares two. Details: [database builder](database-builder.md).
 
@@ -163,7 +166,7 @@ configuration. Useful options:
 |---|---|
 | `--db DB` | use this database instead of the cached build |
 | `--mods-dir MODS --mods-db DB` | another mods input |
-| `--mod ID[:VER]`, `--no-mods` | a mod set from a generated registry ([section 3](#the-mods-registry)), or no mods |
+| `--mod ID[:VER]`, `--no-mods` | a mod set from a generated registry ([section 3](#the-mods-registry)), or no mods; either also picks the DLL ([below](#the-dll)) |
 | `--profiles DIR`, `--no-profiles` | the UI emulation profiles (default: the configured folder), or none |
 | `--skip-addin NAME`, `--no-addins` | leave out one mod InGameUIAddin (its file name without extension, e.g. `SmallResourceIcons`; repeatable), or all |
 | `--fingerprint` | the Lua fingerprint probe, every turn; `--fingerprint-every K`, `--fingerprint-turns 1,50,100` and `--fingerprint-split N` set it (each implies it) |
@@ -175,13 +178,28 @@ configuration. Useful options:
 | `--max-memory-mb MB` | commit limit of the host process (job object; default 3500) |
 | `--affinity MASK`, `--low-priority` | CPU pinning, below-normal priority |
 | `--heap-perturb N`, `--frame-skew K` | the verification suite's address and frame-count checks |
-| `--prune` | afterwards delete the database copy (60 MB), state dumps (35 MB) and the DLL's AI logs |
+| `--detail summary\|standard\|full` | what the run folder keeps ([Run folders](#run-folders)); default `standard`. `--prune` is the old name of `standard` |
+| `--no-report` | no `report.html` (`c5h report RUN` writes it later) |
 | `--host-arg=ARG` | pass an option to `civ5headless.exe` (run it without arguments for the list) |
 
 From Python, `civ5headless.run.play(spec, turns, ...)` plays one game and returns its run folder, whether it
 completed, its status and its run report (`Result.report`). Its keywords are the options above (`mods=[...]`,
 `no_mods`, `profiles`, `no_profiles`, `skip_addins=[...]`, `no_addins`, `fingerprint=True` or `{"every": K, "turns":
-[...], "split": N}`, `lua_probes=[...]`, `host_args=[...]`, ...).
+[...], "split": N}`, `lua_probes=[...]`, `detail='summary'`, `report=False`, `host_args=[...]`, ...).
+
+### The DLL
+
+The game DLL is, in this order:
+
+1. `--dll` (a queue job's `dll`);
+2. `dll` in `civ5headless.toml`;
+3. with an explicit mod set: for `--no-mods` the game's own (`Assets\DLC\Expansion2\CvGameCore_Expansion2.dll`), for
+   `--mod` the first mod of the set, in activation order, that ships `CvGameCore_Expansion2.dll`, else the game's own;
+4. otherwise the discovered one: the first active mod's, else the Community Patch folder's, else the game's own.
+
+`events.jsonl` (action `dll`), `status.json` (`dll`, `dllReason`) and the report's header say which and why. `c5h
+dbcache`, the queue and the verification suite choose the same way. A `db` in `civ5headless.toml` is still used as is,
+whatever the mod set: leave it out for games with other mods.
 
 ### UI add-ins, profiles and probes
 
@@ -218,8 +236,52 @@ The files follow the real-game benchmark of the Vox Populi fork this came from, 
 | `replay-messages.json`, `replay-data.json` | replay messages (without type 2) and every major's replay series |
 | `status.json` | `state`, `startTurn`/`endTurn`/`turns`, `wallSeconds`, `secondsPerTurn`, `process` (CPU seconds, peak working set, peak private bytes), `endReason` (target_turn, victory, killed), `winner`/`victory`, `save` (seed key), `background` |
 | `host-report.json` | the host's run report: status and error, exe, DLL and databases, options, activated mods, profiles selected, add-in contexts and their errors, unknown UI files, engine stubs the DLL called, Lua errors, timings and memory ([engine contract](engine-contract.md), section 14) |
-| `hh-command.json` | the host command line, the inputs' hashes, the mods registry, profiles and fingerprint settings |
-| host outputs | `newgame-report.json`, `Logs/` (HeadlessDigest.log with the per-turn digests, Lua.log, the DLL's logs), `t000-map.json`, `t000-digest.json`, `dump-t000/`, `dump-tN/` |
+| `hh-command.json` | the host command line, the inputs' hashes, the DLL and why, the mods registry, profiles, fingerprint settings and detail level |
+| `final-state.json` | after the last turn: every player (names, colours, alive, score, cities, population, techs, policies, era, wonders, religion) and the final map (plot owners, cities) |
+| `report.html` | the run report (below) |
+| host outputs | `newgame-report.json`, `Logs/` (HeadlessDigest.log with the per-turn digests, Lua.log, the DLL's logs), `t000-map.json`, `t000-digest.json`; with `--detail full` also `dump-t000/`, `dump-tN/` and `db/` |
+
+#### Detail levels
+
+`--detail` (queue key `detail`) decides what the folder keeps. Every level plays the same game: the host is told not
+to write what a level leaves out (`--no-dumps`, `--keep-log`; the DLL still logs, so its results do not change), and
+the database copies it needs while it runs (`db/`) are deleted afterwards.
+
+| Level | Keeps | Tiny, 30 turns: this fork's DLL / stock DLL, no mods |
+|---|---|---:|
+| `summary` | status, events, setup, spec, host report, turn times, replay data and messages, the final checkpoint, `final-state.json`, `t000-map.json`, `Logs/Lua.log` and `Logs/Headless.log`, `report.html` | 1.0 MB / 0.8 MB |
+| `standard` (default) | also the per-turn checkpoints and the small logs: `HeadlessDigest.log` (digest DLLs), `Database.log`, `CustomMods.log`, `vfs-index.log`, ... | 1.4 MB / 1.1 MB |
+| `full` | everything the host writes: the state dumps (`dump-t000/`, `dump-tN/`, about 85 MB each with a field-map DLL), the database copies (`db/`, about 60 MB) and every log of the DLL (its AI logs) | 243 MB / 58 MB |
+
+Logs asked for by an option (`Stacking-*.log` with `--diagnostics`, `RandCalls.csv` with `--host-arg=--rand-log`,
+`Logs/HeadlessDumps` with `--host-arg=--dump-turns`) are kept at every level. What reads what: `c5h compare`, `queue
+compare` and the verification suite need the digests (`standard`; the suite asks for it); `c5h fingerprint compare`
+reads `Lua.log` (any level); `c5h dumps` needs the dumps (`full`; `c5h parity`, `host-first` and `skew` run the host
+themselves and keep everything). Not writing the DLL's AI logs also makes games faster: a Standard game's first 100
+turns took 66.6 s against about 82 s with every log written.
+
+#### The run report
+
+`report.html` is written at the end of every game (`--no-report`: not) and `c5h report RUN [RUN...]` rebuilds it from
+the folder. It is one self-contained page (inline CSS and SVG; light and dark themes; a little optional JavaScript for
+the theme button and the timeline filter):
+
+- the setup (map, size, speed, difficulty, seeds, civilizations and city-states, the DLL with its SHA-256 and why it
+  was chosen, mods, host commit, detail level) and the result (winner and victory, or the turn the game stopped at;
+  autoplay seconds and seconds per turn, CPU, peak memory);
+- the players: civilization, leader, team, alive, score, cities, population, techs, policies, era, wonders, religion;
+- per-player charts over the turns (score, cities, population, techs, policies, culture, science, gold, military,
+  land, happiness, tourism, faith, wonders) from the replay data, else the checkpoints, else the fingerprint metrics,
+  each line labelled at its end; the host's seconds per turn;
+- the event timeline (cities founded and captured, wars and peace, wonders, religions, eras, eliminations, ...),
+  filterable by kind and player; the map at turn 0 and the final territories with the cities;
+- health (Lua errors with file and line, stubbed calls not known to be harmless, UI profiles, add-ins, unknown UI
+  files) and the folder's files with their sizes.
+
+A run without some of it (a DLL without digests or replay data, the stock DLL, a game stopped early or crashed, an
+older run folder) leaves those parts out with a note; a report that fails is logged in `events.jsonl` and never fails
+the game. `c5h report A B ...` (or a folder of runs) also writes a summary page over them, `summary.html` in their
+common folder (`--summary FILE`): a table of the games and their main series overlaid.
 
 Where they differ from a real run, by design:
 
@@ -238,6 +300,7 @@ Where they differ from a real run, by design:
 c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
 c5h queue status QUEUE.json
 c5h queue compare QUEUE.json [--vpbench DIR]
+c5h queue report QUEUE.json
 ```
 
 ```json
@@ -252,14 +315,17 @@ c5h queue compare QUEUE.json [--vpbench DIR]
   plus any explicit `jobs`; every job key (`spec`, `turns`, `dll`, `db`, `modsDir`, `modsDb`, `mods` (a mod set,
   `["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`, `noAddins`, `fingerprint` (`true` or
   `{"every": K, "turns": [...], "split": N}`), `diagnostics`, `improvedMask`, `abRole`, `checkpointEvery`,
-  `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `prune` (default on), `hostArgs`, `luaProbes`, `lowPriority`
-  (default on)) can be set in `defaults`, a variant or a job. Examples are in `examples/queues/`.
+  `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail` (default `standard`; the old `prune: false` is `full`),
+  `report` (default on), `hostArgs`, `luaProbes`, `lowPriority` (default on)) can be set in `defaults`, a variant or a
+  job. Examples are in `examples/queues/`.
 - Mod sets' registries and databases are built once per (mods input, DLL) before the workers start.
 - Worker k is pinned to the k-th physical core: P-cores (both hyperthreads) first, then E-cores.
 - State is in `QUEUE.state.json`. A restart skips completed runs, re-queues interrupted ones (the partial folder is
   kept as `<name>-rN`) and leaves failed ones failed unless `--retry-failed`. A stopped runner takes its games with
   it (job objects). `QUEUE.stop` pauses: no new games start, running ones finish.
 - `status` prints the job table and totals (game turns per hour, background load) and writes `QUEUE.summary.json`.
+  `queue run` ends by writing `<out>/summary.html`, a page over the queue's games with links to their reports;
+  `queue report` rebuilds it.
   `compare` compares the digests of each seed's variants; with `--vpbench DIR` (the Vox Populi fork's benchmark
   tools) it also runs samerun per seed pair and abcompare over the batch.
 

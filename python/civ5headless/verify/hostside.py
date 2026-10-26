@@ -252,8 +252,10 @@ class HostSide:
                           fingerprint=job.fingerprint or False, lua_probes=[str(p) for p in job.probes],
                           heap_perturb=job.heap_perturb, frame_skew=job.frame_skew, max_seconds=int(max(left, 10)),
                           stall_seconds=300, max_memory_mb=self.settings.max_memory_mb, affinity=affinity,
-                          low_priority=self.settings.low_priority, prune=True, host_args=list(self.settings.host_args),
-                          quiet=True)
+                          low_priority=self.settings.low_priority, host_args=list(self.settings.host_args), quiet=True,
+                          # the checks read digests, Lua.log, per-turn checkpoints, replay data, turn times and the
+                          # host report: standard keeps them all; no per-game report.html (verify writes its own)
+                          detail='standard', report=False)
             job.status = r.status or {}
             job.end_turn = job.status.get('endTurn')
             if r.ok:
