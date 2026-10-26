@@ -71,10 +71,12 @@ ERA_TYPES = {'ERA_POSTMODERN': 'Atomic', 'ERA_FUTURE': 'Information'}
 # Replay message kinds: by type (the DLL's ReplayMessageTypes), else by the (English) text of major events.
 TYPE_KINDS = {1: 'city', 3: 'capture', 4: 'raze', 5: 'religion', 6: 'pantheon'}
 TEXT_KINDS = [('war', re.compile(r'declares? war on', re.I)), ('peace', re.compile(r'made peace with', re.I)),
-              ('pact', re.compile(r'defensive pact|permanent alliance|vassal', re.I)),
+              ('elimination', re.compile(r'has been conquered|has been defeated', re.I)),
+              ('pact', re.compile(r'defensive pact|permanent alliance|vassal|research agreement', re.I)),
               ('wonder', re.compile(r'\bcompletes\b|been built in a far away land', re.I)),
-              ('capture', re.compile(r'was captured by', re.I)), ('raze', re.compile(r'set ablaze|was destroyed', re.I)),
-              ('victory', re.compile(r'has won a', re.I)), ('tech', re.compile(r'first to discover', re.I)),
+              ('capture', re.compile(r'was captured by|lost their original capital', re.I)),
+              ('raze', re.compile(r'set ablaze|was destroyed', re.I)), ('victory', re.compile(r'has won a', re.I)),
+              ('tech', re.compile(r'first to (?:discover|complete)|proven that the world is round', re.I)),
               ('golden', re.compile(r'golden age', re.I)), ('person', re.compile(r'has created', re.I))]
 KINDS = {'victory': 'Victory', 'elimination': 'Eliminations', 'war': 'Wars', 'peace': 'Peace', 'pact': 'Pacts',
          'capture': 'Cities captured', 'raze': 'Cities razed', 'city': 'Cities founded', 'wonder': 'Wonders',
@@ -447,12 +449,19 @@ def kind_of(message):
 def events(m, ps):
     """[dict(turn, kind, player, text)]: replay messages, plus era changes and eliminations of the major civilizations
     from the per-turn checkpoints (else from final-state.json and the replay data), by turn."""
-    out = []
+    out, bare = [], []
     for msg in m['messages']:
         if isinstance(msg, dict) and isinstance(msg.get('Turn'), int):
-            out.append(dict(turn=msg['Turn'], kind=kind_of(msg), player=msg.get('Player'), text=clean(msg.get('Text'))))
+            e = dict(turn=msg['Turn'], kind=kind_of(msg), player=msg.get('Player'), text=clean(msg.get('Text')))
+            (out if e['text'] else bare).append(e)
+    for e in bare:  # messages without text (city captures in some DLLs): kept unless a text message says the same
+        if not any(o['turn'] == e['turn'] and o['kind'] == e['kind'] for o in out):
+            who = ps.get(e['player'], {}).get('name') or f"player {e['player']}"
+            e['text'] = f'{KINDS[e["kind"]]}: {who}'
+            out.append(e)
     ids = {p['id'] for p in majors(ps)}
-    turns = sorted(m['checkpoints'])
+    told = {e['player'] for e in out if e['kind'] == 'elimination'}  # the game's own "has been conquered"
+    turns = sorted(m['checkpoints']) if len(m['checkpoints']) > 1 else []
     era, seen, gone = {}, set(), set()
     for turn in turns:
         row = m['checkpoints'][turn]
@@ -461,7 +470,8 @@ def events(m, ps):
             if v is None:
                 if pid in seen and pid not in gone:
                     gone.add(pid)
-                    out.append(dict(turn=turn, kind='elimination', player=pid, text=f"{ps[pid]['name']} is eliminated"))
+                    if pid not in told:
+                        out.append(dict(turn=turn, kind='elimination', player=pid, text=f"{ps[pid]['name']} is eliminated"))
                 continue
             seen.add(pid)
             e = v.get('era')
@@ -471,7 +481,7 @@ def events(m, ps):
                 era[pid] = e
     if not turns:
         for p in majors(ps):
-            if p.get('alive') is False:
+            if p.get('alive') is False and p['id'] not in told:
                 last = max((t for s in (m['replay'].get(str(p['id'])) or {}).values() for t, _ in s or []), default=None)
                 out.append(dict(turn=(last + 1) if last is not None else m['status'].get('endTurn'), kind='elimination',
                                 player=p['id'], text=f"{p['name']} is eliminated"))
