@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Make the release kit: everything needed to run the host against a Civ V install, nothing needed to build it.
 
-  python tools/make_kit.py [--exe BUILD] [--out dist] [--python-embed ZIP] [--worktree] [--smoke]
+  python tools/make_kit.py [--exe BUILD] [--out dist] [--python VERSION|ZIP|none] [--worktree] [--smoke]
 
 The kit is dist/civ5-headless-<version>-<commit>.zip with one top folder:
 
@@ -10,21 +10,29 @@ The kit is dist/civ5-headless-<version>-<commit>.zip with one top folder:
   profiles/, probes/      the host's UI emulation profiles and Lua probes
   examples/               game specs and queues
   docs/                   the user guide, verification, profiles, engine contract, database builder, DLL additions
-  runtime/                only with --python-embed: a private Python, so users need not install one
+  runtime/                a private Python (python.org's embeddable package), so users need not install one
   c5h.cmd                 the command line (finds runtime\\python.exe, else Python on PATH or the py launcher)
   kit.json                version, commit, hashes; its presence makes config treat the folder as a kit (workspace,
                           bin\\civ5headless.exe, profiles\\, probes\\)
   README.md, QUICKSTART.txt, LICENSE, SOURCE.txt, licenses/SDK-NOTICE.md
 
 Running needs no compiler: the exe uses the Visual C++ 2008 runtime that Civ V installs (its own DLLs need the same
-runtime) and loads the Firaxis DLLs from the user's game folder. The c5h tools need Python 3.11 or newer, unless the
-kit bundles one.
+runtime) and loads the Firaxis DLLs from the user's game folder. The c5h tools run on the bundled Python.
 
 The files come from git (git archive HEAD), so the kit is exactly a commit plus an exe built from it: the build must be
-successful, built at HEAD and from clean sources. --worktree takes the working tree instead and allows a dirty or older
-build, for testing only (the kit is then marked dirty). --python-embed takes the Windows embeddable package from
-python.org (python-3.1x.y-embed-amd64.zip); its ._pth file gets ..\\python added, since the embeddable Python ignores
-PYTHONPATH. --smoke unpacks the zip into a temporary folder and runs c5h doctor there.
+successful, from clean sources, and built at HEAD or at a commit whose host sources (HOST_SOURCES) HEAD still has
+unchanged. --worktree takes the working tree instead and allows a dirty or older
+build, for testing only (the kit is then marked dirty).
+
+--python: the Python bundled in runtime/. By default the pinned PYTHON_EMBED (the version the tests run on), downloaded
+once from python.org into build/python-embed/ and checked against its pinned SHA-256; VERSION downloads another
+version's 64-bit embeddable package (its hash is printed and recorded, not checked); ZIP takes a local package; none
+bundles nothing (users then need Python 3.11 or newer). Every .exe, .dll and .pyd in the package must carry a valid
+Authenticode signature (Python Software Foundation, or Microsoft for the C runtime). Its ._pth file gets ..\\python
+added, since the embeddable Python ignores PYTHONPATH.
+
+--smoke unpacks the zip into a temporary folder and runs c5h doctor there: the kit's exe, profiles and probes must be
+found, and the bundled Python must be the one that ran.
 """
 from __future__ import annotations
 import argparse
@@ -41,15 +49,22 @@ import sys
 import tarfile
 import tempfile
 import tomllib
+import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 EXE = 'civ5headless.exe'
+# The bundled Python: python.org's Windows embeddable package (64-bit), the version the tests run on.
+PYTHON_EMBED = {'version': '3.12.10', 'sha256': '4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3'}
+PYTHON_URL = 'https://www.python.org/ftp/python/{v}/python-{v}-embed-amd64.zip'
+SIGNERS = ('CN=Python Software Foundation', 'CN=Microsoft')
 # What the kit takes from the repository (files or folders).
 KIT_PATHS = ['python/civ5headless', 'profiles', 'probes', 'examples', 'c5h.cmd', 'civ5headless.example.toml',
              'README.md', 'LICENSE', 'docs/user-guide.md', 'docs/verification.md', 'docs/profiles.md',
              'docs/engine-contract.md', 'docs/database-builder.md', 'docs/dll-additions.md']
 RENAMED = {'sdk/README.md': 'licenses/SDK-NOTICE.md'}
+# What civ5headless.exe is built from (tools/build_host.py).
+HOST_SOURCES = ['host', 'sdk', 'tools/build_host.py', 'tools/toolchain.py']
 REPOSITORY_URL = 'https://github.com/ruskyandrei/civ5-headless'
 
 QUICKSTART = """civ5-headless {version}
@@ -134,22 +149,75 @@ def stage_from_worktree(stage):
         shutil.copy2(ROOT / src, stage / dst)
 
 
-def add_runtime(stage, embed_zip):
-    """Unpack the embeddable Python into runtime/ and let it find ..\\python. Returns its version string."""
+def python_package(choice):
+    """(zip path, version, pinned) for --python: the pinned version, another VERSION (downloaded), or a local ZIP."""
+    if Path(choice).suffix.lower() == '.zip':
+        p = Path(choice).resolve()
+        if not p.is_file():
+            raise SystemExit(f'--python: {p} does not exist')
+        m = re.search(r'python-(\d+\.\d+\.\d+)', p.name)
+        return p, m.group(1) if m else '?', False
+    if not re.fullmatch(r'3\.\d+\.\d+', choice):
+        raise SystemExit(f'--python: {choice!r} is not a version (3.x.y), a .zip or none')
+    url = PYTHON_URL.format(v=choice)
+    cached = ROOT / 'build/python-embed' / url.rsplit('/', 1)[1]
+    if not cached.is_file():
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        print(f'downloading {url}', flush=True)
+        part = cached.with_suffix('.part')
+        with urllib.request.urlopen(url, timeout=120) as r, part.open('wb') as f:
+            shutil.copyfileobj(r, f)
+        part.replace(cached)
+    pinned = choice == PYTHON_EMBED['version']
+    if pinned and sha256(cached) != PYTHON_EMBED['sha256']:
+        raise SystemExit(f'{cached}: SHA-256 {sha256(cached)} is not the pinned {PYTHON_EMBED["sha256"]}; delete it '
+                         'to download again')
+    return cached, choice, pinned
+
+
+def check_signatures(folder):
+    """Every .exe, .dll and .pyd must carry a valid Authenticode signature by one of SIGNERS (PowerShell)."""
+    script = ("Get-ChildItem -LiteralPath $env:C5H_KIT_RUNTIME -Recurse -Include *.exe,*.dll,*.pyd | ForEach-Object { "
+              "$s = Get-AuthenticodeSignature -LiteralPath $_.FullName; "
+              "'{0}|{1}|{2}' -f $_.Name, $s.Status, $(if ($s.SignerCertificate) { $s.SignerCertificate.Subject } else { '' }) }")
+    shell = shutil.which('pwsh') or shutil.which('powershell')
+    if not shell:
+        raise SystemExit('PowerShell is needed to check the bundled Python\'s signatures')
+    proc = subprocess.run([shell, '-NoProfile', '-NonInteractive', '-Command', script], capture_output=True, text=True,
+                          env=dict(os.environ, C5H_KIT_RUNTIME=str(folder)))
+    rows = [line.split('|', 2) for line in proc.stdout.splitlines() if line.count('|') >= 2]
+    if proc.returncode or not rows:
+        raise SystemExit(f'signature check failed: {proc.stderr.strip()[-500:]}')
+    bad = [f'{name} ({status}, {signer or "unsigned"})' for name, status, signer in rows
+           if status != 'Valid' or not signer.startswith(SIGNERS)]
+    if bad:
+        raise SystemExit('the Python package has files without a valid PSF or Microsoft signature: ' + ', '.join(bad))
+    return len(rows)
+
+
+def add_runtime(stage, choice):
+    """Unpack the embeddable Python into runtime/ and let it find ..\\python. Returns kit.json's python entry."""
+    package, version, pinned = python_package(choice)
     runtime = stage / 'runtime'
-    with zipfile.ZipFile(embed_zip) as z:
+    with zipfile.ZipFile(package) as z:
         z.extractall(runtime)
     pth = sorted(runtime.glob('python3*._pth'))
     m = re.fullmatch(r'python3(\d+)\._pth', pth[0].name) if pth else None
     if not m or int(m.group(1)) < 11:
-        raise SystemExit(f'{embed_zip}: not an embeddable Python 3.11 or newer (no python311._pth or later)')
+        raise SystemExit(f'{package}: not an embeddable Python 3.11 or newer (no python311._pth or later)')
     lines = pth[0].read_text(encoding='utf-8').splitlines()
     pth[0].write_text('\n'.join(lines + ['..\\python']) + '\n', encoding='utf-8')
     for name in ('_sqlite3.pyd', 'sqlite3.dll', 'python.exe'):
         if not (runtime / name).is_file():
-            raise SystemExit(f'{embed_zip}: {name} is missing; c5h needs it')
-    version = re.search(r'python-(\d+\.\d+\.\d+)', Path(embed_zip).name)
-    return version.group(1) if version else f'3.{m.group(1)}'
+            raise SystemExit(f'{package}: {name} is missing; c5h needs it')
+    signed = check_signatures(runtime)
+    probe = subprocess.run([str(runtime / 'python.exe'), '-c', 'import sys, sqlite3, tomllib, ctypes, winreg; '
+                            'import civ5headless.cli; print(sys.version.split()[0])'],
+                           capture_output=True, text=True, cwd=stage)
+    if probe.returncode:
+        raise SystemExit(f'the bundled Python cannot import the c5h package: {probe.stderr.strip()[-800:]}')
+    return {'version': probe.stdout.strip(), 'package': package.name, 'sha256': sha256(package), 'pinned': pinned,
+            'signedFiles': signed}
 
 
 def make_zip(stage, zip_path):
@@ -159,8 +227,8 @@ def make_zip(stage, zip_path):
                 z.write(p, Path(stage.name) / p.relative_to(stage))
 
 
-def smoke(zip_path):
-    """Unpack into a temporary folder and run c5h doctor --json there; the kit's own files must be found."""
+def smoke(zip_path, bundled):
+    """Unpack into a temporary folder and run c5h doctor --json there; the kit's own files (and Python) must be used."""
     with tempfile.TemporaryDirectory(prefix='c5h-kit-') as tmp:
         with zipfile.ZipFile(zip_path) as z:
             z.extractall(tmp)
@@ -180,6 +248,10 @@ def smoke(zip_path):
             got = (values.get(key) or {}).get('value')
             if not got or os.path.normcase(str(Path(got))) != os.path.normcase(str(want)):
                 problems.append(f'{key}: {got} (expected {want})')
+        if bundled:
+            detail = next((c.get('detail', '') for c in report.get('checks', []) if c.get('what') == 'Python'), '')
+            if os.path.normcase(str(kit / 'runtime')) not in os.path.normcase(detail):
+                problems.append(f'Python: not the bundled runtime ({detail[:200]})')
         print(f'smoke: c5h doctor exit {proc.returncode} in {kit.name}' + ('' if not problems else ': ' + '; '.join(problems)))
         return not problems
 
@@ -188,17 +260,23 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--exe', help='build folder or exe (default: out/latest.txt)')
     ap.add_argument('--out', default=str(ROOT / 'dist'), help='output folder (default: dist/)')
-    ap.add_argument('--python-embed', metavar='ZIP', help="python.org's Windows embeddable package to bundle as runtime/")
+    ap.add_argument('--python', default=PYTHON_EMBED['version'], metavar='VERSION|ZIP|none',
+                    help=f"Python bundled in runtime/ (default: {PYTHON_EMBED['version']}, pinned; none: no runtime)")
     ap.add_argument('--worktree', action='store_true', help='take files from the working tree; allow a dirty or older build')
     ap.add_argument('--smoke', action='store_true', help='unpack the kit into a temporary folder and run c5h doctor there')
     args = ap.parse_args()
 
     build, info = find_build(args.exe)
     head = git('rev-parse', 'HEAD')
-    dirty_paths = git('status', '--porcelain', '--', *KIT_PATHS, 'host', 'sdk', 'tools/build_host.py').splitlines()
+    dirty_paths = git('status', '--porcelain', '--', *KIT_PATHS, *HOST_SOURCES).splitlines()
     problems = []
-    if info.get('git_head') != head:
-        problems.append(f"the exe was built at {info.get('git_head', '?')[:10]}, HEAD is {head[:10]}")
+    built_at = info.get('git_head') or ''
+    if built_at != head:
+        # An exe built at an earlier commit is still HEAD's when nothing it is built from changed since.
+        same = subprocess.run(['git', 'diff', '--quiet', built_at, head, '--', *HOST_SOURCES], cwd=ROOT).returncode == 0 \
+            if re.fullmatch(r'[0-9a-f]{40}', built_at) else False
+        if not same:
+            problems.append(f"the exe was built at {built_at[:10] or '?'} and the host sources changed since (HEAD {head[:10]})")
     if info.get('git_dirty_paths'):
         problems.append('the exe was built from uncommitted host sources')
     if dirty_paths and args.worktree:
@@ -233,8 +311,8 @@ def main():
                   'exeSha256': sha256(stage / 'bin' / EXE)}
     (stage / 'bin/build-info.json').write_text(json.dumps(build_info, indent=1) + '\n', encoding='utf-8')
 
-    runtime = add_runtime(stage, args.python_embed) if args.python_embed else None
-    python = f'nothing else: Python {runtime} is bundled in runtime\\' if runtime else \
+    runtime = None if args.python.lower() == 'none' else add_runtime(stage, args.python)
+    python = f'nothing else (Python {runtime["version"]} is bundled in runtime\\)' if runtime else \
         'Python 3.11 or newer (python.org; c5h.cmd finds python on PATH or the py launcher)'
     (stage / 'QUICKSTART.txt').write_text(QUICKSTART.format(version=f'{version} ({head[:9]})', python=python),
                                           encoding='utf-8')
@@ -249,7 +327,7 @@ def main():
     shutil.rmtree(stage)
     print(json.dumps({'zip': str(zip_path), 'bytes': zip_path.stat().st_size, 'sha256': sha256(zip_path),
                       'dirty': dirty, 'problems': problems, 'python': kit['python']}, indent=1))
-    if args.smoke and not smoke(zip_path):
+    if args.smoke and not smoke(zip_path, bool(runtime)):
         return 1
     return 0
 
