@@ -501,6 +501,7 @@ tr.winner td{font-weight:650}tr.dead td{color:var(--muted)}
 .filters{display:flex;gap:10px;margin:6px 0;font-size:13px}.filters select{font:inherit;background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:4px}
 .theme{font:inherit;font-size:12px;background:var(--panel);color:var(--muted);border:1px solid var(--line);border-radius:12px;padding:2px 10px;cursor:pointer}
 .note{color:var(--muted);font-size:13px;margin:6px 0}
+.kv>div{min-width:0;overflow-wrap:anywhere}
 .state{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600;color:#fff;background:var(--na);text-transform:uppercase}
 .state.completed{background:var(--ok)}.state.failed{background:var(--bad)}
 '''
@@ -661,7 +662,7 @@ def _players_table(m, ps):
         tail = (f'<p class="note">City-states ({alive} of {len(minors)} alive): '
                 + ', '.join(f'<span class="dot" style="background:var(--p{p["id"]})"></span>{h(p["name"])}'
                             + (' (gone)' if p.get('alive') is False else '') for p in minors) + '</p>')
-    return head + ''.join(body) + '</tbody></table>' + tail
+    return '<div class="scroll">' + head + ''.join(body) + '</tbody></table></div>' + tail
 
 
 def _charts(m, ps):
@@ -901,8 +902,8 @@ def _files(run):
             rows.append(f'<tr><td><a href="{h(p.name)}">{h(p.name)}</a></td><td class="num">{size(p.stat().st_size)}</td>'
                         f'<td class="num"></td><td>{h(FILES.get(p.name, ""))}</td></tr>')
     total = sum(f.stat().st_size for f in run.rglob('*') if f.is_file())
-    return ('<table><thead><tr><th>file</th><th class="num">size</th><th class="num">files</th><th>what</th></tr></thead><tbody>'
-            + ''.join(rows) + f'</tbody></table><p class="note">{size(total)} in all (this page included, as written).</p>')
+    return ('<div class="scroll"><table><thead><tr><th>file</th><th class="num">size</th><th class="num">files</th><th>what</th></tr></thead><tbody>'
+            + ''.join(rows) + f'</tbody></table></div><p class="note">{size(total)} in all (this page included, as written).</p>')
 
 
 def _section(sid, title, body):
