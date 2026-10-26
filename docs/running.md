@@ -384,8 +384,8 @@ how to read the report.
 | Mode | Needs the game | Time | Plays |
 |---|---|---|---|
 | `c5h verify --host-only` | no | about 5 min | host references (repeat, extra frames, shifted memory), probe check, a small ensemble, throughput |
-| `c5h verify` (`--quick`) | yes | about 20–25 min | the real game: 4 setups to turn 0 and a Tiny game of 150 turns; beside it the host references and a 32-game ensemble |
-| `c5h verify --full` | yes | about 45–55 min | adds a real repeat game, a Standard game on both sides, a larger ensemble, host games to victory |
+| `c5h verify` (`--quick`) | yes | about 10 min | the real game: 4 setups to turn 0 and a Tiny game of 150 turns; beside it the host references and a 32-game ensemble |
+| `c5h verify --full` | yes | about 20–25 min | adds a real repeat game, a Standard game on both sides, a larger ensemble, host games to victory |
 
 ```
 :: before anything else, and in CI

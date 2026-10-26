@@ -14,8 +14,8 @@ It also measures speed and memory on both sides and keeps a history per machine.
 ## Running it
 
 ```
-c5h verify                 # quick mode (the default), about 20-25 minutes
-c5h verify --full          # about 45-55 minutes
+c5h verify                 # quick mode (the default), about 10 minutes
+c5h verify --full          # about 20-25 minutes
 c5h verify --host-only     # about 5 minutes, no real game: for CI
 c5h verify --analyse runs/verify-quick-20261025-201500    # checks and report again from a finished run
 c5h verify --host-only --no-mods --dll "<game>/Assets/DLC/Expansion2/CvGameCore_Expansion2.dll"   # the stock DLL
@@ -29,8 +29,8 @@ open it in a browser) and `verify.json` (the same content for scripts). `c5h ver
 
 | Mode | Real game | Host, at the same time | Time |
 |---|---|---|---|
-| quick | one launch; 4 setups to turn 0; one seeded Tiny game of 150 turns | the same games; A/A, frame-skew, heap-perturbation and probe-off references; an ensemble of 32 Tiny games | about 20-25 min |
-| full | adds a real A/A of the Tiny game and a Standard game of 60 turns | adds the Standard game, a 64-game ensemble and 4 Tiny games to victory | about 45-55 min |
+| quick | one launch; 4 setups to turn 0; one seeded Tiny game of 150 turns | the same games; A/A, frame-skew, heap-perturbation and probe-off references; an ensemble of 32 Tiny games | about 10 min |
+| full | adds a real A/A of the Tiny game and a Standard game of 60 turns | adds the Standard game, a 64-game ensemble and 4 Tiny games to victory | about 20-25 min |
 | host-only | none | 4 setups twice; the references; an ensemble of 8 | about 5 min |
 
 The real game needs the real-game session (`civ5headless.realgame.session`, FireTuner enabled; `c5h doctor`). The
@@ -251,7 +251,7 @@ The history is `<runs>/verify-history/<machine>.jsonl`, one line per run; the re
 
 ## Calibration
 
-The defaults below were set without the real game; the first real-game runs (phase E) set them:
+The defaults below were set without the real game, for the first real-game runs (phase E) to set:
 
 - the envelope (`envelope_target`, `envelope_alpha`, `envelope_margin`) and bias thresholds (`bias_alpha`,
   `bias_one_sided`, `bias_min_members`, `bias_z_cap`), from real games scored against their ensembles;
@@ -261,6 +261,18 @@ The defaults below were set without the real game; the first real-game runs (pha
   larger ensemble (64); whether longer horizons are needed for useful statistical power is for calibration to decide;
 - `heal_turns`, and whether `ui_sections` and `pregame_ignore` need more entries once real PreGame dumps exist;
 - the default setups, civilizations and city-states: every one must start in the real game with the shared seeds.
+
+The first real-game runs (2026-10-26; "Runs on record") kept them:
+- every statistical check passed with a wide margin: envelope 95–97% against thresholds of 85–89%, no bias flagged,
+  global p 0.67–0.79;
+- the 4 default setups started in the real game with the shared seeds and matched at turn 0 for all three DLLs;
+- quick and full mode took less than half their budgets (25 and 55 minutes), so the budgets were left as they are;
+- the real game costs about 13x the host per turn with Vox Populi and 22x with the stock DLL;
+- `pregame_ignore` needed no entries: a getter only one side answers now warns, and the values both sides report
+  were all equal.
+
+What one run per DLL cannot settle: the bias thresholds' false-alarm rate over many runs, and whether the
+divergences that the upstream determinism fixes remove show up in longer or larger games.
 
 ## Configuration
 
@@ -331,6 +343,15 @@ Host-only mode, Tiny Continents, 150 turns, 8 host processes at most, on the dev
 |---|---|---|---|
 | Vox Populi (digest additions), its mods | 4.0 min | pass | A/A, frame skew, heap perturbation: 150 of 150 turns (digests); no UI hazard a game can reach (259 input-only); the DLL chose the city-states; the ensemble varies the map seed; 0.43 s per turn, 450 MB |
 | stock BNW DLL, no mods | 0.8 min | warn | the fingerprint compares (no digests): 150 of 150 turns; dense and sparse fingerprints agree; the specs named the city-states and the host applied them; the sync seed changes this DLL's games, so the ensemble keeps the map; 37 game-reachable UI hazards (EUI_core_library and EUI_tooltip_library, EUI being installed as DLC: 20; LeaderHeadRoot, TradeLogic, TopPanel: 17) and 25 EUI files no profile knows: the warning; 0.08 s per turn, 121 MB |
+
+With the real game, on the development machine (2026-10-26; one real game beside 8 host processes):
+
+| DLL and mods | Mode | Time | Verdict | Real game against the host |
+|---|---|---|---|---|
+| Vox Populi fork with the digest additions, its mods | quick | 11.1 min | warn (PreGame API) | 148 of 148 turns identical (digests); 0.36 against 2.52 s per turn |
+| stock BNW DLL, no mods | quick | 5.2 min | warn (PreGame API, UI hazards) | 150 of 150 turns identical (fingerprints); 0.06 against 1.38 s per turn |
+| Vox Populi 5.4.8 release, its 5 mods | quick | 10.1 min | fail (1 ensemble game: localization rebuilt by the real game, since fixed) | 150 of 150 turns identical (fingerprints); 0.18 against 2.29 s per turn |
+| Vox Populi 5.4.8 release, its 5 mods | full | 22.5 min | warn (PreGame API, 3 UI hazards) | 150 of 150 Tiny turns and 60 of 60 Standard turns identical; the real game repeats itself (150 of 150); 64 of 64 ensemble games; 4 of 4 victory games; 0.18 against 2.37 s per turn (Standard: 0.30 against 3.84), 288 MB against 1570 MB |
 
 ## Output folder
 

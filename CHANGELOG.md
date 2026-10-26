@@ -24,7 +24,7 @@ First release.
   - `hazards`: UI code that changes the game state.
   - `verify`: the verification suite. The host against itself (A/A, frame skew, heap perturbation, probes), and
     against the real game: the same setups and a seeded game turn by turn, the database, and an ensemble for the
-    statistics. Modes: `--host-only` (about 5 minutes), quick (about 10), `--full`.
+    statistics. Modes: `--host-only` (about 5 minutes), quick (about 10), `--full` (about 22).
 - **UI emulation profiles** stand in for the game's UI where it changes the game state (popups, choices). Mod UI
   add-ins run in the host.
 - **Example specs** for 8 setups (Continents, Continental Drift, Pangaea, Communitu with options, Earth), each with
@@ -36,6 +36,6 @@ First release.
 
   | DLL and mods | Turns identical | Host speed |
   |---|---|---|
-  | Vox Populi 5.4.8 (release) | 150 of 150 | 13x the real game |
+  | Vox Populi 5.4.8 (release); full mode also a Standard map, 60 turns | 150 of 150; 60 of 60 | 13x the real game |
   | The stock DLL, no mods | 150 of 150 | 22x |
   | A Vox Populi fork with the host's optional state digests | 148 of 148 (full state digests) | 7x |

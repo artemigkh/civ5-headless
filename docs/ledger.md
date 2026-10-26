@@ -14,17 +14,17 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 - **The real game has plain VP 5.4.8 (packaged DLL `262AEE88`) with the 5 VP mods active.** The user asked for it, to
   play test games. Leave it installed; the source repository's ledger says where the field-map install is archived and
   how to restore it.
-- **Phase E, what is left (real game; keep runs short):**
-  1. Optional: one more plain-VP `verify --quick`, to see a clean ensemble with the localization copy (run 2 lost one
-     game to the localization rebuild).
-  2. `c5h verify --full` once, then set the thresholds, ensemble sizes, budgets and the planner's real/host ratio
-     (docs/verification.md, "Calibration").
-  3. The PreGame API gaps: the host has no `GetQuickCombat`, `GetQuickMovement` or `GetOverrideScenarioHandicap` (the
-     real game answers `false` for all three). The real game answers nothing for `GetClimate`, `GetSeaLevel`,
-     `IsHuman`, `IsMinorCiv` and `GetMinorCivType` after the start. Add the three getters to the host, and find out
-     why the real game answers nothing.
-- **Waiting on the user, not on the game:** creating the GitHub repository `ruskyandrei/civ5-headless` (private) and
-  pushing; phase F (README quickstart, release with binaries); opening the upstream VP pull requests (branches
+- **Phase E is done (2026-10-26).** The full verify on plain VP 5.4.8 passed with warnings only. The thresholds are
+  kept and the durations documented (docs/verification.md, "Calibration" and "Runs on record").
+- **Released:** 0.1.0, from the repository `ruskyandrei/civ5-headless` (private), with the kit attached.
+- **Open:**
+  1. The PreGame API gaps. The host has no `GetQuickCombat`, `GetQuickMovement` or `GetOverrideScenarioHandicap`
+     (the real game answers `false` for all three). The real game answers nothing for `GetClimate`, `GetSeaLevel`,
+     `IsHuman`, `IsMinorCiv` or `GetMinorCivType` after the start.
+  2. A GitHub Actions release workflow.
+  3. A `--turns` default that plays to the speed's last turn.
+  4. Longer or larger real games, to see whether the upstream determinism fixes matter there.
+- **Waiting on the user, not on the game:** making the repository public; opening the upstream VP pull requests (branches
   `vp-det-*` in the source repository, texts in its `docs/headless-upstream-prs.md`).
 - **Open, known limits:** UI popups reach add-in listeners only through profiles (generic routing not evaluated); the
   order of `<LuaContext>` children before the parent's script is assumed (engine-contract open question 11);
@@ -257,4 +257,23 @@ The host's own history (milestones M0–M6, parity work against the real game) i
     last turn of each speed, game lengths, replaying a seedless game from `spec-resolved.json`.
 - **Kit `0.1.0-619656f23`:** smoke test passes. From the unpacked kit, the seedless spec drew new seeds on each run,
   playing plain VP's DLL.
+
+### 2026-10-26: full verify, release 0.1.0
+
+- **`verify --full` on plain VP 5.4.8 (`runs/verify-full-20261026-130319`): warn, exit 0, 22.5 min.**
+  - Tiny: 150 of 150 turns identical to the real game. Standard size: 60 of 60. The real game repeats itself (150 of
+    150).
+  - Turn 0: 4 of 4 setups identical. Database identical; no unknown stubs; the city-states match.
+  - 64 of 64 ensemble games played, so both live-cache fixes hold with the real game. 4 of 4 victory games.
+  - Envelope 96.2%; no bias flagged (global p 0.72).
+  - Host 0.18 s/turn against 2.37 (12.8x), 288 MB against 1570 MB.
+  - Warnings: the PreGame API getters, and 3 reachable UI hazards.
+- **Calibration:** the statistical thresholds, ensemble sizes and budgets were kept: every statistical check passed
+  with a wide margin, and both modes took less than half their budget. The documented durations are now quick about
+  10 min and full about 20-25 min.
+- **Release:**
+  - `CHANGELOG.md` is added, the README status updated, and the changelog is in the kit.
+  - The repository `ruskyandrei/civ5-headless` was created private, as approved, and `main` pushed; the user asked
+    for the push and the release on 2026-10-26.
+  - Tag `v0.1.0`; the kit from the tagged commit is attached to the release.
 
