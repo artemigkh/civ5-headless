@@ -94,7 +94,8 @@ def main():
     # The Firaxis DLLs live in the game folder, which the host only learns from its command
     # line: delay-load them, so the driver can load them from there before first use.
     delay_loaded = ['CvGameDatabaseWin32Final Release.dll', 'CvLocalizationWin32Final Release.dll', 'lua51_Win32.dll']
-    link_flags = ['/NOLOGO', '/MACHINE:X86', '/DEBUG', '/SUBSYSTEM:CONSOLE', '/LARGEADDRESSAWARE',
+    # /PDBALTPATH: the exe names its .pdb without the build folder, so released binaries carry no local paths.
+    link_flags = ['/NOLOGO', '/MACHINE:X86', '/DEBUG', '/PDBALTPATH:%_PDB%', '/SUBSYSTEM:CONSOLE', '/LARGEADDRESSAWARE',
                   '/DYNAMICBASE', '/NXCOMPAT', '/MANIFEST', '/INCREMENTAL:NO', '/OPT:REF', '/OPT:ICF',
                   '/DEF:' + str(DEF_FILE)] + ['/DELAYLOAD:' + name for name in delay_loaded]
 
