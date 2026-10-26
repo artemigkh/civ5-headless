@@ -25,7 +25,11 @@ c5h run examples\specs\continents-tiny.json --turns 30   # one game with your ac
 c5h verify --host-only                                   # the host-only part of the verification suite
 ```
 
-`python tools/make_kit.py` makes the kit from a commit and a host built at that commit.
+[docs/running.md](docs/running.md) shows every option with examples: game specs, seeds, DLLs and mod sets, UI
+profiles, fingerprints, run outputs, queues, comparisons, the verification suite and the configuration file.
+
+`python tools/make_kit.py` makes the kit from a commit and a host built at that commit, with python.org's embeddable
+Python (pinned version and hash) in `runtime\`.
 
 ## Layout
 

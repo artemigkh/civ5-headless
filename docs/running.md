@@ -1,0 +1,407 @@
+# Running games
+
+A hands-on guide to playing games with `civ5headless`: what to install, how to describe a game, every option of
+`c5h run`, batches, comparisons, the verification suite and the configuration file, with examples. The
+[user guide](user-guide.md) explains how things work underneath; this page is about using them.
+
+Examples write `c5h`: that is `c5h.cmd` in the kit or checkout folder (`.\c5h.cmd` from PowerShell when the folder
+is not on `PATH`). Every command prints its options with `-h`, e.g. `c5h run -h`.
+
+## 1. What you need
+
+- Windows, and Civilization V with Brave New World from Steam, started at least once to its main menu. The game
+  writes the caches the host reads (`Civ5CoreDatabase.db`, `Localization-Merged.db`) at its first start.
+- **Release kit** (recommended): unpack `civ5-headless-<version>-<commit>.zip` anywhere. It brings the host
+  (`bin\civ5headless.exe`), its own Python (`runtime\`), the tools, profiles, probes, examples and these docs. Runs
+  and caches go into the kit folder.
+- **Checkout**: Python 3.11 or newer, and a host built with `python tools/build_host.py` (README, "Building").
+- No compiler is needed to run anything: the host uses the Visual C++ 2008 runtime that Civ V installs.
+- The real game is only needed for the verification suite's real-game checks (section 8).
+
+## 2. First steps
+
+```
+c5h doctor
+```
+
+`doctor` shows every setting with where it came from (discovered, the config file, a default) and checks three
+groups: what host games need, what real-game runs need, and the toolchain (only for building the host). Exit code 1
+means a host-game check failed; fix that first. What it discovers:
+
+| Setting | Found from |
+|---|---|
+| Game folder | Steam (registry, `libraryfolders.vdf`, the Civ V app manifest) |
+| My Games folder | the Documents known folder (follows a OneDrive-redirected Documents) |
+| MODS, cache, `config.ini` | inside My Games |
+| Active mods | the game's mods registry (`cache\Civ5ModsDatabase.db`): the mods you last activated in the game |
+| Game DLL | the first active mod's `CvGameCore_Expansion2.dll`, else the Community Patch folder's, else the game's own |
+| Host | the kit's `bin\`, or the latest build of a checkout |
+
+Then play a game:
+
+```
+c5h run examples\specs\continents-tiny.json --turns 50
+```
+
+This plays a Tiny Continents game with your active mods and DLL until turn 50 and prints progress as JSON lines.
+The run folder is `runs\continents-tiny-<date>-<time>\` (section 6). The first run with a mod set also builds and
+caches the game database (a few seconds); later runs reuse it.
+
+## 3. Describing a game: specs
+
+A spec is a JSON file that mirrors the single-player setup screens. Anything left out behaves like an untouched
+setup screen. Examples are in `examples\specs\`.
+
+### A minimal spec
+
+```json
+{"map": {"script": "Assets/Maps/Continents.lua", "size": "WORLDSIZE_TINY"},
+ "speed": "GAMESPEED_STANDARD", "era": "ERA_ANCIENT", "difficulty": "HANDICAP_EMPEROR",
+ "seeds": {"map": 30017, "sync": 40017}}
+```
+
+### Every field
+
+| Field | Meaning | Default |
+|---|---|---|
+| `map.script` | map script file as in the game's MapScripts table (`Assets/Maps/Pangaea.lua`, a mod's script such as `Communitu_79a.lua`), or `"random"` | Continents |
+| `map.size` | `WORLDSIZE_DUEL`, `_TINY`, `_SMALL`, `_STANDARD`, `_LARGE`, `_HUGE`, or `"random"` | Standard |
+| `map.options` | map script options by their `TXT_KEY_MAP_OPTION_*` name and value index | the script's defaults |
+| `map.civ5map` / `map.type` | a premade map instead of a script: a file from Map_Sizes, or a Maps type resolved by size | none |
+| `speed` | `GAMESPEED_QUICK`, `_STANDARD`, `_EPIC`, `_MARATHON` | Standard |
+| `era` | start era, e.g. `ERA_ANCIENT`, `ERA_MEDIEVAL` | Ancient |
+| `difficulty` | `HANDICAP_SETTLER` … `HANDICAP_DEITY` | Emperor |
+| `majors` | number of major civs | the world size's default |
+| `cityStates` | number of city-states | the world size's default |
+| `slots` | per slot: `{"slot": N, "civ": "CIVILIZATION_X", "team": T}` (unlisted slots: random civ, own team) | random civs |
+| `minorCivs` | city-state types (`MINOR_CIV_X`) in slot order, for DLLs that leave the choice to the game (section 3.4) | random |
+| `gameOptions` | e.g. `{"GAMEOPTION_RAGING_BARBARIANS": true}` | none set |
+| `victories` | the enabled victory types, e.g. `["VICTORY_DOMINATION", "VICTORY_TIME"]` | all |
+| `maxTurns` | the game's turn limit (time victory) | the speed's |
+| `seeds` | `{"map": M, "sync": S}` (section 3.2) | fresh random seeds |
+
+### More examples
+
+A Small Communitu map with options, six majors, raging barbarians, only domination and time victories, Greece in
+slot 1:
+
+```json
+{"map": {"script": "Communitu_79a.lua", "size": "WORLDSIZE_SMALL",
+         "options": {"TXT_KEY_MAP_OPTION_SEA_LEVEL": 3, "TXT_KEY_MAP_OPTION_WORLD_AGE": 4}},
+ "majors": 6, "cityStates": 10,
+ "gameOptions": {"GAMEOPTION_RAGING_BARBARIANS": true},
+ "victories": ["VICTORY_DOMINATION", "VICTORY_TIME"], "maxTurns": 200,
+ "slots": [{"slot": 1, "civ": "CIVILIZATION_GREECE", "team": 1}],
+ "seeds": {"map": 7, "sync": 8}}
+```
+
+Two teams of two on a Small Pangaea at Deity, quick speed:
+
+```json
+{"map": {"script": "Assets/Maps/Pangaea.lua", "size": "WORLDSIZE_SMALL"},
+ "speed": "GAMESPEED_QUICK", "difficulty": "HANDICAP_DEITY", "majors": 4,
+ "slots": [{"slot": 0, "team": 0}, {"slot": 1, "team": 0}, {"slot": 2, "team": 2}, {"slot": 3, "team": 2}]}
+```
+
+A premade map (`examples\specs\earth-small.json`):
+
+```json
+{"map": {"civ5map": "Assets/Maps/Earth_Small.Civ5Map"}, "speed": "GAMESPEED_QUICK"}
+```
+
+Check a spec without playing it: `c5h spec resolve SPEC.json` validates every name against the game database and
+prints the explicit form the host reads (IDs, the resolved random choices, the seeds). `c5h spec lua SPEC.json`
+prints the Lua that sets up the same game in the real game's setup screen.
+
+### 3.2 Seeds
+
+The map seed and the sync seed fix the whole game: the map, the civilizations, the city-states and every AI decision.
+The same spec, seeds, DLL, mods and database give the same game on every run, and the same game the real game plays.
+
+- A spec without seeds gets fresh random ones; they are recorded in the run folder (`spec-resolved.json`), so the
+  game can be played again.
+- `--seeds MAP SYNC` overrides the spec's seeds: `c5h run my.json --turns 100 --seeds 1001 2002`.
+- To get different games from one spec, vary the seeds. Some DLLs (Vox Populi) draw almost everything from the map
+  seed, so vary that one; the stock DLL uses both.
+
+### 3.3 How long
+
+`--turns N` plays until game turn N. A game also ends earlier on a victory, which the run records (winner, victory
+type, turn). For a game to victory, give a high `--turns` (e.g. 500) and, if you want a hard stop, `maxTurns` in the
+spec. A Standard game to victory takes about 10–15 minutes in the host; a Tiny game of 100 turns well under a minute.
+
+### 3.4 DLL and mods
+
+By default a game uses your active mods and the DLL that comes with them. To play something else:
+
+| You want | Use |
+|---|---|
+| Another DLL build with your mods | `--dll path\to\CvGameCore_Expansion2.dll` |
+| A different set of installed mods, without activating them in the game | `--mod <ModID>[:<version>]` per mod (repeatable) |
+| A MODS folder elsewhere (a pinned copy, another mod pack) | `--mods-dir D:\packs\VP-5.4.8\MODS` with `--mod ...` |
+| No mods at all | `--no-mods` |
+| Another mods registry (e.g. a copy of the game's) | `--mods-db path\to\Civ5ModsDatabase.db` |
+
+Mod IDs are the GUIDs in each mod's `.modinfo`; `c5h doctor` lists the active ones. A mod given without a version is
+its highest version in the MODS folder. Dependencies are put first automatically; a missing dependency, a version out
+of range or a mod that blocks another is an error, as in the game's mod browser.
+
+Which DLL plays: `--dll` if given, else a `dll` set in `civ5headless.toml`, else the DLL that comes with the mods
+being played. That is the first mod (in activation order) that ships a `CvGameCore_Expansion2.dll`, else the game's
+own, so `--no-mods` plays the game's own DLL. The run's `events.jsonl` and report say which DLL was used and why.
+
+```
+:: the stock game, no mods
+c5h run examples\specs\continents-tiny.json --turns 100 --no-mods
+
+:: Community Patch only, from your MODS folder
+c5h run examples\specs\continents-tiny.json --turns 100 --mod d1b6328c-ff44-4b0d-aad7-c657f83610cd
+
+:: a test build of the DLL against your usual mods
+c5h run examples\specs\continents-standard.json --turns 150 --dll C:\builds\test\CvGameCore_Expansion2.dll
+```
+
+Some DLLs, the stock one among them, leave the choice of random civilizations and city-states to the game's
+executable. The host then chooses them itself, which cannot match what the real game would choose. Name every civ in
+`slots` and the city-states in `minorCivs` when such a game is to be compared with the real game; for host-only work
+it does not matter. The run's `host-report.json` says who chose (`dll.hostChoseCivs`, `minorCivs`).
+
+### 3.5 The game database
+
+The host plays on the same game database the game builds when it loads your mods. It is built automatically and
+cached per mod set and DLL (`cache\db\`), starting from a snapshot of the base game and DLC that is itself built from
+the game's files. You rarely need to touch this:
+
+- `c5h dbcache` prints (and builds) the cached database for the current mods and DLL.
+- `--db path\to\built.db` plays on a database you built or captured yourself.
+- `c5h snapshot` builds the base-game snapshot on its own; `c5h dbbuild` builds a database step by step with a
+  report.
+
+## 4. Mod UI: add-ins and profiles
+
+The host has no user interface. Two things stand in for the parts of mod UI code that change the game:
+
+- **UI add-ins** (`InGameUIAddin` entries of your mods) run in a stand-in UI context, so add-ins that register
+  gameplay events work as in the game. `--skip-addin NAME` leaves one out (its file name, with or without `.lua`),
+  `--no-addins` leaves them all out.
+- **UI emulation profiles** (`profiles\`) reproduce what specific UI screens do to the game state (Vox Populi's
+  "who is winning" popup, EUI's civilization ribbon, Community Patch's city events). They are chosen automatically
+  from the mod files they match. `--profiles DIR` uses another folder, `--no-profiles` none.
+  [profiles.md](profiles.md) says how to write one.
+
+Which add-ins ran, which profiles were chosen and why, and which UI files the host does not know are in the run's
+`host-report.json`. `c5h hazards scan --report runs\NAME\host-report.json` lists UI code that changes the game state
+without a profile covering it: start there if a mod set's games look different from the real game.
+
+## 5. Fingerprints and probes
+
+`--fingerprint` makes the host write a compact per-turn summary of the game state into the run's `Lua.log`: hashes of
+the players, cities, units, techs, map and diplomacy, and per-player metrics (score, gold, cities, population, techs,
+policies, units, culture, faith, wonders, religions, wars). It works with any DLL and does not change the game.
+
+| Option | Effect |
+|---|---|
+| `--fingerprint` | every turn |
+| `--fingerprint-every 10` | every 10th turn |
+| `--fingerprint-turns 1,50,100` | these turns as well |
+| `--fingerprint-split N` | sections per log line (default 12; only matters for very long lines) |
+
+Use it to compare two runs exactly (`c5h fingerprint compare runs\A runs\B`), to see where two games part ways, or as
+the source of per-turn metrics. The real-game side of the verification suite injects the same probe.
+
+`--lua-probe FILE` runs your own Lua file in the game's Lua context when the game has started, before turn 0 is
+played (repeatable). It can register `GameEvents` listeners and `print` what it wants to `Lua.log`. Use plain getters
+only: a probe that changes the game changes the result.
+
+```lua
+-- my-probes/gold.lua: every 10th turn, each major civ's gold and number of cities
+GameEvents.PlayerDoTurn.Add(function(iPlayer)
+    local turn = Game.GetGameTurn()
+    local p = Players[iPlayer]
+    if turn % 10 == 0 and p:IsAlive() and not p:IsMinorCiv() and not p:IsBarbarian() then
+        print(string.format("GOLD|turn=%d|player=%d|gold=%d|cities=%d", turn, iPlayer, p:GetGold(), p:GetNumCities()))
+    end
+end)
+```
+
+```
+c5h run examples\specs\continents-standard.json --turns 200 --lua-probe my-probes\gold.lua
+findstr "GOLD|" runs\NAME\Logs\Lua.log
+```
+
+## 6. What a run leaves behind
+
+Every game gets a run folder: `runs\NAME\`, with `--run NAME` choosing the name (default `<spec>-<date>-<time>`) and
+`--run-dir DIR` any folder.
+
+| File | Contents |
+|---|---|
+| `status.json` | the outcome: completed, stopped or failed, turns played, wall time, CPU, peak memory |
+| `events.jsonl` | what the runner did, one JSON line per event (database build, launch, turns, end) |
+| `setup.json`, `spec-resolved.json` | the game as set up: map, civs, seeds (enough to play it again) |
+| `turn-times.jsonl` | seconds per turn |
+| `checkpoints\turn-NNNN.json` | a snapshot of the game each turn (players, cities, units, scores) |
+| `replay-data.json`, `replay-messages.json` | the game's replay: per-player series and the event log |
+| `host-report.json` | the host's view: DLL, mods, add-ins, profiles, Lua errors, engine calls it only stubs |
+| `host-stdout.txt` | the host's console output |
+| `Logs\` | the DLL's own logs: `Lua.log` (with fingerprints), AI logs, and `HeadlessDigest.log` for DLLs with the digest additions |
+
+`--prune` deletes the bulky parts afterwards (the database copy, state dumps and AI logs).
+
+## 7. Many games: queues
+
+A queue file describes many games; `c5h queue run` plays them in parallel, one per CPU core by default.
+
+```json
+{"comment": "four seeds of a Standard game, 150 turns, with the current mods and DLL",
+ "workers": 8,
+ "defaults": {"spec": "../specs/continents-standard.json", "turns": 150, "fingerprint": true},
+ "variants": {"base": {}},
+ "seeds": [[1001, 2002], [3101, 3202], [4101, 4202], [5101, 5202]]}
+```
+
+```
+c5h queue run my-queue.json
+c5h queue status my-queue.json
+```
+
+- Jobs are every seed with every variant, named `<variant>-m<map>-s<sync>`, plus any explicit `"jobs"`.
+- Every `c5h run` option can be set in `defaults`, a variant or a job, under its JSON name: `spec`, `turns`, `dll`,
+  `db`, `modsDir`, `modsDb`, `mods` (`["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`,
+  `noAddins`, `fingerprint` (`true` or `{"every": K, "turns": [...], "split": N}`), `luaProbes`, `seeds`,
+  `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `prune`, `lowPriority`, `hostArgs`.
+- Paths in the file are relative to the file. Run folders go to `"out"` (default `runs\<queue file name>`).
+- The queue is resumable: `QUEUE.state.json` remembers what is done. Stop it with Ctrl-C (running games are killed and
+  re-queued at the next start) or by creating `QUEUE.stop` (running games finish, no new ones start). Rerun
+  `queue run` to continue; `--retry-failed` retries failed games.
+- `--workers N` sets the number of games at once. Workers are pinned to physical cores (`--affinity none` turns that
+  off) and run below normal priority, so the machine stays usable.
+
+An A/B test of two DLL builds over four seeds (`examples\queues\example-ab.json`):
+
+```json
+{"workers": 8,
+ "defaults": {"spec": "../specs/continents-standard.json", "turns": 150, "maxSeconds": 3600, "prune": true},
+ "variants": {"A": {"dll": "path/to/baseline/CvGameCore_Expansion2.dll"},
+              "B": {"dll": "path/to/test/CvGameCore_Expansion2.dll"}},
+ "seeds": [[1001, 2002], [3101, 3202], [4101, 4202], [5101, 5202]]}
+```
+
+Host games are deterministic, so one game per seed and variant is enough: a difference between A and B on the same
+seed is caused by the change, not by chance. More seeds give more confidence in a trend.
+`c5h queue compare my-queue.json` compares each seed's variants turn by turn.
+
+## 8. Comparing runs
+
+| Command | Compares |
+|---|---|
+| `c5h compare A B` | per-turn state digests (DLLs with the digest additions): first differing turn, sections, transients |
+| `c5h fingerprint compare A B` | per-turn fingerprints (any DLL, runs played with `--fingerprint`), with the metrics of the first differing turn |
+| `c5h fingerprint show A --metrics` | what one run's fingerprint log holds |
+| `c5h queue compare Q` | every seed's variants of a queue |
+| `c5h dbdiff A.db B.db` | two game databases, table by table |
+
+Exit code 0 means identical. A difference that heals within two turns (`--heal-turns`) is reported as a transient.
+
+## 9. The verification suite
+
+`c5h verify` answers: for this DLL, these mods and these maps, how closely does a headless game represent a real Civ
+V autoplay game, and how much faster and leaner is it? [verification.md](verification.md) explains the checks and
+how to read the report.
+
+| Mode | Needs the game | Time | Plays |
+|---|---|---|---|
+| `c5h verify --host-only` | no | about 5 min | host references (repeat, extra frames, shifted memory), probe check, a small ensemble, throughput |
+| `c5h verify` (`--quick`) | yes | about 20–25 min | the real game: 4 setups to turn 0 and a Tiny game of 150 turns; beside it the host references and a 32-game ensemble |
+| `c5h verify --full` | yes | about 45–55 min | adds a real repeat game, a Standard game on both sides, a larger ensemble, host games to victory |
+
+```
+:: before anything else, and in CI
+c5h verify --host-only
+
+:: the stock game
+c5h verify --host-only --no-mods
+
+:: a different map and size for the trajectory and ensemble games
+c5h verify --map Assets/Maps/Pangaea.lua --size WORLDSIZE_SMALL --turns 120
+
+:: a fixed time budget, warnings as failures
+c5h verify --budget 20 --strict
+```
+
+The result is `report.html` and `verify.json` in `runs\verify-<mode>-<date>-<time>\`. The exit code is 0 for pass
+(warnings allowed), 1 for fail (or a warning with `--strict`), 2 for a usage or configuration error, 3 for an
+incomplete run. Real-game modes need FireTuner on (`EnableTuner = 1` in the game's `config.ini`; `c5h doctor` checks)
+and leave `config.ini` as they found it.
+
+Other options: `--spec FILE` (the trajectory and ensemble game), `--seeds MAP SYNC`, `--players N`,
+`--city-states N`, `--ensemble N`, `--workers N`, `--dll`, `--db`, `--mod`, `--setups FILE` or `--no-setups`,
+`--out DIR`, and `--analyse DIR` to rebuild the checks and report of a finished run.
+
+## 10. Configuration file
+
+Discovery covers the usual setup. Anything to pin or override goes in `civ5headless.toml`, in the kit or checkout
+folder (or the folder you run `c5h` from, or the file named by `C5H_CONFIG`, or `c5h --config FILE`). Every key is
+optional; relative paths are relative to the file. Use forward slashes or single quotes for Windows paths.
+
+```toml
+# play against a pinned copy of the mods instead of the live MODS folder
+mods_dir = "D:/civ5/pinned-vp-5.4.8/MODS"
+mods_db  = "D:/civ5/pinned-vp-5.4.8/Civ5ModsDatabase.db"
+
+# a DLL under development
+dll = "C:/dev/vp/build/CvGameCore_Expansion2.dll"
+
+# run folders and caches somewhere with space
+runs     = "E:/c5h-runs"
+db_cache = "E:/c5h-cache/db"
+
+[verify]
+turns = 120
+ensemble = 48
+```
+
+All keys: `workspace`, `game_dir`, `user_dir`, `mods_dir`, `cache_dir`, `mods_db`, `loc_db`, `config_ini`, `dll`,
+`snapshot`, `db`, `db_cache`, `exe`, `profiles`, `probes`, `toolchain`, `runs`; `[verify]` holds the verification
+suite's settings (verification.md). `civ5headless.example.toml` describes each one. `c5h doctor` shows the result.
+
+## 11. Limits and resources
+
+| Option | Effect | Default |
+|---|---|---|
+| `--maximum-seconds S` | stop the game after S seconds | 6 hours |
+| `--stall-seconds S` | stop it when no turn completes for S seconds | 900 |
+| `--max-memory-mb MB` | memory limit of the host process (0: none) | 3500 |
+| `--affinity MASK` | CPU affinity of the host, e.g. `0x3` | none |
+| `--low-priority` | run below normal priority | off for `run`, on in queues |
+| `--checkpoint-every N` | checkpoint every N turns | 1 |
+
+A game stopped by a limit keeps its run folder with status `stopped` or `failed` and the reason. A host crash writes
+`HHCRASH` lines (exception, module and offset, registers, stack) to the host's output, `host-stdout.txt`.
+
+## 12. Development options
+
+For DLL and host developers; regular runs do not need them.
+
+| Option | Effect |
+|---|---|
+| `--frame-skew K` | an extra engine update before every K-th one: a game that changes is frame-rate dependent |
+| `--heap-perturb SEED` | moves the DLL and the heap: a game that changes depends on memory addresses |
+| `--host-arg ARG` | pass an option straight to `civ5headless.exe` (repeatable), e.g. `--host-arg=--no-game-logging` |
+| `--exe`, `--game-dir`, `--loc-db` | another host build, game folder or localization database |
+| `--diagnostics`, `--improved-mask`, `--ab-role` | A/B switches of the Vox Populi fork's stacking AI (DLLs with those switches) |
+
+`c5h compare` with `--frame-skew` and `--heap-perturb` runs is how the verification suite checks a DLL's
+reproducibility (`c5h verify --host-only` does it for you).
+
+## 13. Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `doctor`: no `Civ5CoreDatabase.db` or `Localization-Merged.db` | start the game once to its main menu |
+| `doctor`: game folder not found | Steam library elsewhere: set `game_dir` in `civ5headless.toml` |
+| a mod set fails to build | `c5h dbbuild` shows the step and the mod file that failed |
+| Lua errors in `host-report.json` | a mod's UI add-in failed in the stand-in UI; `--skip-addin NAME` if it is UI-only |
+| games differ from the real game | `c5h hazards scan --report RUN\host-report.json`; then `c5h verify` |
+| the run stops with `stalled` | the DLL is stuck in a turn; `host-stdout.txt` and `Logs\` show where |
+| Python not found (checkout) | install Python 3.11+, or set `C5H_PYTHON` to a `python.exe` |

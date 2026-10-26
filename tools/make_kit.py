@@ -60,7 +60,7 @@ PYTHON_URL = 'https://www.python.org/ftp/python/{v}/python-{v}-embed-amd64.zip'
 SIGNERS = ('CN=Python Software Foundation', 'CN=Microsoft')
 # What the kit takes from the repository (files or folders).
 KIT_PATHS = ['python/civ5headless', 'profiles', 'probes', 'examples', 'c5h.cmd', 'civ5headless.example.toml',
-             'README.md', 'LICENSE', 'docs/user-guide.md', 'docs/verification.md', 'docs/profiles.md',
+             'README.md', 'LICENSE', 'docs/running.md', 'docs/user-guide.md', 'docs/verification.md', 'docs/profiles.md',
              'docs/engine-contract.md', 'docs/database-builder.md', 'docs/dll-additions.md']
 RENAMED = {'sdk/README.md': 'licenses/SDK-NOTICE.md'}
 # What civ5headless.exe is built from (tools/build_host.py).
@@ -81,7 +81,8 @@ Not needed: a compiler. civ5headless.exe uses the Visual C++ 2008 runtime that C
   c5h verify                                    host against the real game (needs the game and FireTuner on)
 
 Run c5h.cmd from this folder (or put the folder on PATH). Settings go in civ5headless.toml next to it; see
-civ5headless.example.toml. docs\\user-guide.md has the details, docs\\verification.md the verification suite.
+civ5headless.example.toml. docs\\running.md shows every option with examples, docs\\user-guide.md explains how it
+works, docs\\verification.md covers the verification suite.
 """
 
 SOURCE = """civ5-headless is free software under the GNU General Public License v3 (LICENSE).
