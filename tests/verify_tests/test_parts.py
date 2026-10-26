@@ -132,6 +132,19 @@ class SettingsTest(unittest.TestCase):
         f = settings_mod.build('full')
         self.assertEqual((f.real_aa, f.standard_turns, f.ensemble, f.victory_games), (True, 60, 64, 4))
 
+    def test_active_mods_are_frozen(self):
+        from types import SimpleNamespace
+        from civ5headless.verify.suite import freeze_mods
+        active = [SimpleNamespace(id='aaaaaaaa-0000-0000-0000-000000000001', version=151),
+                  SimpleNamespace(id='aaaaaaaa-0000-0000-0000-000000000002', version=17)]
+        cfg = SimpleNamespace(active_mods=active)
+        # the configured active set becomes explicit, so host games do not read the registry the real game rewrites
+        self.assertEqual(freeze_mods(settings_mod.build('quick'), cfg),
+                         ['aaaaaaaa-0000-0000-0000-000000000001:151', 'aaaaaaaa-0000-0000-0000-000000000002:17'])
+        self.assertIsNone(freeze_mods(settings_mod.build('quick', overrides=dict(no_mods=True)), cfg))
+        self.assertIsNone(freeze_mods(settings_mod.build('quick', overrides=dict(mods=['x:1'])), cfg))
+        self.assertIsNone(freeze_mods(settings_mod.build('quick'), SimpleNamespace(active_mods=[])))
+
     def test_errors(self):
         with self.assertRaises(settings_mod.SettingsError):
             settings_mod.build('quick', {'no_such_key': 1})

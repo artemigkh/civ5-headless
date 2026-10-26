@@ -30,6 +30,16 @@ from . import capabilities, checks, exact, hostside, perf, pins, probes, realsid
 FORMAT = 'civ5headless-verify/1'
 
 
+def freeze_mods(settings, cfg):
+    """The configured active mods as an explicit mod set ("ID:VERSION"), or None when the run has its own set (--mod,
+    --no-mods) or none is active. With an explicit set the host games use a registry generated from the .modinfo
+    files: the game's own registry is rewritten while the real game launches and activates mods, and a host game
+    started then would find no active mods."""
+    if settings.no_mods or settings.mods or not cfg.active_mods:
+        return None
+    return [f'{m.id}:{m.version}' for m in cfg.active_mods]
+
+
 class Suite:
     def __init__(self, cfg, settings, out_dir=None, caps_overrides=None, play=None, log=None):
         self.cfg, self.settings = cfg, settings
@@ -63,6 +73,10 @@ class Suite:
         self.log(f'verify {s.mode}: budget {s.budget_minutes:g} min, out {self.out}')
         for k, why in self.caps.notes.items():
             self.log(f'  not available: {k}: {why}')
+        frozen = freeze_mods(s, cfg)
+        if frozen is not None:
+            s.mods = frozen
+            self.log(f'mod set: the {len(frozen)} active mod(s), fixed for the whole run')
         # The DLL as run.play chooses it (modsdb.choose_dll): the host games get the same one from s.dll and the mods.
         self.dll, why = modsdb.choose_dll(cfg, s.dll, [] if s.no_mods else s.mods)
         self.log(f'DLL {self.dll} ({why})')
