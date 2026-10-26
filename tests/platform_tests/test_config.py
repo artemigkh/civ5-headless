@@ -13,9 +13,10 @@ UI_ID = 'dab4ce8a-73a5-4beb-81c1-808e4baf45a8'
 
 
 class FakeSystem(config.System):
-    def __init__(self, registry=None, documents=None, environ=None, cwd=None, repository=None, local_app_data=None):
+    def __init__(self, registry=None, documents=None, environ=None, cwd=None, repository=None, local_app_data=None,
+                 kit=None):
         self.registry, self.docs, self.env = registry or {}, documents, environ or {}
-        self.cwd_path, self.repo, self.lad = cwd, repository, local_app_data
+        self.cwd_path, self.repo, self.lad, self.kit_root = cwd, repository, local_app_data, kit
 
     def registry_value(self, hive, key, name):
         return self.registry.get((hive, key, name))
@@ -31,6 +32,9 @@ class FakeSystem(config.System):
 
     def repository(self):
         return self.repo
+
+    def kit(self):
+        return self.kit_root
 
     def local_app_data(self):
         return self.lad
@@ -258,6 +262,32 @@ class DiscoveryTest(unittest.TestCase):
         cfg = config.load(p, system=self.m.system())
         self.same(cfg.probes, self.m.repo / 'probes')  # then the repository's
         self.assertEqual(cfg.sources['probes'].kind, 'discovery')
+
+    def test_release_kit(self):
+        kit = self.m.root / 'civ5-headless-0.1.0'
+        touch(kit / 'kit.json', b'{}')
+        touch(kit / 'bin/civ5headless.exe')
+        (kit / 'profiles').mkdir()
+        (kit / 'probes').mkdir()
+        cfg = config.load(system=self.m.system(repository=None, kit=kit))
+        self.same(cfg.workspace, kit)
+        self.assertEqual(cfg.sources['workspace'].note, 'the kit folder')
+        self.same(cfg.exe, kit / 'bin/civ5headless.exe')
+        self.assertEqual(cfg.sources['exe'].note, 'bin\\ in the kit')
+        self.same(cfg.profiles, kit / 'profiles')
+        self.same(cfg.probes, kit / 'probes')
+        self.same(cfg.runs, kit / 'runs')
+        ws = self.m.root / 'ws'
+        ws.mkdir()
+        p = self.write_toml(f'workspace = "{ws.as_posix()}"')
+        cfg = config.load(p, system=self.m.system(repository=None, kit=kit))
+        self.same(cfg.runs, ws / 'runs')
+        self.same(cfg.profiles, kit / 'profiles')  # the kit's, when the workspace has none
+        self.assertEqual(cfg.sources['profiles'].note, 'profiles\\ in the kit')
+        (kit / 'bin/civ5headless.exe').unlink()
+        cfg = config.load(system=self.m.system(repository=None, kit=kit))
+        self.assertIsNone(cfg.exe)
+        self.assertIn('kit', cfg.sources['exe'].note)
 
     def test_toolchain_from_environment(self):
         cfg = config.load(system=self.m.system(environ={'C5H_TOOLCHAIN': str(self.m.root / 'tc')}))

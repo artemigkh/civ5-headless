@@ -14,7 +14,14 @@ builder](database-builder.md), [DLL additions](dll-additions.md), [history](hist
 
 Needs: Windows, Civilization V with Brave New World (Steam), started once to its main menu (it writes the caches the
 host reads: `Localization-Merged.db`, `Civ5CoreDatabase.db`), and Python 3.11 or newer. The Python tools use the
-standard library only.
+standard library only. No compiler: `civ5headless.exe` needs only the Visual C++ 2008 runtime, which Civ V installs
+(the game's own DLLs use it), and the Firaxis DLLs it loads from the game folder.
+
+The release kit (`civ5-headless-<version>-<commit>.zip`, made by `tools/make_kit.py`) is the way to run it without
+building: unpack it anywhere and run `c5h.cmd` there. The kit folder is the workspace (runs, caches, your
+`civ5headless.toml`), and its `bin\civ5headless.exe`, `profiles\` and `probes\` are found by themselves (`kit.json`
+marks the folder as a kit). A kit may bundle its own Python in `runtime\`; `c5h.cmd` uses it, else `C5H_PYTHON`,
+Python on `PATH` or the `py` launcher.
 
 From a checkout, `c5h.cmd` runs the tools in place (`python -m civ5headless` with `python\` on `PYTHONPATH`; set
 `C5H_PYTHON` for another Python). `pip install -e .` installs a `c5h` command instead; it needs setuptools, which pip

@@ -8,6 +8,25 @@ headless games represent real Civ V autoplay for your DLL and mods.
 Status: being split out of a Vox Populi fork where it was developed; see [docs/plan.md](docs/plan.md) for the plan and
 [docs/history](docs/history) for how the host was built and checked against the real game.
 
+## Running it: the release kit
+
+Running needs no compiler. Each release has a kit, `civ5-headless-<version>-<commit>.zip`: unpack it anywhere and run
+`c5h.cmd` from that folder. It holds the prebuilt `civ5headless.exe`, the `c5h` tools, the UI emulation profiles,
+the probes, examples and the user docs. Runs and caches go into the kit's folder.
+
+- The exe needs only what Civ V itself needs: the Visual C++ 2008 runtime (the game installs it, and its own DLLs use
+  it) and the Firaxis DLLs in your game folder.
+- The `c5h` tools need Python 3.11 or newer, unless the kit bundles one in `runtime\`.
+- Civ V with Brave New World must have been started once, so its caches exist.
+
+```
+c5h doctor                                               # what was found and what is missing
+c5h run examples\specs\continents-tiny.json --turns 30   # one game with your active mods and DLL
+c5h verify --host-only                                   # the host-only part of the verification suite
+```
+
+`python tools/make_kit.py` makes the kit from a commit and a host built at that commit.
+
 ## Layout
 
 | Folder | Contents |
@@ -24,8 +43,8 @@ Status: being split out of a Vox Populi fork where it was developed; see [docs/p
 
 ## Building
 
-The host must be built with MSVC 2008 SP1 (VC9), the game DLL's compiler, because C++ objects cross the engine
-interfaces. `tools/get_toolchain.py` makes a portable copy in `toolchain/` from Microsoft's Windows SDK 7.0 ISO
+Only needed to change the host. The host must be built with MSVC 2008 SP1 (VC9), the game DLL's compiler, because
+C++ objects cross the engine interfaces. `tools/get_toolchain.py` makes a portable copy in `toolchain/` from Microsoft's Windows SDK 7.0 ISO
 (downloaded, or `--iso`), without installing anything:
 
 ```

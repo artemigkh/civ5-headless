@@ -21,12 +21,14 @@ Each value has a source:
     mods_db, in activation order (the live database lists none while the game sits in the mods browser);
   - dll: CvGameCore_Expansion2.dll of the first active mod that has one, else the Community Patch folder's, else
     the game's own (Assets/DLC/Expansion2);
-  - exe: out/latest.txt in the repository (tools/build_host.py), else civ5headless.exe next to the package;
+  - exe: out/latest.txt in the repository (tools/build_host.py), else bin/civ5headless.exe in the kit, else
+    civ5headless.exe next to the package;
   - toolchain: toolchain/ in the repository;
 - environment: toolchain from C5H_TOOLCHAIN;
-- default: workspace is the repository root for a checkout, else %LOCALAPPDATA%\\civ5headless; runs is
-  <workspace>/runs and db_cache <workspace>/cache/db; profiles (the host's UI emulation profiles) and probes (Lua
-  probes such as fingerprint.lua) are <workspace>/profiles and <workspace>/probes, else the repository's folders;
+- default: workspace is the repository root for a checkout, the kit folder for an unpacked release kit (kit.json
+  beside python/, tools/make_kit.py), else %LOCALAPPDATA%\\civ5headless; runs is <workspace>/runs and db_cache
+  <workspace>/cache/db; profiles (the host's UI emulation profiles) and probes (Lua probes such as fingerprint.lua)
+  are <workspace>/profiles and <workspace>/probes, else the repository's or the kit's folders;
 - unset: nothing found. snapshot (the DLC snapshot the database builder starts from) and db (a built game database
   used as is) are never discovered.
 """
@@ -48,6 +50,7 @@ USER_FOLDER = ('My Games', "Sid Meier's Civilization 5")
 DLL_NAME = 'CvGameCore_Expansion2.dll'
 CP_FOLDER = '(1) Community Patch'
 EXE_NAME = 'civ5headless.exe'
+KIT_MARKER = 'kit.json'
 PACKAGE = Path(__file__).resolve().parent
 FOLDERID_DOCUMENTS = '{FDD39AD0-238F-46AF-ADB4-6C85480369C7}'
 
@@ -175,6 +178,11 @@ class System:
         """The repository root when the package runs from a checkout, else None."""
         root = PACKAGE.parents[1]
         return root if (root / 'pyproject.toml').is_file() and (root / 'host').is_dir() else None
+
+    def kit(self):
+        """The kit root when the package runs from an unpacked release kit (kit.json beside python/), else None."""
+        root = PACKAGE.parents[1]
+        return root if (root / KIT_MARKER).is_file() else None
 
     def local_app_data(self):
         value = os.environ.get('LOCALAPPDATA')
@@ -388,6 +396,7 @@ def load(path=None, system=None):
             cfg.set(key, expand(value, base, environ), 'file')
     given = set(cfg.sources)
     repo = system.repository()
+    kit = None if repo else system.kit()
 
     def default(key, value, kind, note=''):
         if key not in given:
@@ -406,6 +415,8 @@ def load(path=None, system=None):
 
     if repo:
         default('workspace', repo, 'default', 'the repository root')
+    elif kit:
+        default('workspace', kit, 'default', 'the kit folder')
     else:
         default('workspace', system.local_app_data() / 'civ5headless', 'default', 'LOCALAPPDATA')
     if 'game_dir' not in given:
@@ -437,11 +448,11 @@ def load(path=None, system=None):
     default('db_cache', cfg.workspace / 'cache/db', 'default', 'workspace\\cache\\db')
     default('runs', cfg.workspace / 'runs', 'default', 'workspace\\runs')
     if 'exe' not in given:
-        exe, note = find_exe(repo)
+        exe, note = find_exe(repo, kit)
         cfg.set('exe', exe, 'discovery', note)
     for key in ('profiles', 'probes'):
         if key not in given:
-            folder, kind, note = find_folder(cfg.workspace, repo, key)
+            folder, kind, note = find_folder(cfg.workspace, repo or kit, key, 'repository' if repo else 'kit')
             cfg.set(key, folder, kind, note)
     if 'toolchain' not in given:
         if environ.get('C5H_TOOLCHAIN'):
@@ -454,16 +465,16 @@ def load(path=None, system=None):
     return cfg
 
 
-def find_folder(workspace, repo, name):
-    """(folder, source kind, note) for <workspace>/name, else <repository>/name."""
+def find_folder(workspace, root, name, label='repository'):
+    """(folder, source kind, note) for <workspace>/name, else <root>/name (the repository or the kit)."""
     if workspace and (workspace / name).is_dir():
         return workspace / name, 'default', f'workspace\\{name}'
-    if repo and (repo / name).is_dir():
-        return repo / name, 'discovery', f'{name}\\ in the repository'
-    return None, 'unset', f'no {name}\\ in the workspace' + ('' if repo is None or repo == workspace else ' or the repository')
+    if root and (root / name).is_dir():
+        return root / name, 'discovery', f'{name}\\ in the {label}'
+    return None, 'unset', f'no {name}\\ in the workspace' + ('' if root is None or root == workspace else f' or the {label}')
 
 
-def find_exe(repo):
+def find_exe(repo, kit=None):
     if repo:
         marker = repo / 'out/latest.txt'
         if marker.is_file():
@@ -471,7 +482,11 @@ def find_exe(repo):
             p = p / EXE_NAME if p.is_dir() else p
             if p.is_file():
                 return p, 'out\\latest.txt (tools/build_host.py)'
+    if kit and (kit / 'bin' / EXE_NAME).is_file():
+        return kit / 'bin' / EXE_NAME, 'bin\\ in the kit'
     for folder in (PACKAGE, PACKAGE / 'bin', PACKAGE.parent):
         if (folder / EXE_NAME).is_file():
             return folder / EXE_NAME, 'next to the package'
-    return None, 'no out\\latest.txt in the repository and no civ5headless.exe next to the package (python tools/build_host.py)'
+    return None, ('no civ5headless.exe in the kit\'s bin\\' if kit else
+                  'no out\\latest.txt in the repository and no civ5headless.exe next to the package'
+                  ' (python tools/build_host.py, or use a release kit)')

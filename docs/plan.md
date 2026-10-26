@@ -115,6 +115,12 @@ These runs set the envelope thresholds, the ensemble size and the default map se
 - A README with a quickstart, the user guide, the verification method and how to read its report.
 - Contributing notes and versioning.
 - A first public release with binaries. Announce to the VP developers once the upstream fixes (G) are offered.
+- Binaries ship as a release kit attached to each GitHub release, not committed to the repository (decided
+  2026-10-26): `tools/make_kit.py` makes `civ5-headless-<version>-<commit>.zip` from a commit and a host built at
+  that commit (exe and pdb, the `c5h` tools, profiles, probes, examples, user docs, licence and source pointer).
+  Running needs no VC9: the exe uses the Visual C++ 2008 runtime Civ V installs. Open: whether the kit bundles the
+  embeddable Python (`--python-embed`), and a release workflow on GitHub Actions (toolchain from the SDK ISO, build,
+  tests, kit) once the repository is on GitHub.
 
 ### G. Upstream, in parallel and in this repository
 Separate pull requests to Vox Populi:
