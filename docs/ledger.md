@@ -13,7 +13,22 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   4. A final ownership map.
   5. User-guide updates.
 
-  Its checkpoint is `RESUME.md` in that worktree. To resume:
+  Committed so far:
+  - `a4a9efa`: host `--no-dumps` and `--keep-log GLOB`. These change the host sources, so rebuild the host before
+    the next kit.
+  - `b752a0b`: detail levels, `report.html` and summary pages, and the DLL-choice rule.
+  - `0286f96`, `e6ce8d5`, `349623a`: end-of-game Lua (final dump unchanged) and report layout.
+  - `6722475`: WIP, the report timeline's message classes. Only `test_report` has run since this commit.
+
+  Left to do:
+  - Fix the user guide's "Detail levels" speed claim. Standard is 66.6 s and full is 69.3 s for 100 Standard turns,
+    so the saving is about 4%. The sizes are 4.5 MB against 437 MB.
+  - Optionally, a test that a conquest message suppresses the extra "is eliminated" entry.
+  - Rebuild the `std300` report and look at it.
+  - Run the full suite, and optionally `verify --host-only`.
+  - Write the final report.
+
+  The checkpoint is `RESUME.md` in that worktree (excluded from git). To resume:
   1. Relaunch an agent with the work order and the checkpoint.
   2. Merge main into the branch first, because main has the bundled-Python kit and `docs/running.md`.
   3. When it is done, review and merge it.
