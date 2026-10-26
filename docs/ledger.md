@@ -131,3 +131,21 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   and perturbation 150/150; 0.43 s/turn, 450 MB; 53 / 201 / 328 games/h at 1 / 4 / 8 workers). Stock DLL with no
   mods: warn in 0.8 min, only the expected 37 UI hazards of the base-game and EUI UI; fingerprint A/A, skew and
   perturbation 150/150; the stock DLL draws on the sync seed, so its ensemble keeps the map (0.08 s/turn, 121 MB).
+
+### 2026-10-26: release kit
+
+- Running needs no VC9: `civ5headless.exe` imports only Windows DLLs, MSVCR90/MSVCP90 (the Visual C++ 2008 runtime,
+  which Civ V ships in `VCRedist\vcredist_x86.exe` and installs; the game's own DLLs import it too) and the Firaxis
+  DLLs it loads from the game folder. VC9 is only for building.
+- Decision (user, 2026-10-26: "whatever makes most sense"): binaries ship as a kit attached to GitHub releases, not in
+  the repository. `tools/make_kit.py` makes `dist/civ5-headless-<version>-<commit>.zip` (about 1.5 MB) from `git
+  archive HEAD` plus a host built at that commit: `bin\` (exe, pdb, build-info.json), the `c5h` package, profiles,
+  probes, examples, user docs, LICENSE, SOURCE.txt (GPL source pointer), the SDK notice. `kit.json` makes config treat
+  the folder as a kit (workspace, exe, profiles, probes); `c5h.cmd` uses a bundled `runtime\python.exe`
+  (`--python-embed`), else `C5H_PYTHON`, Python on PATH or the py launcher. The host links with `/PDBALTPATH`, so
+  the exe carries no build-folder path.
+- Checked: `--smoke` (doctor from an unpacked kit finds the kit's exe, profiles, probes); from an unpacked kit outside
+  the repository, a 20-turn Tiny game with the active mods (snapshot and database built from the game's files in
+  under 4 s, six profiles from the kit, fingerprint on) and a 30-turn stock-DLL game with no mods, both fine.
+- Open: bundle the embeddable Python in release kits or not; a GitHub Actions release workflow once the repository
+  is on GitHub.
