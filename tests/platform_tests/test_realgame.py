@@ -486,6 +486,8 @@ class FakeGame:
             return [{'map': 'Assets\\Maps\\Continents.lua'}]
         if source == session.START:
             f.remove('ModsSinglePlayer')
+            request = self.cfg.cache_dir / 'HeadlessSeeds.txt'
+            self.requested = request.read_text(encoding='ascii') if request.exists() else None
             f.add('InGame')
             f.add('LoadScreen')
             self.turn, self.autoplay, self.running, self.winner = 0, 0, False, -1
@@ -601,6 +603,9 @@ class SessionTest(SessionCase):
 
         started = s.start_game(self.spec, 101, 202, lua_probes=[self.probe])
         self.assertFalse(started['relaunched'])
+        # the digest DLL was asked for per-turn digests at the start; the request is gone afterwards
+        self.assertEqual(self.game.requested, 'digest=1\nnormalise=1\n')
+        self.assertFalse((self.cfg.cache_dir / 'HeadlessSeeds.txt').exists())
         self.assertTrue(started['seedsVerified'])
         self.assertEqual(started['probes'][0]['value'], 'probe ran')
         played = s.autoplay(3)

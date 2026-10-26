@@ -27,7 +27,8 @@ Seeds (seeds.py): the game reads config.ini's MapRandSeed/SyncRandSeed when its 
 the file before the launch. launch(map_seed, sync_seed) pins them up front (optional arguments); start_game with
 other seeds pins them and relaunches the game (reseed='relaunch', the verified mechanism) or relies on the mod
 activation reloading the DLL (reseed='reload', unverified). With the DLL's optional digest additions start_game
-checks the seeds the engine used (HHSEEDS in HeadlessDigest.log) and fails on a mismatch. quit() restores the file.
+asks for per-turn state digests (HeadlessSeeds.txt, digest=False: not), checks the seeds the engine used (HHSEEDS
+in HeadlessDigest.log) and fails on a mismatch. quit() restores the file.
 """
 from __future__ import annotations
 import json
@@ -130,7 +131,7 @@ def hhseeds(log_path, since):
 class RealGameSession:
     def __init__(self, cfg, run_dir, *, reseed='relaunch', cpu_guard=True, cpu_limit=95, port=tuner.GAME_PORT,
                  launcher=None, launch_timeout=180, menu_timeout=300, load_timeout=900, poll=2.0, stall_seconds=900,
-                 log=None):
+                 log=None, digest=True):
         if reseed not in ('relaunch', 'reload'):
             raise ValueError("reseed must be 'relaunch' or 'reload'")
         self.cfg = cfg
@@ -141,6 +142,7 @@ class RealGameSession:
         self.launch_timeout, self.menu_timeout, self.load_timeout = launch_timeout, menu_timeout, load_timeout
         self.poll, self.stall_seconds = poll, stall_seconds
         self.log = log or (lambda message: None)
+        self.digest = digest         # ask DLLs with the digest additions for per-turn state digests
         self.marker = Path(cfg.workspace or self.dir) / 'cache' / seeds.MARKER  # one game at a time: one marker
         self.game = None
         self.tuner = None
@@ -335,10 +337,19 @@ class RealGameSession:
         write(self.dir / 'spec-resolved.json', resolved)
         pregame = self.call('ModsSinglePlayer', specmod.pregame_lua(resolved), 'pregame-setup')
         started_wall = time.time()
-        self.call('ModsSinglePlayer', START, 'start-game')
-        self.activated = False  # the next game activates the mods again
-        self.wait_for(lambda n: {'InGame', 'LoadScreen'} <= n and self.check('LoadScreen', LOADED),
-                      self.load_timeout, 'the game to load')
+        # DLLs with the digest additions read HeadlessSeeds.txt when a game starts: per-turn state digests, normalised
+        # as the host's (docs/dll-additions.md). Other DLLs ignore it. Removed once the game has loaded.
+        request = Path(self.cfg.cache_dir) / 'HeadlessSeeds.txt' if self.digest and self.cfg.cache_dir else None
+        try:
+            if request:
+                request.write_text('digest=1\nnormalise=1\n', encoding='ascii')
+            self.call('ModsSinglePlayer', START, 'start-game')
+            self.activated = False  # the next game activates the mods again
+            self.wait_for(lambda n: {'InGame', 'LoadScreen'} <= n and self.check('LoadScreen', LOADED),
+                          self.load_timeout, 'the game to load')
+        finally:
+            if request:
+                request.unlink(missing_ok=True)
         self.in_game, self.continued = True, False
         setup = self.call('InGame', SETUP, 'setup-info')
         expected = (resolved['worldSize']['type'], resolved['speed']['type'])

@@ -147,7 +147,7 @@ def main(argv=None, cfg=None):
         # Earlier runs' dumps of the same turns would be overwritten in place; keep them apart.
         dumps.rename(dumps.with_name(f'HeadlessDumps-{time.strftime("%Y%m%d-%H%M%S")}'))
     headless_seeds = cfg.require('cache_dir') / 'HeadlessSeeds.txt'
-    s = RealGameSession(cfg, run, cpu_guard=args.cpu_guard, stall_seconds=args.stall_seconds, poll=3.0,
+    s = RealGameSession(cfg, run, cpu_guard=args.cpu_guard, stall_seconds=args.stall_seconds, poll=3.0, digest=False,
                         log=lambda m: print(f'{utc()} {m}', flush=True))
     counter = [0]
     ok = True
