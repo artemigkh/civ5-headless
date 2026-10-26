@@ -5,6 +5,20 @@ The host's own history (milestones M0–M6, parity work against the real game) i
 
 ## Resume here
 
+- **Paused (2026-10-26, user: "pause when possible"):** the run-outputs work on `c5h-platform`
+  (`../civ5-headless-wt/platform`, not yet merged into main). Its work order:
+  1. DLL choice for `--no-mods` and `--mod` (the game's own DLL, or the first mod in the set that ships one).
+  2. `--detail summary|standard|full`.
+  3. A `report.html` per run, `c5h report RUN...` and a queue summary page, built on shared HTML/SVG helpers.
+  4. A final ownership map.
+  5. User-guide updates.
+
+  Its checkpoint is `RESUME.md` in that worktree. To resume:
+  1. Relaunch an agent with the work order and the checkpoint.
+  2. Merge main into the branch first, because main has the bundled-Python kit and `docs/running.md`.
+  3. When it is done, review and merge it.
+  4. Update section 6 of `docs/running.md` ("What a run leaves behind") with the detail levels and the report.
+  5. Remake the kit (`python tools/make_kit.py --smoke`) and try a run plus its report from the unpacked kit.
 - **State (2026-10-25):** phases A–D done as far as they go without the real game, all merged into main (188
   tests). The three workstream branches (`c5h-platform`, `c5h-anydll`, `c5h-verify`, worktrees in
   `../civ5-headless-wt/`) are fully merged and idle; their `runs/` folders hold the host-only evidence.
@@ -149,3 +163,19 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   under 4 s, six profiles from the kit, fingerprint on) and a 30-turn stock-DLL game with no mods, both fine.
 - Open: bundle the embeddable Python in release kits or not; a GitHub Actions release workflow once the repository
   is on GitHub.
+
+### 2026-10-26: bundled Python, running guide
+
+- Decision (user, 2026-10-26): kits bundle Python. `make_kit.py` adds python.org's embeddable Python 3.12.10
+  (amd64), which is pinned by SHA-256 and has its Authenticode signers checked (PSF and Microsoft), in `runtime\`.
+  `python312._pth` is patched to add `..\python`, because the embeddable Python ignores PYTHONPATH. The kit is about
+  12.6 MB.
+- Checked: the smoke test confirms that the bundled Python ran. With no system Python on PATH, from an unpacked kit
+  outside the repository:
+  - run, fingerprint compare, hazards and modsdb all work;
+  - `c5h verify --host-only` passes in 3.5 min (150/150 turns for A/A, frame skew and heap perturbation).
+- An exe built at an earlier commit is accepted when the host sources have not changed since that commit.
+- `docs/running.md`: how to run, with every option and examples. It is in the kit and linked from the README and the
+  kit's QUICKSTART. Its section 6 waits on the run-outputs work.
+- Found while writing it: `--no-mods` and `--mod` still played the active mods' DLL. The fix is part of the
+  run-outputs work on `c5h-platform`, paused (see "Resume here").
