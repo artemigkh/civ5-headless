@@ -2,7 +2,7 @@
 
 Every release of civ5-headless. Each GitHub release has the kit (`civ5-headless-<version>-<commit>.zip`) attached.
 
-## Unreleased
+## 0.3.0 (2026-10-27)
 
 - **Your own data from a game** ([docs/probes.md](docs/probes.md), a guide to writing probes and extras, with
   examples in `examples\probes\`):

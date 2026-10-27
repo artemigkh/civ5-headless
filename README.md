@@ -5,7 +5,8 @@ from the Civ V SDK (the stock DLL, Community Patch, Vox Populi or your own) and 
 setup options, several games at a time, much faster than the real game. A verification suite measures how closely the
 headless games represent real Civ V autoplay for your DLL and mods.
 
-Status: 0.2.0, which adds saved games ([CHANGELOG.md](CHANGELOG.md)). It was developed in a Vox Populi fork:
+Status: 0.3.0, which adds your own data from a game (Lua extras) and quieter background runs
+([CHANGELOG.md](CHANGELOG.md)). It was developed in a Vox Populi fork:
 [docs/plan.md](docs/plan.md) has the plan, and [docs/history](docs/history) shows how the host was built and checked
 against the real game.
 
@@ -43,6 +44,10 @@ profiles, fingerprints, run outputs, queues, comparisons, the verification suite
 Your own Lua gets any other data out of a game: values at every turn as JSON lines (`--checkpoint-extra`), the end
 state (`--final-extra`) and events as they happen (`--lua-probe`). [docs/probes.md](docs/probes.md) shows how to
 write them, with examples in `examples\probes\`.
+
+Games can run quietly in the background: `--cpu-limit 50` holds a game to half of one core, `--efficiency-mode` runs
+it in Windows' efficiency mode, and `c5h queue run --total-cpu-limit 200` holds a whole queue to two cores' worth
+([docs/running.md](docs/running.md#running-in-the-background)). The games play the same, only slower.
 
 Games save and load as the real game's `.Civ5Save` files, in both directions: `c5h run SAVE.Civ5Save --turns T`
 continues a save from the real game (or from another run), every run saves its last turn into its `saves\` folder

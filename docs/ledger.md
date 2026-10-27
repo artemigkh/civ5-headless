@@ -351,3 +351,18 @@ The host's own history (milestones M0–M6, parity work against the real game) i
     remaining-autoplay count), so the checks compare games of the same length.
 - **Found on the way:** this machine's game cache folder (`My Games\...\cache`) is missing, so a new database cannot
   be built until the game is started once; the test runs used a cached build (`--db`).
+- **Merged** into `main` with the run outputs work (`--checkpoint-extra`, `--final-extra`): the conflicts were the lists
+  both extended (changelog, queue job keys, guides, option checks). 220 tests pass; a 30-turn game with
+  `--cpu-limit 50 --final-extra examples/probes/game-summary.lua` held to 0.49 cores and wrote its extra.
+
+### 2026-10-27: release 0.3.0
+
+- **What it holds:** your own data from a game (Lua extras, `docs/probes.md`) and quieter background runs
+  (`--cpu-limit`, `--efficiency-mode`, `queue run --total-cpu-limit`). The host is unchanged since 0.2.0: the kit
+  carries the 0.2.0 build (`out/Release/20261026-213903`).
+- **`verify --host-only`** (`runs/verify-host-only-20261027-123612`, the configured Stacking DLL `CB6B0BED`): pass,
+  3.7 min, no warnings. 150 of 150 turns for A/A, frame skew and heap perturbation.
+  - It ran with `snapshot` set to the cached `cache/db/snapshot/A214C431ADB9A501`, as the game's cache folder was
+    missing. The game was then started to its main menu (35 s) and quit cleanly, with the user's go-ahead, which
+    rebuilt the cache folder; `c5h doctor` finds it again.
+- **Release:** the user asked for the push, the worktree's removal and a new kit and release (2026-10-27).
