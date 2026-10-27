@@ -1,7 +1,8 @@
 """Windows process helpers for the host tooling (ctypes only; no psutil).
 
-- Job objects: per-run memory limit, CPU affinity, kill-on-close (a killed runner takes its hosts with it),
-  job accounting (CPU time, peak commit).
+- Job objects: per-run memory limit, CPU affinity, CPU cap (hard rate control), kill-on-close (a killed runner takes
+  its hosts with it), job accounting (CPU time, peak commit).
+- Process priority: below normal, or efficiency mode (EcoQoS and idle priority, as Task Manager's).
 - Process statistics: CPU seconds, peak working set, peak/current private bytes, peak virtual size.
 - CPU topology: physical cores with their efficiency class (P-cores first on hybrid CPUs such as the 13900K).
 """
@@ -21,7 +22,15 @@ JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION = 0x400
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
 JobObjectBasicAccountingInformation = 1
 JobObjectExtendedLimitInformation = 9
+JobObjectCpuRateControlInformation = 15
+JOB_OBJECT_CPU_RATE_CONTROL_ENABLE = 0x1
+JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP = 0x4
 BELOW_NORMAL_PRIORITY_CLASS = 0x4000
+IDLE_PRIORITY_CLASS = 0x40
+ProcessPowerThrottling = 4
+PROCESS_POWER_THROTTLING_CURRENT_VERSION = 1
+PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1
+ALL_PROCESSOR_GROUPS = 0xFFFF
 CREATE_NO_WINDOW = 0x08000000
 
 
@@ -50,6 +59,14 @@ class JOBOBJECT_BASIC_ACCOUNTING_INFORMATION(ctypes.Structure):
                 ('ActiveProcesses', wintypes.DWORD), ('TotalTerminatedProcesses', wintypes.DWORD)]
 
 
+class JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(ctypes.Structure):
+    _fields_ = [('ControlFlags', wintypes.DWORD), ('CpuRate', wintypes.DWORD)]  # CpuRate: a union with Weight/MinMaxRate
+
+
+class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
+    _fields_ = [('Version', wintypes.ULONG), ('ControlMask', wintypes.ULONG), ('StateMask', wintypes.ULONG)]
+
+
 class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
     _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD), ('PeakWorkingSetSize', ctypes.c_size_t),
                 ('WorkingSetSize', ctypes.c_size_t), ('QuotaPeakPagedPoolUsage', ctypes.c_size_t),
@@ -75,15 +92,33 @@ kernel32.TerminateJobObject.argtypes = [wintypes.HANDLE, wintypes.UINT]
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(ctypes.c_ulonglong)] * 4
 kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+kernel32.GetPriorityClass.argtypes = [wintypes.HANDLE]
+kernel32.SetProcessInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+kernel32.GetProcessInformation.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+kernel32.GetActiveProcessorCount.restype = wintypes.DWORD
+kernel32.GetActiveProcessorCount.argtypes = [wintypes.WORD]
 kernel32.GetLogicalProcessorInformationEx.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD)]
 psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD]
 ntdll.NtQueryInformationProcess.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.ULONG, ctypes.c_void_p]
 
 
-class Job:
-    """A job object holding one host process: memory limit, affinity, kill on close."""
+def logical_cpus():
+    """Logical processors of the machine, every processor group."""
+    return kernel32.GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) or os.cpu_count() or 1
 
-    def __init__(self, memory_mb=None, affinity=None):
+
+def cpu_rate(percent):
+    """A job CpuRate (cycles per 10,000 of the whole machine) for percent of one logical processor."""
+    return max(1, min(10000, round(float(percent) * 100 / logical_cpus())))
+
+
+class Job:
+    """A job object holding one host process: memory limit, affinity, CPU cap, kill on close.
+
+    cpu_limit: percent of one logical processor (the host is single-threaded), a hard cap: past its share of a
+    scheduling interval the job's threads wait for the next one."""
+
+    def __init__(self, memory_mb=None, affinity=None, cpu_limit=None):
         self.handle = kernel32.CreateJobObjectW(None, None)
         if not self.handle:
             raise ctypes.WinError(ctypes.get_last_error())
@@ -98,6 +133,11 @@ class Job:
         info.BasicLimitInformation.LimitFlags = flags
         if not kernel32.SetInformationJobObject(self.handle, JobObjectExtendedLimitInformation, ctypes.byref(info), ctypes.sizeof(info)):
             raise ctypes.WinError(ctypes.get_last_error())
+        if cpu_limit:
+            rate = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
+                                                          cpu_rate(cpu_limit))
+            if not kernel32.SetInformationJobObject(self.handle, JobObjectCpuRateControlInformation, ctypes.byref(rate), ctypes.sizeof(rate)):
+                raise ctypes.WinError(ctypes.get_last_error())
 
     def assign(self, popen):
         if not kernel32.AssignProcessToJobObject(self.handle, int(popen._handle)):
@@ -142,6 +182,24 @@ def process_stats(popen):
 def set_priority(popen, below_normal=True):
     if below_normal:
         kernel32.SetPriorityClass(int(popen._handle), BELOW_NORMAL_PRIORITY_CLASS)
+
+
+def set_efficiency_mode(popen):
+    """Task Manager's efficiency mode: EcoQoS (lower clocks, efficient cores on hybrid CPUs) and idle priority.
+    False where Windows has no EcoQoS (before Windows 10 1709); the priority is set either way."""
+    h = int(popen._handle)
+    kernel32.SetPriorityClass(h, IDLE_PRIORITY_CLASS)
+    state = PROCESS_POWER_THROTTLING_STATE(PROCESS_POWER_THROTTLING_CURRENT_VERSION, PROCESS_POWER_THROTTLING_EXECUTION_SPEED,
+                                           PROCESS_POWER_THROTTLING_EXECUTION_SPEED)
+    return bool(kernel32.SetProcessInformation(h, ProcessPowerThrottling, ctypes.byref(state), ctypes.sizeof(state)))
+
+
+def efficiency_mode(popen):
+    """(EcoQoS on, priority class) of a running process."""
+    h = int(popen._handle)
+    state = PROCESS_POWER_THROTTLING_STATE(PROCESS_POWER_THROTTLING_CURRENT_VERSION, 0, 0)
+    ok = kernel32.GetProcessInformation(h, ProcessPowerThrottling, ctypes.byref(state), ctypes.sizeof(state))
+    return bool(ok and state.ControlMask & state.StateMask & PROCESS_POWER_THROTTLING_EXECUTION_SPEED), kernel32.GetPriorityClass(h)
 
 
 def cores():

@@ -317,3 +317,24 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   - Test saves the real-game sessions wrote into the game's `ModdedSaves\single` were moved into their run folders
     (`runs/rt5-real`, `rt7-real-a`, `rt7-real-b`, `rt8-real`, under `game-folder\`). The real game's turn-0
     autosaves from `rt5-real` had overwritten earlier verify autosaves of the same names.
+
+### 2026-10-27: quieter background runs
+
+- **What it does:** `--cpu-limit PERCENT` caps the host at that percent of one core, and `--efficiency-mode` runs it in
+  Windows efficiency mode ([running.md](running.md#running-in-the-background)). Both work for `c5h run` and queues
+  (`cpuLimit`, `efficiencyMode`, or `queue run --cpu-limit/--efficiency-mode` for every game).
+  - The cap is a hard CPU-rate cap on the game's job object (`JobObjectCpuRateControlInformation`). Its rate is a
+    share of the whole machine, so 50% of one core is 156/10,000 on 32 logical processors. Pinning the host to one
+    core does not change that.
+  - Efficiency mode is EcoQoS (`ProcessPowerThrottling`, execution speed) plus idle priority, as Task Manager's.
+  - The time limits stretch by 100/PERCENT. `status.json` records `cpuLimit` and `efficiencyMode`; the report's CPU
+    card shows them.
+- **Checks** (Tiny, fixed seed, 120 turns, the Stacking DLL `CB6B0BED`):
+  - Uncapped: 31.2 s, 0.98 cores.
+  - `--cpu-limit 50`: 60.1 s, 0.50 cores on average. One-second samples: median 0.50, maximum 0.62.
+  - `--efficiency-mode`: 50.0 s, 0.92 cores at lower clocks.
+  - Both games identical to the uncapped one on 120 of 120 digest points.
+  - A 2-game queue with `--cpu-limit 50 --efficiency-mode`, pinned p-first: 0.50 and 0.51 cores, both in efficiency
+    mode.
+- **Found on the way:** this machine's game cache folder (`My Games\...\cache`) is missing, so a new database cannot
+  be built until the game is started once; the test runs used a cached build (`--db`).

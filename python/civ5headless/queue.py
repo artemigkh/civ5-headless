@@ -1,6 +1,7 @@
 """Parallel runner for host games: a resumable queue of run.py games with N workers.
 
-  c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
+  c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--cpu-limit PERCENT] [--efficiency-mode]
+                [--retry-failed]
   c5h queue status QUEUE.json        # job table and totals (also written as QUEUE.summary.json)
   c5h queue report QUEUE.json        # the summary page over the queue's games: <out>/summary.html (queue run writes
                                      # it at the end too); each game has its own report.html
@@ -25,8 +26,8 @@ modsDir, modsDb, mods (the mod set as ["ID[:VER]", ...]: a generated registry in
 exe, gameDir, profiles, noProfiles, skipAddins, noAddins, fingerprint (true, or {"every": K, "turns": [...],
 "split": N}), seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery, maxSeconds, stallSeconds,
 maxMemoryMB, detail (summary, standard (default) or full; the old prune: false is full), report (default true),
-hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true), autosave (none (default), game or N),
-saveAt [turns], saveFinal (default true); they are the c5h run options of the same name (a spec that is a
+hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true), cpuLimit (percent of one core),
+efficiencyMode, autosave (none (default), game or N), saveAt [turns], saveFinal (default true); they are the c5h run options of the same name (a spec that is a
 .Civ5Save is a load). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
 doctor); the DLL is chosen as c5h run chooses it (a mod set's own, or the game's for noMods, unless dll is given or
 set in civ5headless.toml).
@@ -36,7 +37,8 @@ interrupted ones (their folder is kept as <name>-rN) and leaves failed ones fail
 Pause: create QUEUE.stop; workers take no new job, running games finish. Ctrl-C kills the running games
 (job objects) and marks them interrupted, so the next start re-queues them.
 Workers: worker k is pinned to the k-th physical core, P-cores (both hyperthreads) first, then E-cores
-(--affinity none: no pinning). Games run below normal priority unless lowPriority is false.
+(--affinity none: no pinning). Games run below normal priority unless lowPriority is false. --cpu-limit and
+--efficiency-mode set cpuLimit and efficiencyMode for every game of this session (the cap is per game).
 """
 from pathlib import Path
 import argparse, collections, json, os, subprocess, sys, threading, time
@@ -101,6 +103,8 @@ def expand(queue, qpath, cfg=None):
             raise SystemExit(f"job {j['name']}: mods and noMods exclude modsDb (the registry is generated)")
         if j.get('detail') and j['detail'] not in host_run.DETAILS:
             raise SystemExit(f"job {j['name']}: detail is one of {', '.join(host_run.DETAILS)}, not {j['detail']!r}")
+        if j.get('cpuLimit') is not None and not (isinstance(j['cpuLimit'], int) and 1 <= j['cpuLimit'] <= 100):
+            raise SystemExit(f"job {j['name']}: cpuLimit is a percent of one core, 1 to 100, not {j['cpuLimit']!r}")
     return jobs
 
 
@@ -162,7 +166,8 @@ def job_args(job, folder, inputs, affinity):
                            max_memory_mb=job.get('maxMemoryMB') or None, affinity=affinity, detail=job_detail(job),
                            report=bool(job.get('report', True)),
                            poll=1.0, host_arg=list(job.get('hostArgs') or []), maximum_seconds=job.get('maxSeconds'),
-                           seeds=job.get('seeds'), low_priority=bool(job.get('lowPriority', True)))
+                           seeds=job.get('seeds'), low_priority=bool(job.get('lowPriority', True)),
+                           cpu_limit=job.get('cpuLimit'), efficiency_mode=bool(job.get('efficiencyMode')))
 
 
 def prepare(q, retry_failed):
@@ -224,8 +229,15 @@ def run(args, cfg):
     workers = args.workers or int(q.queue.get('workers', 8))
     mode = args.affinity or q.queue.get('affinity', 'p-first')
     masks = winproc.worker_affinities(workers, mode)
+    for job in q.jobs:  # this session's --cpu-limit and --efficiency-mode win over the queue file
+        if args.cpu_limit:
+            job['cpuLimit'] = args.cpu_limit
+        if args.efficiency_mode:
+            job['efficiencyMode'] = True
     pending = prepare(q, args.retry_failed)
-    q.log(f'queue {q.qpath.name}: {len(q.jobs)} jobs, {len(pending)} to run, {workers} workers, affinity {mode}')
+    q.log(f'queue {q.qpath.name}: {len(q.jobs)} jobs, {len(pending)} to run, {workers} workers, affinity {mode}'
+          + (f', each game capped at {args.cpu_limit}% of a core' if args.cpu_limit else '')
+          + (', efficiency mode' if args.efficiency_mode else ''))
     if not pending:
         return summary(q)
     dbs = databases(q, pending)
@@ -391,6 +403,8 @@ def main(argv=None, cfg=None):
     sub = p.add_subparsers(dest='command', required=True)
     r = sub.add_parser('run'); r.add_argument('queue')
     r.add_argument('--workers', type=int); r.add_argument('--affinity', choices=['p-first', 'none'])
+    r.add_argument('--cpu-limit', type=int, metavar='PERCENT', help='cap every game at this percent of one core (1-100)')
+    r.add_argument('--efficiency-mode', action='store_true', help='run every game in Windows efficiency mode')
     r.add_argument('--retry-failed', action='store_true')
     s = sub.add_parser('status'); s.add_argument('queue')
     rp = sub.add_parser('report'); rp.add_argument('queue')
@@ -399,6 +413,8 @@ def main(argv=None, cfg=None):
     c.add_argument('--vpbench', help="folder with Vox Populi's samerun.py, abcompare.py and compare.py")
     c.add_argument('--compare-runs', type=int, default=4, help='with --vpbench: also print compare.py for the first N runs (0: no)')
     a = p.parse_args(argv)
+    if a.command == 'run' and a.cpu_limit is not None and not 1 <= a.cpu_limit <= 100:
+        r.error('--cpu-limit takes a percent of one core, 1 to 100')
     cfg = cfg or config.load()
     if a.command == 'run':
         return run(a, cfg)

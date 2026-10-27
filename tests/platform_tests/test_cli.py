@@ -7,13 +7,15 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from civ5headless import cli, config, queue, run
+from civ5headless import cli, config, queue, run, winproc
 
 from .test_modsdb import ADDON_ID, BASE_ID, make_mods
 from .test_spec import make_db
@@ -152,9 +154,20 @@ class PlayTest(unittest.TestCase):
             resolved = json.loads((r.dir / 'spec-resolved.json').read_text(encoding='utf-8'))
             self.assertEqual(resolved['seeds'], {'map': 1, 'sync': 3})
             self.assertEqual(json.loads((r.dir / 'spec.json').read_text(encoding='utf-8')), spec)
+            self.assertEqual((r.status['cpuLimit'], r.status['efficiencyMode']), (None, False))
             # a second game into the same folder is refused
             with self.assertRaises(FileExistsError):
                 run.play(r.dir / 'spec.json', 4, run_dir=r.dir, cfg=cfg)
+            # a capped game in efficiency mode: recorded in status.json, the launch event and the report
+            r = run.play(spec, 4, run='cap', cfg=cfg, cpu_limit=50, efficiency_mode=True)
+            self.assertTrue(r.ok, r.status.get('error'))
+            self.assertEqual((r.status['cpuLimit'], r.status['efficiencyMode']), (50, True))
+            launched = [json.loads(l) for l in (r.dir / 'events.jsonl').read_text(encoding='utf-8').splitlines()
+                        if '"action": "launched"' in l][0]
+            self.assertEqual((launched['cpuLimit'], launched['efficiencyMode']), (50, True))
+            self.assertIn('capped at 50% of a core', (r.dir / 'report.html').read_text(encoding='utf-8'))
+            with self.assertRaises(ValueError):
+                run.play(spec, 4, run='cap0', cfg=cfg, cpu_limit=0)
 
     def test_play_mod_set_ui_options_and_fingerprint(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {'C5H_TEST_PYTHON': sys.executable}):
@@ -230,7 +243,8 @@ class PlayTest(unittest.TestCase):
         for argv, message in ((['--mod', 'x', '--no-mods'], 'exclude each other'),
                               (['--mod', 'x', '--mods-db', 'r.db'], 'exclude --mods-db'),
                               (['--profiles', 'p', '--no-profiles'], 'exclude each other'),
-                              (['--fingerprint-turns', '1,x'], 'turn numbers')):
+                              (['--fingerprint-turns', '1,x'], 'turn numbers'),
+                              (['--cpu-limit', '0'], '1 to 100'), (['--cpu-limit', '101'], '1 to 100')):
             with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()) as err:
                 with self.assertRaises(SystemExit) as ctx:
                     run.main(['spec.json', '--turns', '3'] + argv, config.Config())
@@ -307,6 +321,50 @@ class QueueTest(unittest.TestCase):
             self.assertEqual((a.no_mods, a.no_profiles, a.mods_db), (True, True, None))
             with self.assertRaises(SystemExit):
                 queue.expand({'jobs': [{'name': 'x', 'spec': 's', 'mods': [], 'modsDb': 'r.db'}]}, qpath)
+
+    def test_background_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            qpath = Path(tmp) / 'queue.json'
+            q = {'defaults': {'spec': 'spec.json', 'cpuLimit': 50},
+                 'jobs': [{'name': 'a'}, {'name': 'b', 'cpuLimit': None, 'efficiencyMode': True}]}
+            jobs = {j['name']: j for j in queue.expand(q, qpath)}
+            inputs = dict(db='built.db', modsDir=None, modsDb=None)
+            a = queue.job_args(jobs['a'], Path(tmp) / 'runs/a', inputs, None)
+            self.assertEqual((a.cpu_limit, a.efficiency_mode, a.low_priority), (50, False, True))
+            b = queue.job_args(jobs['b'], Path(tmp) / 'runs/b', inputs, None)
+            self.assertEqual((b.cpu_limit, b.efficiency_mode), (None, True))
+            for bad in (0, 101, '50'):
+                with self.subTest(cpuLimit=bad), self.assertRaises(SystemExit):
+                    queue.expand({'jobs': [{'name': 'x', 'spec': 's', 'cpuLimit': bad}]}, qpath)
+            with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+                queue.main(['run', str(qpath), '--cpu-limit', '0'], config.Config())
+            self.assertIn('1 to 100', err.getvalue())
+
+
+class WinprocTest(unittest.TestCase):
+    def test_cpu_rate(self):
+        """Percent of one logical processor as a job CpuRate, in 1/10,000 of the whole machine."""
+        with mock.patch.object(winproc, 'logical_cpus', return_value=32):
+            self.assertEqual([winproc.cpu_rate(p) for p in (100, 50, 1)], [312, 156, 3])
+        with mock.patch.object(winproc, 'logical_cpus', return_value=1):
+            self.assertEqual(winproc.cpu_rate(100), 10000)
+
+    def test_cap_and_efficiency_mode_on_a_busy_process(self):
+        """A busy loop capped at 25% of a core uses about a quarter of one; efficiency mode reads back as set."""
+        job = winproc.Job(cpu_limit=25)
+        try:
+            t = time.monotonic()
+            p = subprocess.Popen([sys.executable, '-c', 'import time\nt = time.time()\nwhile time.time() - t < 3: pass'])
+            job.assign(p)
+            eco = winproc.set_efficiency_mode(p)
+            if eco:
+                self.assertEqual(winproc.efficiency_mode(p), (True, winproc.IDLE_PRIORITY_CLASS))
+            p.wait()
+            self.assertLess(winproc.process_stats(p)['CPUSeconds'] / (time.monotonic() - t), 0.4)
+        finally:
+            job.close()
+        if not eco:
+            self.skipTest('this Windows has no EcoQoS')
 
 
 class CommandTest(unittest.TestCase):

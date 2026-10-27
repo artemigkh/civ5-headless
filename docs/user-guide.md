@@ -180,6 +180,7 @@ configuration. Useful options:
 | `--maximum-seconds S`, `--stall-seconds S` | end the game after S seconds, or after S seconds without a new turn |
 | `--max-memory-mb MB` | commit limit of the host process (job object; default 3500) |
 | `--affinity MASK`, `--low-priority` | CPU pinning, below-normal priority |
+| `--cpu-limit PERCENT`, `--efficiency-mode` | quieter background runs: a hard cap at PERCENT of one core (the time limits stretch to match), and Windows efficiency mode (EcoQoS, idle priority); the game is the same, only slower ([running.md](running.md#running-in-the-background)) |
 | `--heap-perturb N`, `--frame-skew K` | the verification suite's address and frame-count checks |
 | `--detail summary\|standard\|full` | what the run folder keeps ([Run folders](#run-folders)); default `standard`. `--prune` is the old name of `standard` |
 | `--no-report` | no `report.html` (`c5h report RUN` writes it later) |
@@ -302,7 +303,7 @@ Where they differ from a real run, by design:
 ## 6. Batches
 
 ```
-c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--retry-failed]
+c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--cpu-limit PERCENT] [--efficiency-mode] [--retry-failed]
 c5h queue status QUEUE.json
 c5h queue compare QUEUE.json [--vpbench DIR]
 c5h queue report QUEUE.json
@@ -321,7 +322,8 @@ c5h queue report QUEUE.json
   `["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`, `noAddins`, `fingerprint` (`true` or
   `{"every": K, "turns": [...], "split": N}`), `diagnostics`, `improvedMask`, `abRole`, `checkpointEvery`,
   `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail` (default `standard`; the old `prune: false` is `full`),
-  `report` (default on), `hostArgs`, `luaProbes`, `lowPriority` (default on), `load` (a save instead of `spec`),
+  `report` (default on), `hostArgs`, `luaProbes`, `lowPriority` (default on), `cpuLimit`, `efficiencyMode`, `load`
+  (a save instead of `spec`),
   `autosave`, `saveAt`, `saveFinal`) can be set in `defaults`, a variant or a job. Examples are in
   `examples/queues/`.
 - Mod sets' registries and databases are built once per (mods input, DLL) before the workers start.

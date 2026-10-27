@@ -381,7 +381,8 @@ c5h queue status my-queue.json
 - Every `c5h run` option can be set in `defaults`, a variant or a job, under its JSON name: `spec`, `turns`, `dll`,
   `db`, `modsDir`, `modsDb`, `mods` (`["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`,
   `noAddins`, `fingerprint` (`true` or `{"every": K, "turns": [...], "split": N}`), `luaProbes`, `seeds`,
-  `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail`, `report`, `lowPriority`, `hostArgs`,
+  `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail`, `report`, `lowPriority`, `cpuLimit`,
+  `efficiencyMode`, `hostArgs`,
   `load` (a save instead of `spec`; a `spec` that is a `.Civ5Save` is loaded too), `autosave`, `saveAt`,
   `saveFinal` (default `true`).
 - Paths in the file are relative to the file. Run folders go to `"out"` (default `runs\<queue file name>`).
@@ -389,7 +390,8 @@ c5h queue status my-queue.json
   re-queued at the next start) or by creating `QUEUE.stop` (running games finish, no new ones start). Rerun
   `queue run` to continue; `--retry-failed` retries failed games.
 - `--workers N` sets the number of games at once. Workers are pinned to physical cores (`--affinity none` turns that
-  off) and run below normal priority, so the machine stays usable.
+  off) and run below normal priority, so the machine stays usable. `--cpu-limit PERCENT` and `--efficiency-mode`
+  make every game quieter ([Running in the background](#running-in-the-background)).
 
 An A/B test of two DLL builds over four seeds (`examples\queues\example-ab.json`):
 
@@ -488,10 +490,38 @@ suite's settings (verification.md). `civ5headless.example.toml` describes each o
 | `--max-memory-mb MB` | memory limit of the host process (0: none) | 3500 |
 | `--affinity MASK` | CPU affinity of the host, e.g. `0x3` | none |
 | `--low-priority` | run below normal priority | off for `run`, on in queues |
+| `--cpu-limit PERCENT` | cap the host at this percent of one core (1-100) | none |
+| `--efficiency-mode` | run in Windows efficiency mode (EcoQoS, idle priority) | off |
 | `--checkpoint-every N` | checkpoint every N turns | 1 |
 
 A game stopped by a limit keeps its run folder with status `stopped` or `failed` and the reason. A host crash writes
 `HHCRASH` lines (exception, module and offset, registers, stack) to the host's output, `host-stdout.txt`.
+
+### Running in the background
+
+A game keeps one core busy, which keeps the fans going. Two options make a game quieter, together or apart:
+
+```
+c5h run examples\specs\continental-drift.json --turns 750 --cpu-limit 50
+c5h run examples\specs\continental-drift.json --turns 750 --cpu-limit 50 --efficiency-mode
+c5h queue run my-queue.json --workers 4 --cpu-limit 50
+```
+
+- `--cpu-limit 50` holds the host to half of one core: Windows stops scheduling it once it has used its share
+  (a hard cap on the game's job object). It averages 50% of one core; single seconds reach about 60%, as Windows
+  enforces the cap over its own short intervals. The run takes about twice as long. `--maximum-seconds` and
+  `--stall-seconds` stretch by the same factor (100/PERCENT), so a capped game is not stopped for being slow.
+- `--efficiency-mode` is Task Manager's efficiency mode: Windows runs the host at lower clock speeds, on the
+  efficient cores of a hybrid CPU, and at idle priority. It sets no limit: an idle machine still gives the host most
+  of a core, only a slower and cooler one, and anything else that wants the CPU goes first. A Tiny game took 1.6
+  times as long in a test.
+- Neither changes the game: the host reads the clock only for its timings, so a capped game plays the same turns as
+  an uncapped one. Its timings (`secondsPerTurn`, the report's speed) are not the host's speed, though.
+  `status.json` records `cpuLimit` and `efficiencyMode`, and the report's CPU card shows them.
+- In a queue the cap is per game: 4 workers at `--cpu-limit 50` use about 2 cores in all. `--cpu-limit` and
+  `--efficiency-mode` on `queue run` apply to every game of that session; `cpuLimit` and `efficiencyMode` set them
+  per job in the queue file.
+- The one-time database build for a new mod set is not capped.
 
 ## 12. Development options
 

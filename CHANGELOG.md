@@ -2,6 +2,17 @@
 
 Every release of civ5-headless. Each GitHub release has the kit (`civ5-headless-<version>-<commit>.zip`) attached.
 
+## Unreleased
+
+- **Quieter background runs** ([docs/running.md](docs/running.md#running-in-the-background)):
+  - `--cpu-limit PERCENT` caps the host at that percent of one core, a hard cap on its job object. The game is the
+    same, only slower; `--maximum-seconds` and `--stall-seconds` stretch to match.
+  - `--efficiency-mode` runs the host in Windows efficiency mode (EcoQoS: lower clocks, efficient cores; idle
+    priority), as Task Manager's.
+  - Queues: `cpuLimit` and `efficiencyMode` job keys, and `--cpu-limit` and `--efficiency-mode` on `queue run` for
+    every game of the session.
+  - `status.json` records `cpuLimit` and `efficiencyMode`; the report's CPU card shows them.
+
 ## 0.2.0 (2026-10-26)
 
 - **Saved games** ([docs/saves.md](docs/saves.md)): the host reads and writes the real game's `.Civ5Save` files.

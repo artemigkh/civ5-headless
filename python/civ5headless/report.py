@@ -662,8 +662,11 @@ def _result(m, ps):
                        f"{fmt(st.get('secondsPerTurn'), 3)} s/turn &middot; host {fmt(st.get('hostSeconds'), 1)} s"))
     proc = st.get('process') or {}
     cpu = proc.get('CPUSeconds')
+    limits = ([f"capped at {h(st['cpuLimit'])}% of a core"] if st.get('cpuLimit') else []) \
+        + (['efficiency mode'] if st.get('efficiencyMode') else [])
     cards.append(_card('CPU', f'{fmt(cpu, 1)} s' if cpu is not None else '-',
-                       f"{fmt(cpu / st['hostSeconds'], 2)} cores busy" if cpu and st.get('hostSeconds') else ''))
+                       ' &middot; '.join(([f"{fmt(cpu / st['hostSeconds'], 2)} cores busy"] if cpu and st.get('hostSeconds') else [])
+                                         + limits)))
     cards.append(_card('Peak memory', h(_mb(proc.get('PeakWorkingSet')) or '-'), 'working set'
                        + (f" &middot; private {h(_mb(proc.get('PeakPrivateBytes')))}" if proc.get('PeakPrivateBytes') else '')))
     bg = st.get('background') or {}

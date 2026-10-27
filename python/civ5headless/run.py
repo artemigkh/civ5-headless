@@ -10,6 +10,7 @@ run folder.
           [--lua-probe FILE]... [--heap-perturb N] [--frame-skew K]
           [--diagnostics 1] [--improved-mask N | --ab-role baseline|test] [--checkpoint-every 1]
           [--maximum-seconds S] [--stall-seconds S] [--max-memory-mb MB] [--affinity MASK] [--low-priority]
+          [--cpu-limit PERCENT] [--efficiency-mode]
           [--detail summary|standard|full] [--no-report] [--host-arg ARG]...
 
 From Python: run.play(spec, turns, ...) -> Result (see play).
@@ -50,6 +51,12 @@ UI: the host runs the activated mods' InGameUIAddins (--skip-addin NAME leaves o
 emulation profiles from --profiles (default: config profiles; --no-profiles: none). --fingerprint runs the Lua
 fingerprint probe (probes/fingerprint.lua; c5h fingerprint compares two runs), every turn or every K-th
 (--fingerprint-every) plus --fingerprint-turns, before the --lua-probe files.
+
+Background runs: --cpu-limit P caps the host at P percent of one core (a hard cap on its job object; the host is
+single-threaded). The game plays the same, only slower, and --maximum-seconds and --stall-seconds stretch by 100/P.
+--efficiency-mode runs the host in Windows' efficiency mode, as Task Manager's: EcoQoS (lower clocks, efficient cores
+on hybrid CPUs) and idle priority. status.json records both (cpuLimit, efficiencyMode); the timings of such a run are
+not the host's speed.
 
 The run folder has the files vpbench writes and its readers use (compare.py, abcompare.py, samerun.py):
 events.jsonl, setup.json, spec-resolved.json, status.json, turn-times.jsonl, turn-seen.json,
@@ -479,17 +486,26 @@ def newgame(a, quiet=False, cfg=None):
                                                 profiles=str(profiles) if profiles else None, fingerprint=fingerprint,
                                                 detail=detail, load=str(save_file) if save_file else None, startTurn=start_turn))
         affinity = int(a.affinity, 0) if isinstance(a.affinity, str) else a.affinity
-        job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity)
+        cpu_limit = getattr(a, 'cpu_limit', None) or None
+        slower = 100 / cpu_limit if cpu_limit else 1  # the time limits count uncapped seconds
+        maximum_seconds = a.maximum_seconds and round(a.maximum_seconds * slower)
+        stall_seconds = a.stall_seconds and round(a.stall_seconds * slower)
+        job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity, cpu_limit=cpu_limit)
         meter = winproc.LoadMeter().start()  # what else ran (the real game) during this run
         started = time.monotonic(); started_utc = utc()
         with open(run.dir / 'host-stdout.txt', 'wb') as out:
             proc = subprocess.Popen(cmd, cwd=str(run.dir), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                     creationflags=winproc.CREATE_NO_WINDOW)
             job.assign(proc)
-            if getattr(a, 'low_priority', False):
+            efficiency_mode = False
+            if getattr(a, 'efficiency_mode', False):
+                efficiency_mode = winproc.set_efficiency_mode(proc)
+                if not efficiency_mode:
+                    run.log('efficiency_mode_unavailable', quiet=quiet, error='this Windows has no EcoQoS; idle priority only')
+            elif getattr(a, 'low_priority', False):
                 winproc.set_priority(proc)  # leave the foreground (and a real game) responsive
             run.log('launched', quiet=quiet, pid=proc.pid, affinity=hex(affinity) if affinity else None, memoryLimitMB=a.max_memory_mb,
-                    dll=str(dll), dllSHA256=dll_sha, target=a.target_turn)
+                    cpuLimit=cpu_limit, efficiencyMode=efficiency_mode, dll=str(dll), dllSHA256=dll_sha, target=a.target_turn)
             offset = 0; last_turn = start_turn; last_progress = started; seen = {start_turn: 0.0}; killed = None
             while True:
                 try:
@@ -504,10 +520,10 @@ def newgame(a, quiet=False, cfg=None):
                     if r['turn'] % 10 == 0 or r['turn'] < start_turn + 3:
                         run.log('checkpoint', quiet=quiet, turn=r['turn'], seconds=round(r['seconds'], 1))
                     last_turn = r['turn']
-                if a.maximum_seconds and now - started > a.maximum_seconds:
-                    killed = f'maximum run time ({a.maximum_seconds} s) reached at turn {last_turn}'
-                elif a.stall_seconds and now - last_progress > a.stall_seconds:
-                    killed = f'no turn progress for {a.stall_seconds} s at turn {last_turn}'
+                if maximum_seconds and now - started > maximum_seconds:
+                    killed = f'maximum run time ({maximum_seconds} s) reached at turn {last_turn}'
+                elif stall_seconds and now - last_progress > stall_seconds:
+                    killed = f'no turn progress for {stall_seconds} s at turn {last_turn}'
                 if killed:
                     job.terminate(3)
                     code = proc.wait()
@@ -551,7 +567,8 @@ def newgame(a, quiet=False, cfg=None):
         process = dict(pstats, PeakCommit=jstats.get('peakProcessCommit'), HostSeconds=round(host_seconds, 1))
         status = dict(state='failed', backend='headless', startedUTC=started_utc, startTurn=start_turn, endTurn=end_turn, turns=played,
                       wallSeconds=round(wall, 1), secondsPerTurn=round(wall / played, 3) if played > 0 else None,
-                      hostSeconds=round(host_seconds, 1), process=process, pollSeconds=0, dll=str(dll), dllSHA256=dll_sha,
+                      hostSeconds=round(host_seconds, 1), process=process, cpuLimit=cpu_limit, efficiencyMode=efficiency_mode,
+                      pollSeconds=0, dll=str(dll), dllSHA256=dll_sha,
                       dllReason=dll_reason, detail=detail, save=seed_key,
                       spec=str(Path(a.spec).resolve()) if a.spec else None, replayMessages=len(final.get('messages') or []), exitCode=code,
                       hostStatus=report.get('status'), hostError=report.get('error') or ng.get('error'),
@@ -654,8 +671,8 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
          mods_db=None, mods=None, no_mods=False, loc_db=None, game_dir=None, exe=None, profiles=None, no_profiles=False,
          skip_addins=(), no_addins=False, fingerprint=False, lua_probes=(), heap_perturb=None, frame_skew=None,
          diagnostics=0, improved_mask=None, ab_role=None, checkpoint_every=1, max_seconds=21600, stall_seconds=900,
-         max_memory_mb=3500, affinity=None, low_priority=False, detail=None, report=True, prune=False, host_args=(),
-         poll=1.0, quiet=True, load=None, autosave=None, save_at=(), save_final=True):
+         max_memory_mb=3500, affinity=None, low_priority=False, cpu_limit=None, efficiency_mode=False, detail=None,
+         report=True, prune=False, host_args=(), poll=1.0, quiet=True, load=None, autosave=None, save_at=(), save_final=True):
     """Play one game in civ5headless.exe and return its Result.
 
     spec: a spec file (resolved or not) or a spec dict (written to the run folder as spec.json), or a .Civ5Save to
@@ -671,8 +688,11 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
     detail: 'summary', 'standard' (default) or 'full', what the run folder keeps (prune=True, the old option, is
     'standard'); report: write report.html; host_args: further host arguments. The other keywords are the c5h run
     options of the same name; anything left None comes from the configuration (the DLL: modsdb.choose_dll). Raises
-    FileExistsError when the run folder already holds a game, ValueError for an unknown detail level."""
+    FileExistsError when the run folder already holds a game, ValueError for an unknown detail level or a cpu_limit
+    outside 1-100."""
     detail = detail_of(detail)
+    if cpu_limit is not None and not 1 <= cpu_limit <= 100:
+        raise ValueError(f'cpu_limit is a percent of one core, 1 to 100, not {cpu_limit!r}')
     cfg = cfg or config.load()
     if spec is not None and not isinstance(spec, dict) and savegame.is_save(spec):
         if load is not None:
@@ -697,7 +717,8 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
                         heap_perturb=heap_perturb, frame_skew=frame_skew, diagnostics=int(diagnostics or 0),
                         improved_mask=improved_mask, ab_role=ab_role, checkpoint_every=int(checkpoint_every or 1),
                         maximum_seconds=max_seconds, stall_seconds=stall_seconds, max_memory_mb=max_memory_mb or None,
-                        affinity=affinity, low_priority=low_priority, detail=detail, report=bool(report),
+                        affinity=affinity, low_priority=low_priority, cpu_limit=cpu_limit,
+                        efficiency_mode=bool(efficiency_mode), detail=detail, report=bool(report),
                         host_arg=list(host_args or []), poll=poll)
     folder = run_folder(a, cfg)
     a.run_dir = str(folder)
@@ -748,6 +769,10 @@ def add_arguments(n):
     n.add_argument('--max-memory-mb', type=int, default=3500, help='per-process commit limit (job object); 0 = none')
     n.add_argument('--affinity', default=None, help='CPU affinity mask for the host (e.g. 0x3)')
     n.add_argument('--low-priority', action='store_true', help='run the host below normal priority')
+    n.add_argument('--cpu-limit', type=int, metavar='PERCENT', help='cap the host at this percent of one core (1-100; '
+                   'hard cap, the game plays the same, only slower); the time limits stretch to match')
+    n.add_argument('--efficiency-mode', action='store_true', help="Windows efficiency mode, as Task Manager's: EcoQoS "
+                   '(lower clocks, efficient cores) and idle priority')
     n.add_argument('--detail', choices=DETAILS, help='what the run folder keeps: summary (results, timings, Lua.log, the '
                    'report), standard (default: also per-turn checkpoints, digests and the small logs) or full (also state '
                    'dumps, the database copies and the DLL\'s AI logs)')
@@ -793,7 +818,8 @@ def check_args(a, error):
     except ValueError:
         error('--fingerprint-turns takes turn numbers, e.g. 1,50,100')
     if a.max_memory_mb == 0: a.max_memory_mb = None
-    a.seeds = dict(map=a.seeds[0], sync=a.seeds[1]) if a.seeds else None
+    if a.cpu_limit is not None and not 1 <= a.cpu_limit <= 100: error('--cpu-limit takes a percent of one core, 1 to 100')
+    a.seeds =dict(map=a.seeds[0], sync=a.seeds[1]) if a.seeds else None
 
 
 def main(argv=None, cfg=None):
