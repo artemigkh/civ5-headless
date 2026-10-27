@@ -4,6 +4,18 @@ Every release of civ5-headless. Each GitHub release has the kit (`civ5-headless-
 
 ## Unreleased
 
+- **Your own data from a game** ([docs/probes.md](docs/probes.md), a guide to writing probes and extras, with
+  examples in `examples\probes\`):
+  - `c5h run --checkpoint-extra FILE`: a Lua file run at every checkpoint. What it returns goes into the checkpoint
+    (`data.extra.NAME`) and, after the game, into `extra\NAME.jsonl`, one JSON line per checkpoint.
+  - `c5h run --final-extra FILE`: a Lua file run once after the last turn. What it returns goes into
+    `extra\NAME-final.json`.
+  - An extra gets a context (`turn`, `state` kept between calls, the run and extra folders). An error costs only that
+    checkpoint's value; it is logged in the row, `Lua.log`, `events.jsonl` and `status.json` (`extras`).
+  - `--lua-probe` files get `C5H_RUN_DIR` and `C5H_EXTRA_DIR` (from a generated `probe-settings.lua`), for files a
+    probe writes itself.
+  - Queue jobs take `checkpointExtras` and `finalExtras`; `run.play` takes `checkpoint_extras` and `final_extras`.
+  - Works with the 0.2.0 host: no host rebuild.
 - **Quieter background runs** ([docs/running.md](docs/running.md#running-in-the-background)):
   - `--cpu-limit PERCENT` caps the host at that percent of one core, a hard cap on its job object. The game is the
     same, only slower; `--maximum-seconds` and `--stall-seconds` stretch to match.

@@ -40,6 +40,10 @@ Each example spec comes twice: `NAME.json` draws new seeds for every run (a new 
 [docs/running.md](docs/running.md) shows every option with examples: game specs, seeds, DLLs and mod sets, UI
 profiles, fingerprints, run outputs, queues, comparisons, the verification suite and the configuration file.
 
+Your own Lua gets any other data out of a game: values at every turn as JSON lines (`--checkpoint-extra`), the end
+state (`--final-extra`) and events as they happen (`--lua-probe`). [docs/probes.md](docs/probes.md) shows how to
+write them, with examples in `examples\probes\`.
+
 Games save and load as the real game's `.Civ5Save` files, in both directions: `c5h run SAVE.Civ5Save --turns T`
 continues a save from the real game (or from another run), every run saves its last turn into its `saves\` folder
 (`--no-save-final`: not), and `--autosave` and `--save-at` write more; the real game loads them
@@ -59,8 +63,8 @@ Python (pinned version and hash) in `runtime\`.
 | `tools/` | Host build (`build_host.py`, `toolchain.py`), interface stub generator, PE import lister, development tools |
 | `profiles/` | UI emulation profiles the host runs in place of the game's UI ([docs/profiles.md](docs/profiles.md)) |
 | `probes/` | Lua probes for the real game and the host |
-| `examples/` | Game specs and queues |
-| `docs/` | User guide, engine contract, database builder, DLL additions, plan, history |
+| `examples/` | Game specs, queues and example probes |
+| `docs/` | User guide, probes, engine contract, database builder, DLL additions, plan, history |
 
 ## Building
 

@@ -115,6 +115,8 @@ class PlayTest(unittest.TestCase):
             game.mkdir()
             probe = tmp / 'probe.lua'
             probe.write_text('print(1)', encoding='utf-8')
+            for name in ('stats', 'bad-one', 'summary'):
+                (tmp / f'{name}.lua').write_text(f'return "{name}" -- ]]', encoding='utf-8')
             for name in ('mods.db', 'loc.db', 'game.dll'):
                 (tmp / name).write_bytes(b'x')
             (tmp / 'profiles').mkdir()
@@ -123,7 +125,8 @@ class PlayTest(unittest.TestCase):
                                 profiles=tmp / 'profiles')
             spec = {'map': {'script': 'Continents.lua', 'size': 'WORLDSIZE_TINY'}, 'seeds': {'map': 1, 'sync': 2}}
             r = run.play(spec, 4, run='p1', cfg=cfg, lua_probes=[probe], heap_perturb=5, host_args=['--no-ui-frame'],
-                         seeds={'sync': 3})
+                         seeds={'sync': 3}, checkpoint_extras=[tmp / 'stats.lua', tmp / 'bad-one.lua'],
+                         final_extras=[tmp / 'summary.lua'])
             self.assertTrue(r.ok, r.status.get('error'))
             self.assertEqual(r.dir, (tmp / 'runs/p1').resolve())
             self.assertEqual((r.status['endTurn'], r.status['endReason'], r.status['wallSeconds']), (4, 'target_turn', 1.0))
@@ -140,7 +143,34 @@ class PlayTest(unittest.TestCase):
             self.assertEqual(value('--game-dir'), [str(game)])
             self.assertEqual(value('--mods-db'), [str((tmp / 'mods.db').resolve())])
             self.assertEqual(value('--loc-db'), [str((tmp / 'loc.db').resolve())])
-            self.assertEqual(value('--lua-probe'), [str(probe.resolve())])
+            # the user's probes get the run folder from a generated settings file before them
+            self.assertEqual(value('--lua-probe'), [str(r.dir / 'probe-settings.lua'), str(probe.resolve())])
+            settings = (r.dir / 'probe-settings.lua').read_text(encoding='utf-8')
+            self.assertIn(f'C5H_RUN_DIR = [[\n{r.dir}]]', settings)
+            self.assertIn(f"C5H_EXTRA_DIR = [[\n{r.dir / 'extra'}]]", settings)
+            # extras: run at the end of c5h's checkpoint and final chunks, collected into extra/ after the game
+            checkpoint_lua = Path(value('--checkpoint-lua')[0]).read_text(encoding='utf-8')
+            self.assertIn(' run([[\nstats]],', checkpoint_lua)
+            self.assertIn('[=[\nreturn "bad-one" -- ]]]=]', checkpoint_lua)
+            self.assertTrue(checkpoint_lua.rstrip().endswith('return out'))
+            self.assertNotIn('summary', checkpoint_lua)
+            self.assertIn(' run([[\nsummary]],', Path(value('--lua-before-dump')[0]).read_text(encoding='utf-8'))
+            rows = [json.loads(l) for l in (r.dir / 'extra/stats.jsonl').read_text(encoding='utf-8').splitlines()]
+            self.assertEqual([(x['turn'], x['final'], x['value']) for x in rows],
+                             [(t, False, {'turn': t}) for t in range(1, 5)] + [(4, True, {'turn': 4})])
+            self.assertEqual(rows[0]['seconds'], 0.25)
+            rows = [json.loads(l) for l in (r.dir / 'extra/bad-one.jsonl').read_text(encoding='utf-8').splitlines()]
+            self.assertEqual({x['error'] for x in rows}, {'bad-one.lua:1: failed'})
+            self.assertFalse(any('value' in x for x in rows))
+            self.assertEqual(json.loads((r.dir / 'extra/summary-final.json').read_text(encoding='utf-8')), 'final')
+            self.assertEqual([(x['kind'], x['name'], x['rows'], x['errors']) for x in r.status['extras']],
+                             [('checkpoint', 'stats', 5, 0), ('checkpoint', 'bad-one', 5, 5), ('final', 'summary', 1, 0)])
+            self.assertEqual(r.status['extras'][1]['firstError'], 'bad-one.lua:1: failed')
+            events = [json.loads(l) for l in (r.dir / 'events.jsonl').read_text(encoding='utf-8').splitlines()]
+            self.assertEqual([e['name'] for e in events if e['action'] == 'extra'], ['stats', 'bad-one', 'summary'])
+            command = json.loads((r.dir / 'hh-command.json').read_text(encoding='utf-8'))
+            self.assertEqual([x['name'] for x in command['extras']['checkpoint']], ['stats', 'bad-one'])
+            self.assertEqual(command['extras']['final'][0]['path'], str((tmp / 'summary.lua').resolve()))
             self.assertEqual(value('--heap-perturb'), ['5'])
             self.assertEqual(value('--profiles'), [str((tmp / 'profiles').resolve())])
             self.assertIn('--no-ui-frame', argv)
@@ -219,7 +249,10 @@ class PlayTest(unittest.TestCase):
             self.assertTrue({'--no-profiles', '--no-addins'} <= set(argv))
             self.assertEqual(value('--profiles'), [])
             self.assertEqual(value('--lua-probe'), [str(r.dir / 'fingerprint-settings.lua'), str(tmp / 'probes/fingerprint.lua'),
-                                                     str(probe.resolve())])
+                                                     str(r.dir / 'probe-settings.lua'), str(probe.resolve())])
+            # no extras: c5h's checkpoint chunk as it was, and no extras in status.json
+            self.assertNotIn('c5h: --checkpoint-extra', Path(value('--checkpoint-lua')[0]).read_text(encoding='utf-8'))
+            self.assertNotIn('extras', r.status)
             self.assertIn('C5HFP_EVERY = 5\nC5HFP_TURNS = {3}\n', (r.dir / 'fingerprint-settings.lua').read_text(encoding='utf-8'))
             command = json.loads((r.dir / 'hh-command.json').read_text(encoding='utf-8'))
             self.assertEqual(command['fingerprint'], dict(every=5, turns=[3], split=None))
@@ -244,6 +277,8 @@ class PlayTest(unittest.TestCase):
                               (['--mod', 'x', '--mods-db', 'r.db'], 'exclude --mods-db'),
                               (['--profiles', 'p', '--no-profiles'], 'exclude each other'),
                               (['--fingerprint-turns', '1,x'], 'turn numbers'),
+                              (['--checkpoint-extra', 'no-such-file.lua'], 'not found'),
+                              (['--final-extra', __file__, '--final-extra', __file__], 'two extra Lua files'),
                               (['--cpu-limit', '0'], '1 to 100'), (['--cpu-limit', '101'], '1 to 100')):
             with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()) as err:
                 with self.assertRaises(SystemExit) as ctx:
@@ -267,7 +302,8 @@ class QueueTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             qpath = Path(tmp) / 'q' / 'queue.json'
             qpath.parent.mkdir()
-            q = {'defaults': {'spec': 'spec.json', 'turns': 5, 'luaProbes': ['p.lua']},
+            q = {'defaults': {'spec': 'spec.json', 'turns': 5, 'luaProbes': ['p.lua'], 'checkpointExtras': ['x/c.lua'],
+                              'finalExtras': ['f.lua']},
                  'variants': {'A': {'dll': 'a/x.dll'}}, 'seeds': [[1, 2], {'map': 3, 'sync': 4}],
                  'jobs': [{'name': 'extra', 'turns': 9, 'db': 'built.db'}]}
             jobs = {j['name']: j for j in queue.expand(q, qpath)}
@@ -277,6 +313,9 @@ class QueueTest(unittest.TestCase):
             self.assertEqual(jobs['A-m3-s4']['seeds'], {'map': 3, 'sync': 4})
             self.assertEqual(Path(jobs['extra']['db']), (qpath.parent / 'built.db').resolve())
             self.assertEqual([Path(p) for p in jobs['extra']['luaProbes']], [(qpath.parent / 'p.lua').resolve()])
+            self.assertEqual([Path(p) for p in jobs['extra']['checkpointExtras']], [(qpath.parent / 'x/c.lua').resolve()])
+            a = queue.job_args(jobs['extra'], Path(tmp) / 'runs/extra', dict(db=None, modsDir=None, modsDb=None), None)
+            self.assertEqual((a.checkpoint_extra, a.final_extra), (jobs['extra']['checkpointExtras'], [str((qpath.parent / 'f.lua').resolve())]))
             self.assertEqual(jobs['extra']['turns'], 9)
             qpath.write_text(json.dumps(q), encoding='utf-8')
             cfg = config.Config(runs=Path(tmp) / 'runs')

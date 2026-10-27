@@ -174,6 +174,7 @@ configuration. Useful options:
 | `--skip-addin NAME`, `--no-addins` | leave out one mod InGameUIAddin (its file name without extension, e.g. `SmallResourceIcons`; repeatable), or all |
 | `--fingerprint` | the Lua fingerprint probe, every turn; `--fingerprint-every K`, `--fingerprint-turns 1,50,100` and `--fingerprint-split N` set it (each implies it) |
 | `--lua-probe FILE` | run a Lua file in the game once it has started, before turn 0 (repeatable) |
+| `--checkpoint-extra FILE`, `--final-extra FILE` | run a Lua file at every checkpoint, or once after the last turn, and keep what it returns as JSON in `extra/` (repeatable; [probes.md](probes.md)) |
 | `--diagnostics N` | `Game.SetStackingDiagnosticsLevel(N)` before autoplay (Vox Populi fork DLLs) |
 | `--improved-mask N`, `--ab-role baseline\|test` | A/B switches of the AI improvement program's DLLs |
 | `--checkpoint-every N` | checkpoint every N turns (default 1) |
@@ -191,7 +192,7 @@ configuration. Useful options:
 From Python, `civ5headless.run.play(spec, turns, ...)` plays one game and returns its run folder, whether it
 completed, its status and its run report (`Result.report`). Its keywords are the options above (`mods=[...]`,
 `no_mods`, `profiles`, `no_profiles`, `skip_addins=[...]`, `no_addins`, `fingerprint=True` or `{"every": K, "turns":
-[...], "split": N}`, `lua_probes=[...]`, `detail='summary'`, `report=False`, `host_args=[...]`, ...).
+[...], "split": N}`, `lua_probes=[...]`, `detail='summary'`, `report=False`, `host_args=[...]`, `checkpoint_extras=[...]`, `final_extras=[...]`, ...).
 
 ### The DLL
 
@@ -216,7 +217,17 @@ per-frame updates); see [UI emulation profiles](profiles.md) and the [engine con
 
 Lua probes (`--lua-probe`, and the fingerprint) run in order in the game's `InGame` context after the turn-0
 checkpoint and before turn 0 is processed. The real-game session runs them at the same point
-(`start_game(lua_probes=..., fingerprint=...)`), so the same files print the same lines on both sides.
+(`start_game(lua_probes=..., fingerprint=...)`), so the same files print the same lines on both sides. In `c5h run`,
+a generated `probe-settings.lua` runs before your probes and sets `C5H_RUN_DIR` and `C5H_EXTRA_DIR` (the run folder
+and its `extra` folder, for files a probe writes).
+
+Extras are Lua files whose return values c5h keeps ([probes.md](probes.md)). `--checkpoint-extra FILE` runs at the
+end of c5h's checkpoint Lua (`hh-checkpoint.lua`: every `--checkpoint-every` turns from the first turn played, and
+at the final checkpoint), `--final-extra FILE` at the end of its final Lua (`hh-final.lua`, after the last turn).
+Each file is compiled with `loadstring` and called with a context table (`name`, `kind`, `turn`, `state` kept
+between calls, `runDir`, `extraDir`) in a protected call; its result goes into the checkpoint as `data.extra.NAME`
+(an error as `data.extraErrors.NAME`), and after the game into `extra/NAME.jsonl` (one row per checkpoint) and
+`extra/NAME-final.json`. An error is logged and never fails the game.
 
 The fingerprint (`probes/fingerprint.lua`) hashes the game state through plain getters every turn (or every K-th
 turn) and prints it to `Logs\Lua.log`; it needs no DLL support, so it compares games of any DLL, including the stock
@@ -234,15 +245,16 @@ The files follow the real-game benchmark of the Vox Populi fork this came from, 
 
 | File | Content |
 |---|---|
-| `events.jsonl` | launched, checkpoint (every 10 turns), victory / target_reached, completed or failed |
+| `events.jsonl` | launched, checkpoint (every 10 turns), victory / target_reached, extra (one per extra file), completed or failed |
 | `setup.json` | the setup query (before arming), plus `backend`, `dllSHA256`, `specKey` and the A/B fields |
 | `spec-resolved.json` | the resolved spec |
-| `checkpoints/turn-NNNN.json` | players, cities and wars at every turn change; `turn-NNNN-final.json` after autoplay |
+| `checkpoints/turn-NNNN.json` | players, cities and wars at every turn change; `turn-NNNN-final.json` after autoplay; the checkpoint extras' values in `data.extra` |
+| `extra/` | the extras' results (`NAME.jsonl`, `NAME-final.json`) and the files probes write there ([probes.md](probes.md)); kept at every detail level |
 | `turn-times.jsonl`, `turn-seen.json` | seconds since autoplay started, per turn |
 | `replay-messages.json`, `replay-data.json` | replay messages (without type 2) and every major's replay series |
-| `status.json` | `state`, `startTurn`/`endTurn`/`turns`, `wallSeconds`, `secondsPerTurn`, `process` (CPU seconds, peak working set, peak private bytes), `endReason` (target_turn, victory, killed), `winner`/`victory`, `save` (seed key), `background` |
+| `status.json` | `state`, `startTurn`/`endTurn`/`turns`, `wallSeconds`, `secondsPerTurn`, `process` (CPU seconds, peak working set, peak private bytes), `endReason` (target_turn, victory, killed), `winner`/`victory`, `save` (seed key), `background`, `extras` (each extra's rows, errors and first error) |
 | `host-report.json` | the host's run report: status and error, exe, DLL and databases, options, activated mods, profiles selected, add-in contexts and their errors, unknown UI files, engine stubs the DLL called, Lua errors, timings and memory ([engine contract](engine-contract.md), section 14) |
-| `hh-command.json` | the host command line, the inputs' hashes, the DLL and why, the mods registry, profiles, fingerprint settings and detail level |
+| `hh-command.json` | the host command line, the inputs' hashes, the DLL and why, the mods registry, profiles, fingerprint settings, extras (with their SHA-256) and detail level |
 | `final-state.json` | after the last turn: every player (names, colours, alive, score, cities, population, techs, policies, era, wonders, religion) and the final map (plot owners, cities) |
 | `report.html` | the run report (below) |
 | host outputs | `newgame-report.json`, `Logs/` (HeadlessDigest.log with the per-turn digests, Lua.log, the DLL's logs), `t000-map.json`, `t000-digest.json`; with `--detail full` also `dump-t000/`, `dump-tN/` and `db/` |
@@ -323,8 +335,8 @@ c5h queue report QUEUE.json
   `["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`, `noAddins`, `fingerprint` (`true` or
   `{"every": K, "turns": [...], "split": N}`), `diagnostics`, `improvedMask`, `abRole`, `checkpointEvery`,
   `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail` (default `standard`; the old `prune: false` is `full`),
-  `report` (default on), `hostArgs`, `luaProbes`, `lowPriority` (default on), `cpuLimit`, `efficiencyMode`, `load`
-  (a save instead of `spec`),
+  `report` (default on), `hostArgs`, `luaProbes`, `checkpointExtras`, `finalExtras`, `lowPriority` (default on),
+  `cpuLimit`, `efficiencyMode`, `load` (a save instead of `spec`),
   `autosave`, `saveAt`, `saveFinal`) can be set in `defaults`, a variant or a job. Examples are in
   `examples/queues/`.
 - Mod sets' registries and databases are built once per (mods input, DLL) before the workers start.
