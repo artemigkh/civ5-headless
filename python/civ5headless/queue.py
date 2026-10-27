@@ -25,9 +25,9 @@ modsDir, modsDb, mods (the mod set as ["ID[:VER]", ...]: a generated registry in
 exe, gameDir, profiles, noProfiles, skipAddins, noAddins, fingerprint (true, or {"every": K, "turns": [...],
 "split": N}), seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery, maxSeconds, stallSeconds,
 maxMemoryMB, detail (summary, standard (default) or full; the old prune: false is full), report (default true),
-hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true), autosave (none (default), game or N),
-saveAt [turns], saveFinal (default true); they are the c5h run options of the same name (a spec that is a
-.Civ5Save is a load). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
+hostArgs, luaProbes, checkpointExtras, finalExtras (Lua files, docs/probes.md), heapPerturb, frameSkew, lowPriority
+(default true), autosave (none (default), game or N), saveAt [turns], saveFinal (default true); they are the c5h run
+options of the same name (a spec that is a .Civ5Save is a load). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
 doctor); the DLL is chosen as c5h run chooses it (a mod set's own, or the game's for noMods, unless dll is given or
 set in civ5headless.toml).
 
@@ -80,7 +80,8 @@ def expand(queue, qpath, cfg=None):
         for k in PATH_KEYS:
             if j.get(k):
                 j[k] = rel(base, j[k])
-        j['luaProbes'] = [rel(base, p) for p in j.get('luaProbes') or []]
+        for k in ('luaProbes', 'checkpointExtras', 'finalExtras'):
+            j[k] = [rel(base, p) for p in j.get(k) or []]
         if j.get('spec') and not j.get('load') and savegame.is_save(j['spec']):
             j['load'], j['spec'] = j['spec'], None
         if bool(j.get('spec')) == bool(j.get('load')):
@@ -155,7 +156,9 @@ def job_args(job, folder, inputs, affinity):
                            no_mods=bool(job.get('noMods')), loc_db=job.get('locDb'), exe=job.get('exe'),
                            game_dir=job.get('gameDir'), profiles=job.get('profiles'), no_profiles=bool(job.get('noProfiles')),
                            skip_addin=list(job.get('skipAddins') or []), no_addins=bool(job.get('noAddins')),
-                           fingerprint=job.get('fingerprint'), lua_probe=job.get('luaProbes'), heap_perturb=job.get('heapPerturb'),
+                           fingerprint=job.get('fingerprint'), lua_probe=job.get('luaProbes'),
+                           checkpoint_extra=job.get('checkpointExtras'), final_extra=job.get('finalExtras'),
+                           heap_perturb=job.get('heapPerturb'),
                            frame_skew=job.get('frameSkew'),
                            diagnostics=int(job.get('diagnostics') or 0), improved_mask=job.get('improvedMask'), ab_role=job.get('abRole'),
                            checkpoint_every=int(job.get('checkpointEvery') or 1), stall_seconds=job.get('stallSeconds'),

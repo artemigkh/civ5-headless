@@ -264,9 +264,24 @@ policies, units, culture, faith, wonders, religions, wars). It works with any DL
 Use it to compare two runs exactly (`c5h fingerprint compare runs\A runs\B`), to see where two games part ways, or as
 the source of per-turn metrics. The real-game side of the verification suite injects the same probe.
 
-`--lua-probe FILE` runs your own Lua file in the game's Lua context when the game has started, before turn 0 is
-played (repeatable). It can register `GameEvents` listeners and `print` what it wants to `Lua.log`. Use plain getters
-only: a probe that changes the game changes the result.
+Your own Lua gets anything else out of a game ([probes.md](probes.md) is the guide, with examples in
+`examples\probes\`):
+
+| Option | Runs | Output |
+|---|---|---|
+| `--checkpoint-extra FILE` | at every checkpoint (`--checkpoint-every`) and the final one | what the file returns, as JSON: `extra\NAME.jsonl`, one line per checkpoint |
+| `--final-extra FILE` | once, after the last turn | what the file returns, as JSON: `extra\NAME-final.json` |
+| `--lua-probe FILE` | once the game has started, before turn 0 is played; its `GameEvents` listeners for the rest of the game | what it prints to `Lua.log`, or files it writes into `C5H_EXTRA_DIR` |
+
+All three are repeatable, and NAME is the file name without `.lua`. An error in an extra costs only that checkpoint's
+value (the row says why); a probe that does not load fails the run. Use plain getters only: Lua that changes the game
+changes the result.
+
+```
+c5h run examples\specs\continents-tiny.json --turns 150 --checkpoint-extra examples\probes\turn-stats.lua --final-extra examples\probes\game-summary.lua --lua-probe examples\probes\city-captures.lua
+```
+
+A probe on its own:
 
 ```lua
 -- my-probes/gold.lua: every 10th turn, each major civ's gold and number of cities
@@ -345,12 +360,13 @@ doesn't write what the level leaves out.
 | File | Contents |
 |---|---|
 | `report.html` | the report above (none with `--no-report`) |
-| `status.json` | the outcome (completed, stopped or failed), turns played, wall time, CPU, peak memory, winner |
+| `status.json` | the outcome (completed, stopped or failed), turns played, wall time, CPU, peak memory, winner, and your extras' rows and errors |
 | `events.jsonl` | what the runner did, one JSON line per event (DLL choice, database build, launch, turns, end) |
 | `setup.json`, `spec-resolved.json` | the game as set up: map, civs and seeds, enough to play it again |
 | `hh-command.json` | the host command line, the inputs' hashes, the DLL and why it was chosen, the detail level |
 | `turn-times.jsonl` | seconds per turn |
-| `checkpoints\turn-NNNN.json` | the players, cities and wars at each turn (only the last turn at `summary`) |
+| `checkpoints\turn-NNNN.json` | the players, cities and wars at each turn (only the last turn at `summary`), and your checkpoint extras' values (`data.extra`) |
+| `extra\` | your extras' results: `NAME.jsonl` (one line per checkpoint) and `NAME-final.json`, and files your probes write there ([probes.md](probes.md)); kept at every detail level |
 | `final-state.json` | every player at the end, and the owners and cities on the final map |
 | `replay-data.json`, `replay-messages.json` | the game's replay: per-player series and the event log |
 | `t000-map.json` | the map at turn 0: terrain, features, starting positions |
@@ -380,7 +396,8 @@ c5h queue status my-queue.json
 - Jobs are every seed with every variant, named `<variant>-m<map>-s<sync>`, plus any explicit `"jobs"`.
 - Every `c5h run` option can be set in `defaults`, a variant or a job, under its JSON name: `spec`, `turns`, `dll`,
   `db`, `modsDir`, `modsDb`, `mods` (`["ID[:VER]", ...]`), `noMods`, `profiles`, `noProfiles`, `skipAddins`,
-  `noAddins`, `fingerprint` (`true` or `{"every": K, "turns": [...], "split": N}`), `luaProbes`, `seeds`,
+  `noAddins`, `fingerprint` (`true` or `{"every": K, "turns": [...], "split": N}`), `luaProbes`,
+  `checkpointExtras`, `finalExtras`, `seeds`,
   `checkpointEvery`, `maxSeconds`, `stallSeconds`, `maxMemoryMB`, `detail`, `report`, `lowPriority`, `hostArgs`,
   `load` (a save instead of `spec`; a `spec` that is a `.Civ5Save` is loaded too), `autosave`, `saveAt`,
   `saveFinal` (default `true`).

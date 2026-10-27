@@ -7,7 +7,7 @@ run folder.
           [--loc-db DB] [--game-dir DIR] [--exe EXE]
           [--profiles DIR | --no-profiles] [--skip-addin NAME]... [--no-addins]
           [--fingerprint] [--fingerprint-every K] [--fingerprint-turns T,T,...] [--fingerprint-split N]
-          [--lua-probe FILE]... [--heap-perturb N] [--frame-skew K]
+          [--lua-probe FILE]... [--checkpoint-extra FILE]... [--final-extra FILE]... [--heap-perturb N] [--frame-skew K]
           [--diagnostics 1] [--improved-mask N | --ab-role baseline|test] [--checkpoint-every 1]
           [--maximum-seconds S] [--stall-seconds S] [--max-memory-mb MB] [--affinity MASK] [--low-priority]
           [--detail summary|standard|full] [--no-report] [--host-arg ARG]...
@@ -49,13 +49,21 @@ c5h report RUN rebuilds it).
 UI: the host runs the activated mods' InGameUIAddins (--skip-addin NAME leaves one out, --no-addins all) and the UI
 emulation profiles from --profiles (default: config profiles; --no-profiles: none). --fingerprint runs the Lua
 fingerprint probe (probes/fingerprint.lua; c5h fingerprint compares two runs), every turn or every K-th
-(--fingerprint-every) plus --fingerprint-turns, before the --lua-probe files.
+(--fingerprint-every) plus --fingerprint-turns, before the --lua-probe files (which get C5H_RUN_DIR and C5H_EXTRA_DIR
+from a generated probe-settings.lua).
+
+Your own data (docs/probes.md): --lua-probe FILE runs once the game has started and can register GameEvents listeners
+and print to Lua.log; --checkpoint-extra FILE runs at every checkpoint and what it returns goes into the checkpoint
+(data.extra.NAME, NAME the file's stem) and, after the game, into extra/NAME.jsonl (one row per checkpoint);
+--final-extra FILE runs once after the last turn and what it returns goes into extra/NAME-final.json. The extra folder
+is kept at every detail level; an error in an extra file is logged (events.jsonl, Lua.log) and never fails the game.
 
 The run folder has the files vpbench writes and its readers use (compare.py, abcompare.py, samerun.py):
 events.jsonl, setup.json, spec-resolved.json, status.json, turn-times.jsonl, turn-seen.json,
 checkpoints/turn-NNNN.json (+ turn-NNNN-final.json), replay-messages.json, replay-data.json; plus final-state.json
-(players and the final map), report.html and the host's own outputs (host-report.json, newgame-report.json, Logs/
-with HeadlessDigest.log and Lua.log, t000-*.json; with --detail full dump-t000/, dump-tN/ and db/).
+(players and the final map), extra/ (the extras' results), report.html and the host's own outputs (host-report.json,
+newgame-report.json, Logs/ with HeadlessDigest.log and Lua.log, t000-*.json; with --detail full dump-t000/, dump-tN/
+and db/).
 
 Differences from a real-game run (docs/user-guide.md, "Run folders"):
 - checkpoints are taken exactly when the game turn advances (every --checkpoint-every turns), not by a
@@ -430,7 +438,13 @@ def newgame(a, quiet=False, cfg=None):
                     "its exe and in the folders above (set profiles in civ5headless.toml, or pass --profiles or --no-profiles)")
         fingerprint = fingerprint_options(a)
         lua_probes = probes.fingerprint_probes(cfg, run.dir, **fingerprint) if fingerprint else []
-        lua_probes += [Path(p).resolve() for p in getattr(a, 'lua_probe', None) or []]
+        user_probes = [Path(p).resolve() for p in getattr(a, 'lua_probe', None) or []]
+        if user_probes:
+            lua_probes += [probes.run_settings(run.dir)] + user_probes
+        checkpoint_extras = probes.extra_files(getattr(a, 'checkpoint_extra', None))
+        final_extras = probes.extra_files(getattr(a, 'final_extra', None))
+        if checkpoint_extras or final_extras:
+            (run.dir / probes.EXTRA_DIR).mkdir(exist_ok=True)  # ctx.extraDir, for files an extra writes itself
         db, dbinfo = dbcache.database(cfg, db=a.db, mods_dir=mods_dir, mods_db=mods_db, dll=dll, exe=exe,
                                       log=lambda m: run.log('database_built', quiet=quiet, message=m))
         if header:
@@ -443,8 +457,11 @@ def newgame(a, quiet=False, cfg=None):
         mask = a.improved_mask
         (run.dir / 'hh-before-arm.lua').write_text(BEFORE_ARM % dict(setup=SETUP, diagnostics=a.diagnostics,
                                                                        mask='nil' if mask is None else int(mask)), encoding='utf-8')
-        (run.dir / 'hh-checkpoint.lua').write_text(CHECKPOINT % dict(strength=STRENGTH), encoding='utf-8')
-        (run.dir / 'hh-final.lua').write_text(FINAL, encoding='utf-8')
+        (run.dir / 'hh-checkpoint.lua').write_text(probes.with_extra(CHECKPOINT % dict(strength=STRENGTH),
+                                                                     probes.extra_lua('checkpoint', checkpoint_extras, run.dir)),
+                                                   encoding='utf-8')
+        (run.dir / 'hh-final.lua').write_text(probes.with_extra(FINAL, probes.extra_lua('final', final_extras, run.dir)),
+                                              encoding='utf-8')
         game = ['loadgame', '--load', str(save_file)] if save_file else ['newgame', '--spec', str(run.dir / 'spec-resolved.json')]
         cmd = [str(exe)] + game + ['--out', str(run.dir.resolve()),
                '--dll', str(dll), '--db', str(db), '--turns', str(a.target_turn - start_turn),
@@ -477,7 +494,9 @@ def newgame(a, quiet=False, cfg=None):
                                                 modsDb=str(mods_db) if mods_db else None, noMods=no_mods,
                                                 mods=list(mod_set) if mod_set is not None else None,
                                                 profiles=str(profiles) if profiles else None, fingerprint=fingerprint,
-                                                detail=detail, load=str(save_file) if save_file else None, startTurn=start_turn))
+                                                detail=detail, load=str(save_file) if save_file else None, startTurn=start_turn,
+                                                extras={kind: [dict(name=n, path=str(f), sha256=dbcache.sha256_file(f)) for n, f in files]
+                                                        for kind, files in (('checkpoint', checkpoint_extras), ('final', final_extras))}))
         affinity = int(a.affinity, 0) if isinstance(a.affinity, str) else a.affinity
         job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity)
         meter = winproc.LoadMeter().start()  # what else ran (the real game) during this run
@@ -523,6 +542,9 @@ def newgame(a, quiet=False, cfg=None):
         ng = report.get('newgame', {})
         before = read(run.dir / 'lua-before-arm.json') or {}
         final = read(run.dir / 'lua-before-dump.json') or {}
+        extras = probes.collect_extras(run.dir, [n for n, _ in checkpoint_extras], [n for n, _ in final_extras], final)
+        for x in extras:
+            run.log('extra', quiet=quiet, **x)
         setup = dict(before.get('setup') or {})
         setup['improvedMask'] = before.get('improvedMask', -2)
         if mask is None and a.ab_role:
@@ -559,6 +581,8 @@ def newgame(a, quiet=False, cfg=None):
                       background=load, diagnosticsLogPrefix=prefixes[-1] if prefixes else None, logsFolder=str((run.dir / 'Logs').resolve()))
         if save_file:
             status.update(loadedFrom=str(save_file), loadWarnings=(ng.get('load') or {}).get('warnings') or [])
+        if extras:
+            status['extras'] = extras
         if saves:
             status['saves'] = [dict(kind=x.get('kind'), turn=x.get('turn'), path=x.get('path'), bytes=x.get('bytes'))
                                for x in saves if not x.get('error')]
@@ -652,7 +676,8 @@ class Result:
 
 def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None, db=None, mods_dir=None,
          mods_db=None, mods=None, no_mods=False, loc_db=None, game_dir=None, exe=None, profiles=None, no_profiles=False,
-         skip_addins=(), no_addins=False, fingerprint=False, lua_probes=(), heap_perturb=None, frame_skew=None,
+         skip_addins=(), no_addins=False, fingerprint=False, lua_probes=(), checkpoint_extras=(), final_extras=(),
+         heap_perturb=None, frame_skew=None,
          diagnostics=0, improved_mask=None, ab_role=None, checkpoint_every=1, max_seconds=21600, stall_seconds=900,
          max_memory_mb=3500, affinity=None, low_priority=False, detail=None, report=True, prune=False, host_args=(),
          poll=1.0, quiet=True, load=None, autosave=None, save_at=(), save_final=True):
@@ -667,7 +692,9 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
     mods: the mod set as 'ID[:VER]' strings (a registry is generated; instead of mods_db); no_mods: play without mods;
     profiles / no_profiles, skip_addins / no_addins: the host's UI emulation profiles and InGameUIAddins;
     fingerprint: True, or dict(every=K, turns=[...], split=N), runs the Lua fingerprint probe before lua_probes;
-    lua_probes: files for the host's --lua-probe; heap_perturb, frame_skew: the host options of the same name;
+    lua_probes: files for the host's --lua-probe; checkpoint_extras, final_extras: Lua files whose results go into
+    the checkpoints and extra/NAME.jsonl, and into extra/NAME-final.json (docs/probes.md);
+    heap_perturb, frame_skew: the host options of the same name;
     detail: 'summary', 'standard' (default) or 'full', what the run folder keeps (prune=True, the old option, is
     'standard'); report: write report.html; host_args: further host arguments. The other keywords are the c5h run
     options of the same name; anything left None comes from the configuration (the DLL: modsdb.choose_dll). Raises
@@ -693,7 +720,8 @@ def play(spec, turns, *, run=None, run_dir=None, cfg=None, seeds=None, dll=None,
                         mod=list(mods) if mods is not None else None, no_mods=no_mods, loc_db=loc_db,
                         game_dir=game_dir, exe=exe, profiles=profiles, no_profiles=no_profiles,
                         skip_addin=list(skip_addins or []), no_addins=no_addins, fingerprint=fingerprint,
-                        lua_probe=list(lua_probes or []),
+                        lua_probe=list(lua_probes or []), checkpoint_extra=list(checkpoint_extras or []),
+                        final_extra=list(final_extras or []),
                         heap_perturb=heap_perturb, frame_skew=frame_skew, diagnostics=int(diagnostics or 0),
                         improved_mask=improved_mask, ab_role=ab_role, checkpoint_every=int(checkpoint_every or 1),
                         maximum_seconds=max_seconds, stall_seconds=stall_seconds, max_memory_mb=max_memory_mb or None,
@@ -737,6 +765,10 @@ def add_arguments(n):
     n.add_argument('--fingerprint-turns', help='fingerprint these turns too, e.g. 1,50,100 (implies --fingerprint)')
     n.add_argument('--fingerprint-split', type=int, help='fingerprint sections per Lua.log line (default 12)')
     n.add_argument('--lua-probe', action='append', help='Lua file the host runs once the game has started (repeatable)')
+    n.add_argument('--checkpoint-extra', action='append', metavar='FILE', help='Lua file run at every checkpoint; what it '
+                   'returns goes into the checkpoint and extra/NAME.jsonl (repeatable; docs/probes.md)')
+    n.add_argument('--final-extra', action='append', metavar='FILE', help='Lua file run once after the last turn; what it '
+                   'returns goes into extra/NAME-final.json (repeatable; docs/probes.md)')
     n.add_argument('--heap-perturb', type=int, help='host heap layout perturbation seed (0: off)')
     n.add_argument('--frame-skew', type=int, help='an extra engine update before every K-th one')
     n.add_argument('--diagnostics', type=int, default=0, help='Stacking diagnostics level during autoplay (behaviour runs)')
@@ -792,6 +824,11 @@ def check_args(a, error):
         fingerprint_options(a)
     except ValueError:
         error('--fingerprint-turns takes turn numbers, e.g. 1,50,100')
+    for option in ('checkpoint_extra', 'final_extra'):
+        try:
+            probes.extra_files(getattr(a, option, None))
+        except ValueError as e:
+            error(f"--{option.replace('_', '-')}: {e}")
     if a.max_memory_mb == 0: a.max_memory_mb = None
     a.seeds = dict(map=a.seeds[0], sync=a.seeds[1]) if a.seeds else None
 

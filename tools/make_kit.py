@@ -8,9 +8,9 @@ The kit is dist/civ5-headless-<version>-<commit>.zip with one top folder:
   bin/                    civ5headless.exe and its .pdb (from a tools/build_host.py build), build-info.json
   python/civ5headless/    the c5h package
   profiles/, probes/      the host's UI emulation profiles and Lua probes
-  examples/               game specs and queues
+  examples/               game specs, queues and example probes
   docs/                   the user guide, verification, profiles, engine contract, database builder, DLL additions,
-                          saved games
+                          saved games, probes
   runtime/                a private Python (python.org's embeddable package), so users need not install one
   c5h.cmd                 the command line (finds runtime\\python.exe, else Python on PATH or the py launcher)
   kit.json                version, commit, hashes; its presence makes config treat the folder as a kit (workspace,
@@ -62,7 +62,8 @@ SIGNERS = ('CN=Python Software Foundation', 'CN=Microsoft')
 # What the kit takes from the repository (files or folders).
 KIT_PATHS = ['python/civ5headless', 'profiles', 'probes', 'examples', 'c5h.cmd', 'civ5headless.example.toml',
              'README.md', 'CHANGELOG.md', 'LICENSE', 'docs/running.md', 'docs/user-guide.md', 'docs/verification.md', 'docs/profiles.md',
-             'docs/engine-contract.md', 'docs/database-builder.md', 'docs/dll-additions.md', 'docs/saves.md']
+             'docs/engine-contract.md', 'docs/database-builder.md', 'docs/dll-additions.md', 'docs/saves.md',
+             'docs/probes.md']
 RENAMED = {'sdk/README.md': 'licenses/SDK-NOTICE.md'}
 # What civ5headless.exe is built from (tools/build_host.py).
 HOST_SOURCES = ['host', 'sdk', 'tools/build_host.py', 'tools/toolchain.py']
@@ -93,7 +94,8 @@ in the run folder's spec-resolved.json), NAME-fixed-seed.json replays the same m
 
 Run c5h.cmd from this folder (or put the folder on PATH). Settings go in civ5headless.toml next to it; see
 civ5headless.example.toml. docs\\running.md shows every option with examples, docs\\user-guide.md explains how it
-works, docs\\verification.md covers the verification suite.
+works, docs\\verification.md covers the verification suite, and docs\\probes.md shows how to get your own data out
+of a game with Lua (examples in examples\\probes).
 """
 
 SOURCE = """civ5-headless is free software under the GNU General Public License v3 (LICENSE).
