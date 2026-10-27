@@ -11,7 +11,9 @@ Every release of civ5-headless. Each GitHub release has the kit (`civ5-headless-
     priority), as Task Manager's.
   - Queues: `cpuLimit` and `efficiencyMode` job keys, and `--cpu-limit` and `--efficiency-mode` on `queue run` for
     every game of the session.
-  - `status.json` records `cpuLimit` and `efficiencyMode`; the report's CPU card shows them.
+  - `queue run --total-cpu-limit PERCENT` (or `"totalCpuLimit"` in the queue file) caps all of a queue's running games
+    together, however many workers (200: two cores' worth); the games share it.
+  - `status.json` records `cpuLimit`, `totalCpuLimit` and `efficiencyMode`; the report's CPU card shows them.
 
 ## 0.2.0 (2026-10-26)
 

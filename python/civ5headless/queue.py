@@ -1,7 +1,7 @@
 """Parallel runner for host games: a resumable queue of run.py games with N workers.
 
   c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--cpu-limit PERCENT] [--efficiency-mode]
-                [--retry-failed]
+                [--total-cpu-limit PERCENT] [--retry-failed]
   c5h queue status QUEUE.json        # job table and totals (also written as QUEUE.summary.json)
   c5h queue report QUEUE.json        # the summary page over the queue's games: <out>/summary.html (queue run writes
                                      # it at the end too); each game has its own report.html
@@ -12,6 +12,7 @@ QUEUE.json (relative paths are relative to the queue file's folder):
 
   {"out": "ab1",                            # run folders: <out>/<job name> (default <runs>/<queue file stem>)
    "workers": 8, "affinity": "p-first",
+   "totalCpuLimit": 200,                    # optional: all games together at most 200% of one core (2 cores)
    "defaults": {"spec": "../specs/continents-standard.json", "turns": 100,
                 "modsDir": "...MODS", "modsDb": "...Civ5ModsDatabase.db", "dll": "...CvGameCore_Expansion2.dll",
                 "diagnostics": 0, "checkpointEvery": 1, "maxSeconds": 7200, "stallSeconds": 900,
@@ -27,8 +28,8 @@ exe, gameDir, profiles, noProfiles, skipAddins, noAddins, fingerprint (true, or 
 "split": N}), seeds {map, sync}, diagnostics, improvedMask, abRole, checkpointEvery, maxSeconds, stallSeconds,
 maxMemoryMB, detail (summary, standard (default) or full; the old prune: false is full), report (default true),
 hostArgs, luaProbes, heapPerturb, frameSkew, lowPriority (default true), cpuLimit (percent of one core),
-efficiencyMode, autosave (none (default), game or N), saveAt [turns], saveFinal (default true); they are the c5h run options of the same name (a spec that is a
-.Civ5Save is a load). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
+efficiencyMode, autosave (none (default), game or N), saveAt [turns], saveFinal (default true); they are the c5h run
+options of the same name (a spec that is a .Civ5Save is a load). Paths left out (dll, modsDir, modsDb, locDb, exe, gameDir, profiles, db) come from the configuration (c5h
 doctor); the DLL is chosen as c5h run chooses it (a mod set's own, or the game's for noMods, unless dll is given or
 set in civ5headless.toml).
 
@@ -39,6 +40,9 @@ Pause: create QUEUE.stop; workers take no new job, running games finish. Ctrl-C 
 Workers: worker k is pinned to the k-th physical core, P-cores (both hyperthreads) first, then E-cores
 (--affinity none: no pinning). Games run below normal priority unless lowPriority is false. --cpu-limit and
 --efficiency-mode set cpuLimit and efficiencyMode for every game of this session (the cap is per game).
+Total CPU: totalCpuLimit (or --total-cpu-limit, which wins) caps all running games together at that percent of one
+core, however many workers there are: every game's job nests in one capped job, so the games share it. The time limits
+stretch by the share each game can expect (the total over the workers).
 """
 from pathlib import Path
 import argparse, collections, json, os, subprocess, sys, threading, time
@@ -55,6 +59,11 @@ PATH_KEYS = ('spec', 'load', 'dll', 'db', 'modsDir', 'modsDb', 'locDb', 'exe', '
 
 
 def utc(): return datetime.now(timezone.utc).isoformat()
+
+
+def total_cpu_limit_ok(value):
+    """A queue's total cap: a whole percent of one core, from 1 to the whole machine."""
+    return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 100 * winproc.logical_cpus()
 
 
 def rel(base, value):
@@ -149,8 +158,9 @@ def job_detail(job):
     return 'full' if job.get('prune') is False else host_run.DEFAULT_DETAIL
 
 
-def job_args(job, folder, inputs, affinity):
-    """run.py's namespace for a job; inputs: its database, mods and DLL (databases())."""
+def job_args(job, folder, inputs, affinity, parent_job=None, cpu_share=None):
+    """run.py's namespace for a job; inputs: its database, mods and DLL (databases()); parent_job: the queue's job with
+    the CPU cap all games share, and cpu_share the part of a core each can expect from it (for the time limits)."""
     return SimpleNamespace(run=None, run_dir=str(folder), spec=job.get('spec'), load=job.get('load'),
                            autosave=job.get('autosave'), save_at=list(job.get('saveAt') or []),
                            save_final=bool(job.get('saveFinal', True)), target_turn=int(job['turns']),
@@ -167,7 +177,8 @@ def job_args(job, folder, inputs, affinity):
                            report=bool(job.get('report', True)),
                            poll=1.0, host_arg=list(job.get('hostArgs') or []), maximum_seconds=job.get('maxSeconds'),
                            seeds=job.get('seeds'), low_priority=bool(job.get('lowPriority', True)),
-                           cpu_limit=job.get('cpuLimit'), efficiency_mode=bool(job.get('efficiencyMode')))
+                           cpu_limit=job.get('cpuLimit'), efficiency_mode=bool(job.get('efficiencyMode')),
+                           parent_job=parent_job, cpu_share=cpu_share)
 
 
 def prepare(q, retry_failed):
@@ -234,17 +245,25 @@ def run(args, cfg):
             job['cpuLimit'] = args.cpu_limit
         if args.efficiency_mode:
             job['efficiencyMode'] = True
+    total = args.total_cpu_limit or q.queue.get('totalCpuLimit')
+    if total is not None and not total_cpu_limit_ok(total):
+        raise SystemExit(f'totalCpuLimit is a percent of one core, 1 to {100 * winproc.logical_cpus()}, not {total!r}')
     pending = prepare(q, args.retry_failed)
     q.log(f'queue {q.qpath.name}: {len(q.jobs)} jobs, {len(pending)} to run, {workers} workers, affinity {mode}'
           + (f', each game capped at {args.cpu_limit}% of a core' if args.cpu_limit else '')
+          + (f', all games together at {total}% of a core' if total else '')
           + (', efficiency mode' if args.efficiency_mode else ''))
     if not pending:
         return summary(q)
     dbs = databases(q, pending)
+    # The total cap: one job object every game's own job nests in. Each game expects an equal part of it.
+    parent = winproc.Job(cpu_limit=total) if total else None
+    share = total / min(workers, len(pending)) if total else None
     todo = collections.deque(pending)
     started = time.monotonic()
     previous = (q.state.get('queue') or {}).get('seconds') or 0  # batch time of earlier sessions (resume)
-    q.state['queue'] = dict(state='running', started=utc(), workers=workers, affinity=mode, seconds=previous)
+    q.state['queue'] = dict(state='running', started=utc(), workers=workers, affinity=mode, totalCpuLimit=total,
+                            seconds=previous)
     q.save()
     stopping = threading.Event()
 
@@ -261,7 +280,8 @@ def run(args, cfg):
             q.log(f"[w{slot}] start {job['name']} ({job['turns']} turns, {Path(dbs[job['name']]['dll']).parent.name})")
             t = time.monotonic()
             try:
-                code = host_run.newgame(job_args(job, q.run_dir(job), dbs[job['name']], masks[slot]), quiet=True, cfg=cfg)
+                code = host_run.newgame(job_args(job, q.run_dir(job), dbs[job['name']], masks[slot], parent, share),
+                                        quiet=True, cfg=cfg)
             except KeyboardInterrupt:
                 code = None
             except BaseException as error:  # noqa: BLE001
@@ -297,6 +317,8 @@ def run(args, cfg):
         q.log('interrupted: the running games are killed with their job objects; restart to resume')
         raise
     finally:
+        if parent:
+            parent.close()  # kill on close: takes any game still running with it
         with q.lock:
             q.state['queue']['background'] = meter.stop()
             q.state['queue'].update(state='stopped' if (q.stop_path.exists() or stopping.is_set()) else 'finished', finished=utc(),
@@ -405,6 +427,8 @@ def main(argv=None, cfg=None):
     r.add_argument('--workers', type=int); r.add_argument('--affinity', choices=['p-first', 'none'])
     r.add_argument('--cpu-limit', type=int, metavar='PERCENT', help='cap every game at this percent of one core (1-100)')
     r.add_argument('--efficiency-mode', action='store_true', help='run every game in Windows efficiency mode')
+    r.add_argument('--total-cpu-limit', type=int, metavar='PERCENT', help='cap all games together at this percent of '
+                   'one core (e.g. 200: two cores), however many workers')
     r.add_argument('--retry-failed', action='store_true')
     s = sub.add_parser('status'); s.add_argument('queue')
     rp = sub.add_parser('report'); rp.add_argument('queue')
@@ -415,6 +439,8 @@ def main(argv=None, cfg=None):
     a = p.parse_args(argv)
     if a.command == 'run' and a.cpu_limit is not None and not 1 <= a.cpu_limit <= 100:
         r.error('--cpu-limit takes a percent of one core, 1 to 100')
+    if a.command == 'run' and a.total_cpu_limit is not None and not total_cpu_limit_ok(a.total_cpu_limit):
+        r.error(f'--total-cpu-limit takes a percent of one core, 1 to {100 * winproc.logical_cpus()}')
     cfg = cfg or config.load()
     if a.command == 'run':
         return run(a, cfg)

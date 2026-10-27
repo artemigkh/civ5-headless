@@ -107,18 +107,21 @@ def logical_cpus():
     return kernel32.GetActiveProcessorCount(ALL_PROCESSOR_GROUPS) or os.cpu_count() or 1
 
 
-def cpu_rate(percent):
-    """A job CpuRate (cycles per 10,000 of the whole machine) for percent of one logical processor."""
-    return max(1, min(10000, round(float(percent) * 100 / logical_cpus())))
+def cpu_rate(percent, within=None):
+    """A job CpuRate for percent of one logical processor: cycles per 10,000 of the whole machine, or of the parent
+    job's cap for a job nested in one capped at within percent."""
+    return max(1, min(10000, round(float(percent) * 10000 / (within or 100 * logical_cpus()))))
 
 
 class Job:
-    """A job object holding one host process: memory limit, affinity, CPU cap, kill on close.
+    """A job object holding host processes: memory limit, affinity, CPU cap, kill on close.
 
     cpu_limit: percent of one logical processor (the host is single-threaded), a hard cap: past its share of a
-    scheduling interval the job's threads wait for the next one."""
+    scheduling interval the job's threads wait for the next one. within: the capped Job this one is nested in (its
+    processes are assigned to that one first), whose cap a nested job's rate is counted against."""
 
-    def __init__(self, memory_mb=None, affinity=None, cpu_limit=None):
+    def __init__(self, memory_mb=None, affinity=None, cpu_limit=None, within=None):
+        self.cpu_limit = cpu_limit
         self.handle = kernel32.CreateJobObjectW(None, None)
         if not self.handle:
             raise ctypes.WinError(ctypes.get_last_error())
@@ -135,7 +138,7 @@ class Job:
             raise ctypes.WinError(ctypes.get_last_error())
         if cpu_limit:
             rate = JOBOBJECT_CPU_RATE_CONTROL_INFORMATION(JOB_OBJECT_CPU_RATE_CONTROL_ENABLE | JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
-                                                          cpu_rate(cpu_limit))
+                                                          cpu_rate(cpu_limit, within and within.cpu_limit))
             if not kernel32.SetInformationJobObject(self.handle, JobObjectCpuRateControlInformation, ctypes.byref(rate), ctypes.sizeof(rate)):
                 raise ctypes.WinError(ctypes.get_last_error())
 

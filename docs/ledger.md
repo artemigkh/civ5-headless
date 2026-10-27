@@ -336,5 +336,18 @@ The host's own history (milestones M0–M6, parity work against the real game) i
   - Both games identical to the uncapped one on 120 of 120 digest points.
   - A 2-game queue with `--cpu-limit 50 --efficiency-mode`, pinned p-first: 0.50 and 0.51 cores, both in efficiency
     mode.
+- **Queue-wide cap:** `queue run --total-cpu-limit PERCENT` (or `"totalCpuLimit"`) caps all of a queue's running
+  games together. The queue holds one capped job, and each game's job nests in it (the host is assigned to the
+  queue's job first).
+  - A nested job's CpuRate counts against its parent's cap, not the machine. The first try, with machine-relative
+    rates, gave 4 busy loops capped at 50% each under a 1-core total only 0.09 cores together. `winproc.cpu_rate`
+    now takes the parent's cap (`within`). Busy loops then: total 100 with per-game 50 gave 0.25 each (1.06 in
+    all); total 300 with per-game 50 gave 0.52 each; total 300 with per-game 25 gave 0.26 each.
+  - The time limits stretch by the expected share, total / min(workers, games).
+  - A real queue: 4 workers, Tiny, 60 turns, `--total-cpu-limit 100`, game d also at `cpuLimit` 10. a, b and c got
+    0.30 cores each and d 0.10, 1.0 in all. One-second samples of the 4 together: median 1.03, maximum 1.28.
+  - All 4 games are identical to an uncapped 60-turn `c5h run` of the same spec (60 of 60 digest points), as are the
+    earlier queue games. Games of different lengths differ from turn 0 in the `game` section (the
+    remaining-autoplay count), so the checks compare games of the same length.
 - **Found on the way:** this machine's game cache folder (`My Games\...\cache`) is missing, so a new database cannot
   be built until the game is started once; the test runs used a cached build (`--db`).

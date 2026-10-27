@@ -336,9 +336,36 @@ class QueueTest(unittest.TestCase):
             for bad in (0, 101, '50'):
                 with self.subTest(cpuLimit=bad), self.assertRaises(SystemExit):
                     queue.expand({'jobs': [{'name': 'x', 'spec': 's', 'cpuLimit': bad}]}, qpath)
-            with contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
-                queue.main(['run', str(qpath), '--cpu-limit', '0'], config.Config())
-            self.assertIn('1 to 100', err.getvalue())
+            for argv, message in ((['--cpu-limit', '0'], '1 to 100'), (['--total-cpu-limit', '0'], 'percent of one core')):
+                with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+                    queue.main(['run', str(qpath)] + argv, config.Config())
+                self.assertIn(message, err.getvalue())
+
+    def test_total_cap_run(self):
+        """queue run --total-cpu-limit with fake_host.cmd: every game nests in the queue's capped job."""
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {'C5H_TEST_PYTHON': sys.executable}):
+            tmp = Path(tmp)
+            db = tmp / 'game.db'
+            make_db(db)
+            for name in ('mods.db', 'loc.db', 'game.dll'):
+                (tmp / name).write_bytes(b'x')
+            (tmp / 'game').mkdir()
+            spec = {'map': {'script': 'Continents.lua', 'size': 'WORLDSIZE_TINY'}, 'seeds': {'map': 1, 'sync': 2}}
+            (tmp / 'spec.json').write_text(json.dumps(spec), encoding='utf-8')
+            qpath = tmp / 'q.json'
+            qpath.write_text(json.dumps({'totalCpuLimit': 300, 'defaults': {'spec': 'spec.json', 'turns': 3, 'report': False},
+                                         'jobs': [{'name': 'a'}, {'name': 'b', 'cpuLimit': 50}]}), encoding='utf-8')
+            cfg = config.Config(game_dir=tmp / 'game', mods_dir=tmp / 'MODS', mods_db=tmp / 'mods.db', loc_db=tmp / 'loc.db',
+                                dll=tmp / 'game.dll', exe=HERE / 'fake_host.cmd', db=db, runs=tmp / 'runs')
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = queue.main(['run', str(qpath), '--workers', '2', '--total-cpu-limit', '100'], cfg)  # the option wins
+            self.assertEqual(code, 0, out.getvalue())
+            self.assertIn('all games together at 100% of a core', out.getvalue())
+            statuses = {n: json.loads((tmp / 'runs/q' / n / 'status.json').read_text(encoding='utf-8')) for n in 'ab'}
+            self.assertEqual({n: (s['state'], s['totalCpuLimit'], s['cpuLimit']) for n, s in statuses.items()},
+                             {'a': ('completed', 100, None), 'b': ('completed', 100, 50)})
+            state = json.loads(qpath.with_suffix('.state.json').read_text(encoding='utf-8'))
+            self.assertEqual(state['queue']['totalCpuLimit'], 100)
 
 
 class WinprocTest(unittest.TestCase):
@@ -348,6 +375,30 @@ class WinprocTest(unittest.TestCase):
             self.assertEqual([winproc.cpu_rate(p) for p in (100, 50, 1)], [312, 156, 3])
         with mock.patch.object(winproc, 'logical_cpus', return_value=1):
             self.assertEqual(winproc.cpu_rate(100), 10000)
+        # nested in a job capped at within percent of a core: counted against that cap
+        self.assertEqual([winproc.cpu_rate(50, within=100), winproc.cpu_rate(25, within=200), winproc.cpu_rate(50, within=25)],
+                         [5000, 1250, 10000])
+
+    def test_total_cap_over_nested_jobs(self):
+        """Three busy loops, each in its own job capped at 50% of a core, nested in one capped at 50% in all: together
+        they get about half a core (a nested rate counted against the machine instead would give them almost none)."""
+        parent = winproc.Job(cpu_limit=50)
+        jobs, procs = [], []
+        try:
+            t = time.monotonic()
+            for _ in range(3):
+                jobs.append(winproc.Job(cpu_limit=50, within=parent))
+                procs.append(subprocess.Popen([sys.executable, '-c', 'import time\nt = time.time()\nwhile time.time() - t < 3: pass']))
+                parent.assign(procs[-1])
+                jobs[-1].assign(procs[-1])
+            for p in procs:
+                p.wait()
+            total = sum(winproc.process_stats(p)['CPUSeconds'] for p in procs) / (time.monotonic() - t)
+            self.assertGreater(total, 0.3)
+            self.assertLess(total, 0.75)
+        finally:
+            for job in jobs + [parent]:
+                job.close()
 
     def test_cap_and_efficiency_mode_on_a_busy_process(self):
         """A busy loop capped at 25% of a core uses about a quarter of one; efficiency mode reads back as set."""

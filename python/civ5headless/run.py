@@ -55,8 +55,8 @@ fingerprint probe (probes/fingerprint.lua; c5h fingerprint compares two runs), e
 Background runs: --cpu-limit P caps the host at P percent of one core (a hard cap on its job object; the host is
 single-threaded). The game plays the same, only slower, and --maximum-seconds and --stall-seconds stretch by 100/P.
 --efficiency-mode runs the host in Windows' efficiency mode, as Task Manager's: EcoQoS (lower clocks, efficient cores
-on hybrid CPUs) and idle priority. status.json records both (cpuLimit, efficiencyMode); the timings of such a run are
-not the host's speed.
+on hybrid CPUs) and idle priority. status.json records both (cpuLimit, efficiencyMode, and totalCpuLimit for a queue's
+cap shared by its games, queue.py); the timings of such a run are not the host's speed.
 
 The run folder has the files vpbench writes and its readers use (compare.py, abcompare.py, samerun.py):
 events.jsonl, setup.json, spec-resolved.json, status.json, turn-times.jsonl, turn-seen.json,
@@ -487,15 +487,20 @@ def newgame(a, quiet=False, cfg=None):
                                                 detail=detail, load=str(save_file) if save_file else None, startTurn=start_turn))
         affinity = int(a.affinity, 0) if isinstance(a.affinity, str) else a.affinity
         cpu_limit = getattr(a, 'cpu_limit', None) or None
-        slower = 100 / cpu_limit if cpu_limit else 1  # the time limits count uncapped seconds
+        parent_job = getattr(a, 'parent_job', None)  # a queue's job: a CPU cap its games share
+        total_cpu_limit = parent_job.cpu_limit if parent_job else None
+        share = min(x for x in (cpu_limit, getattr(a, 'cpu_share', None), 100) if x)  # of a core, at most
+        slower = 100 / share  # the time limits count uncapped seconds
         maximum_seconds = a.maximum_seconds and round(a.maximum_seconds * slower)
         stall_seconds = a.stall_seconds and round(a.stall_seconds * slower)
-        job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity, cpu_limit=cpu_limit)
+        job = winproc.Job(memory_mb=a.max_memory_mb, affinity=affinity, cpu_limit=cpu_limit, within=parent_job)
         meter = winproc.LoadMeter().start()  # what else ran (the real game) during this run
         started = time.monotonic(); started_utc = utc()
         with open(run.dir / 'host-stdout.txt', 'wb') as out:
             proc = subprocess.Popen(cmd, cwd=str(run.dir), stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                     creationflags=winproc.CREATE_NO_WINDOW)
+            if parent_job:
+                parent_job.assign(proc)  # first, so the game's job nests in the queue's
             job.assign(proc)
             efficiency_mode = False
             if getattr(a, 'efficiency_mode', False):
@@ -505,7 +510,8 @@ def newgame(a, quiet=False, cfg=None):
             elif getattr(a, 'low_priority', False):
                 winproc.set_priority(proc)  # leave the foreground (and a real game) responsive
             run.log('launched', quiet=quiet, pid=proc.pid, affinity=hex(affinity) if affinity else None, memoryLimitMB=a.max_memory_mb,
-                    cpuLimit=cpu_limit, efficiencyMode=efficiency_mode, dll=str(dll), dllSHA256=dll_sha, target=a.target_turn)
+                    cpuLimit=cpu_limit, totalCpuLimit=total_cpu_limit, efficiencyMode=efficiency_mode, dll=str(dll),
+                    dllSHA256=dll_sha, target=a.target_turn)
             offset = 0; last_turn = start_turn; last_progress = started; seen = {start_turn: 0.0}; killed = None
             while True:
                 try:
@@ -567,8 +573,8 @@ def newgame(a, quiet=False, cfg=None):
         process = dict(pstats, PeakCommit=jstats.get('peakProcessCommit'), HostSeconds=round(host_seconds, 1))
         status = dict(state='failed', backend='headless', startedUTC=started_utc, startTurn=start_turn, endTurn=end_turn, turns=played,
                       wallSeconds=round(wall, 1), secondsPerTurn=round(wall / played, 3) if played > 0 else None,
-                      hostSeconds=round(host_seconds, 1), process=process, cpuLimit=cpu_limit, efficiencyMode=efficiency_mode,
-                      pollSeconds=0, dll=str(dll), dllSHA256=dll_sha,
+                      hostSeconds=round(host_seconds, 1), process=process, cpuLimit=cpu_limit, totalCpuLimit=total_cpu_limit,
+                      efficiencyMode=efficiency_mode, pollSeconds=0, dll=str(dll), dllSHA256=dll_sha,
                       dllReason=dll_reason, detail=detail, save=seed_key,
                       spec=str(Path(a.spec).resolve()) if a.spec else None, replayMessages=len(final.get('messages') or []), exitCode=code,
                       hostStatus=report.get('status'), hostError=report.get('error') or ng.get('error'),

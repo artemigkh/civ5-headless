@@ -303,7 +303,8 @@ Where they differ from a real run, by design:
 ## 6. Batches
 
 ```
-c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--cpu-limit PERCENT] [--efficiency-mode] [--retry-failed]
+c5h queue run QUEUE.json [--workers N] [--affinity p-first|none] [--cpu-limit PERCENT] [--efficiency-mode]
+              [--total-cpu-limit PERCENT] [--retry-failed]
 c5h queue status QUEUE.json
 c5h queue compare QUEUE.json [--vpbench DIR]
 c5h queue report QUEUE.json
@@ -328,6 +329,9 @@ c5h queue report QUEUE.json
   `examples/queues/`.
 - Mod sets' registries and databases are built once per (mods input, DLL) before the workers start.
 - Worker k is pinned to the k-th physical core: P-cores (both hyperthreads) first, then E-cores.
+- `--total-cpu-limit PERCENT` (or a top-level `"totalCpuLimit"`) caps all running games together at that percent of
+  one core (200: two cores' worth), however many workers; the games share it
+  ([running.md](running.md#running-in-the-background)).
 - State is in `QUEUE.state.json`. A restart skips completed runs, re-queues interrupted ones (the partial folder is
   kept as `<name>-rN`) and leaves failed ones failed unless `--retry-failed`. A stopped runner takes its games with
   it (job objects). `QUEUE.stop` pauses: no new games start, running ones finish.

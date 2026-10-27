@@ -391,7 +391,8 @@ c5h queue status my-queue.json
   `queue run` to continue; `--retry-failed` retries failed games.
 - `--workers N` sets the number of games at once. Workers are pinned to physical cores (`--affinity none` turns that
   off) and run below normal priority, so the machine stays usable. `--cpu-limit PERCENT` and `--efficiency-mode`
-  make every game quieter ([Running in the background](#running-in-the-background)).
+  make every game quieter, and `--total-cpu-limit PERCENT` caps the whole queue
+  ([Running in the background](#running-in-the-background)).
 
 An A/B test of two DLL builds over four seeds (`examples\queues\example-ab.json`):
 
@@ -505,6 +506,7 @@ A game keeps one core busy, which keeps the fans going. Two options make a game 
 c5h run examples\specs\continental-drift.json --turns 750 --cpu-limit 50
 c5h run examples\specs\continental-drift.json --turns 750 --cpu-limit 50 --efficiency-mode
 c5h queue run my-queue.json --workers 4 --cpu-limit 50
+c5h queue run my-queue.json --workers 8 --total-cpu-limit 200
 ```
 
 - `--cpu-limit 50` holds the host to half of one core: Windows stops scheduling it once it has used its share
@@ -517,10 +519,16 @@ c5h queue run my-queue.json --workers 4 --cpu-limit 50
   times as long in a test.
 - Neither changes the game: the host reads the clock only for its timings, so a capped game plays the same turns as
   an uncapped one. Its timings (`secondsPerTurn`, the report's speed) are not the host's speed, though.
-  `status.json` records `cpuLimit` and `efficiencyMode`, and the report's CPU card shows them.
-- In a queue the cap is per game: 4 workers at `--cpu-limit 50` use about 2 cores in all. `--cpu-limit` and
+  `status.json` records `cpuLimit`, `totalCpuLimit` and `efficiencyMode`, and the report's CPU card shows them.
+- In a queue, `--cpu-limit` is per game: 4 workers at `--cpu-limit 50` use about 2 cores in all. `--cpu-limit` and
   `--efficiency-mode` on `queue run` apply to every game of that session; `cpuLimit` and `efficiencyMode` set them
   per job in the queue file.
+- `--total-cpu-limit PERCENT` on `queue run` (or `"totalCpuLimit"` at the top of the queue file) caps all the
+  queue's running games together, however many workers there are. It is a percent of one core too, so above 100 is
+  more than one core: 200 is two cores' worth, and the most is the whole machine (100 times its logical
+  processors). The games share it about equally: 8 workers at `--total-cpu-limit 200` get about a quarter of a core
+  each. The time limits stretch by that expected share. With both, a game gets the smaller of its own cap and its
+  share.
 - The one-time database build for a new mod set is not capped.
 
 ## 12. Development options

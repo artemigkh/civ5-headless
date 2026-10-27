@@ -663,6 +663,7 @@ def _result(m, ps):
     proc = st.get('process') or {}
     cpu = proc.get('CPUSeconds')
     limits = ([f"capped at {h(st['cpuLimit'])}% of a core"] if st.get('cpuLimit') else []) \
+        + ([f"queue capped at {h(st['totalCpuLimit'])}% of a core"] if st.get('totalCpuLimit') else []) \
         + (['efficiency mode'] if st.get('efficiencyMode') else [])
     cards.append(_card('CPU', f'{fmt(cpu, 1)} s' if cpu is not None else '-',
                        ' &middot; '.join(([f"{fmt(cpu / st['hostSeconds'], 2)} cores busy"] if cpu and st.get('hostSeconds') else [])
