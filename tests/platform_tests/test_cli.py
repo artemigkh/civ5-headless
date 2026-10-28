@@ -337,14 +337,14 @@ class QueueTest(unittest.TestCase):
                 if len(calls) <= 2:
                     raise PermissionError(5, 'Access is denied')
                 real(src, dst)
-            with mock.patch.object(queue.os, 'replace', flaky), mock.patch.object(queue.time, 'sleep') as sleep:
+            with mock.patch.object(winproc.os, 'replace', flaky), mock.patch.object(winproc.time, 'sleep') as sleep:
                 q.save()
             self.assertEqual(len(calls), 3)
             self.assertEqual([c.args[0] for c in sleep.call_args_list], [0.05, 0.1])
             self.assertEqual(json.loads(q.state_path.read_text(encoding='utf-8'))['jobs'], {'x': {'status': 'running'}})
             self.assertFalse(q.state_path.with_suffix('.tmp').exists())
             denied = mock.Mock(side_effect=PermissionError(5, 'Access is denied'))
-            with mock.patch.object(queue.os, 'replace', denied), mock.patch.object(queue.time, 'sleep'):
+            with mock.patch.object(winproc.os, 'replace', denied), mock.patch.object(winproc.time, 'sleep'):
                 with self.assertRaises(PermissionError):
                     q.save()
             self.assertEqual(denied.call_count, 5)
