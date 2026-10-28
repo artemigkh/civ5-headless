@@ -67,6 +67,18 @@ def total_cpu_limit_ok(value):
     return isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 100 * winproc.logical_cpus()
 
 
+def replace(src, dst, tries=5, delay=0.05):
+    """os.replace, retried on PermissionError: on Windows a scanner (Defender) or a reader holding dst open denies it for
+    a moment (WinError 5). Backs off 0.05, 0.1, 0.2, 0.4 s (0.75 s in all), then raises."""
+    for attempt in range(tries):
+        try:
+            return os.replace(src, dst)
+        except PermissionError:
+            if attempt == tries - 1:
+                raise
+            time.sleep(delay * 2 ** attempt)
+
+
 def rel(base, value):
     return str((base / value).resolve()) if value and not Path(value).is_absolute() else value
 
@@ -137,7 +149,7 @@ class Queue:
     def save(self):
         tmp = self.state_path.with_suffix('.tmp')
         tmp.write_text(json.dumps(self.state, indent=1) + '\n', encoding='utf-8')
-        os.replace(tmp, self.state_path)
+        replace(tmp, self.state_path)
 
     def log(self, message):
         line = f'{utc()} {message}'
