@@ -159,7 +159,11 @@ Then `HHLoadSavedGame` runs:
 2. **Pregame:** `resetGame`, `resetPlayers`, `clearDLCAllowed`, `setDLCAllowed` for each of the save's DLC,
    `PreGame::read(stream, true)`, `setGameType(type, GAME_LOADED)`, `setLoadFileName(path)`.
 3. **Body:** inflate; `CacheGameDatabaseData`; `Game::Read`, `Map::Read`, teams 0–63 `Read`, players 0–63 `Read`,
-   `ReadSupportingClassData`; the body must be used up exactly. From here on `IsLoadedGame` is true, for the DLL
+   `Map::RecalculateLandmasses`, `ReadSupportingClassData`; the body must be used up exactly. The real game makes the
+   `RecalculateLandmasses` call at this point; it sets the plots' water flags (adjacent to land, lake, fresh water),
+   which the save does not hold. Builds without it played every loaded game with those flags all false, so not the
+   game the real game plays from the same save; for such builds a probe at the arm that reads
+   `Plot:IsAdjacentToLand(false)` on every plot recomputes the flags. From here on `IsLoadedGame` is true, for the DLL
    (`ICvUserInterface1::IsLoadedGame`) and for Lua (`UI.IsLoadedGame()`).
 4. **Start**, as for a new game (`HHGameStartedSteps`):
    - `LaterInit` for players 0–63 (`CvPlayer::gameStartInit`, which checks `IsLoadedGame`);

@@ -858,6 +858,10 @@ bool HHLoadSavedGame(const std::string& strPath, HHNewGameInterfaces& kIf, HHNew
 			pPlayer->Destroy();
 		}
 	kResult.steps.push_back(HHFormat("for i = 0..%d: Game.GetPlayer(i).Read(stream)", MAX_PLAYERS - 1));
+	// The real game recalculates the landmasses here, after the player reads and before the supporting data. Its first
+	// step, updateWaterFlags on every plot, sets the plots' adjacent-to-land, lake and fresh-water flags, which the save
+	// does not hold; without it a loaded game plays with them all false and diverges from the real game at once.
+	HH_STEP("Map.RecalculateLandmasses()", kIf.pMap->RecalculateLandmasses());
 	HH_STEP("Game.ReadSupportingClassData(stream)", kIf.pGame->ReadSupportingClassData(kBody));
 	if(kBody.Overrun() || !kBody.AtEnd())
 	{
